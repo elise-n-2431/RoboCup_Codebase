@@ -13,7 +13,7 @@
  ******************************************************************************/
 
 #include <Servo.h>                  //control the DC motors
-//#include <Herkulex.h>             //smart servo
+//#include <Herkulex.h>             //smart servo --> needed for hatch servo
 #include <Adafruit_TCS34725.h>      //colour sensor
 #include <Wire.h>                   //for I2C and SPI
 #include <TaskScheduler.h>          //scheduler 
@@ -23,7 +23,8 @@
 #include "sensors.h"
 #include "weight_collection.h"
 #include "return_to_base.h"
-#include "sensors.h"
+#include "pickup_servo.h"
+#include "lucas_driver.h"
 
 //**********************************************************************************
 // Local Definitions
@@ -36,13 +37,14 @@
 #define COLOUR_READ_TASK_PERIOD             40
 #define SENSOR_AVERAGE_PERIOD               40
 #define SET_MOTOR_TASK_PERIOD               40
-#define WEIGHT_SCAN_TASK_PERIOD             40
+#define WEIGHT_SCAN_TASK_PERIOD             2000 //Takes too long - make non blocking
 #define COLLECT_WEIGHT_TASK_PERIOD          40
 #define RETURN_TO_BASE_TASK_PERIOD          40
 #define DETECT_BASE_TASK_PERIOD             40
 #define UNLOAD_WEIGHTS_TASK_PERIOD          40
 #define CHECK_WATCHDOG_TASK_PERIOD          40
 #define VICTORY_DANCE_TASK_PERIOD           40
+#define CHECK_BLUETOOTH_TASK_PERIOD         40
 
 
 
@@ -55,12 +57,13 @@
 #define SENSOR_AVERAGE_NUM_EXECUTE         -1
 #define SET_MOTOR_TASK_NUM_EXECUTE         -1
 #define WEIGHT_SCAN_TASK_NUM_EXECUTE       -1
-#define COLLECT_WEIGHT_TASK_NUM_EXECUTE    -1
+#define COLLECT_WEIGHT_TASK_NUM_EXECUTE    5
 #define RETURN_TO_BASE_TASK_NUM_EXECUTE    -1
 #define DETECT_BASE_TASK_NUM_EXECUTE       -1
 #define UNLOAD_WEIGHTS_TASK_NUM_EXECUTE    -1
 #define CHECK_WATCHDOG_TASK_NUM_EXECUTE    -1
 #define VICTORY_DANCE_TASK_NUM_EXECUTE     -1
+#define CHECK_BLUETOOTH_TASK_NUM_EXECUTE   -1
 
 // Pin deffinitions
 #define IO_POWER  49
@@ -90,12 +93,15 @@ Task tSet_motor(SET_MOTOR_TASK_PERIOD,           SET_MOTOR_TASK_NUM_EXECUTE,    
 
 // Tasks to scan for weights and collection upon detection
 Task tWeight_scan(WEIGHT_SCAN_TASK_PERIOD,       WEIGHT_SCAN_TASK_NUM_EXECUTE,    &weight_scan);
-Task tCollect_weight(COLLECT_WEIGHT_TASK_PERIOD, COLLECT_WEIGHT_TASK_NUM_EXECUTE, &collect_weight);
+Task tCollect_weight(COLLECT_WEIGHT_TASK_PERIOD, COLLECT_WEIGHT_TASK_NUM_EXECUTE, &servo_exe);
 
 // Tasks to search for bases and unload weights
 Task tReturn_to_base(RETURN_TO_BASE_TASK_PERIOD, RETURN_TO_BASE_TASK_NUM_EXECUTE, &return_to_base);
 Task tDetect_base(DETECT_BASE_TASK_PERIOD,       DETECT_BASE_TASK_NUM_EXECUTE,    &detect_base);
 Task tUnload_weights(UNLOAD_WEIGHTS_TASK_PERIOD, UNLOAD_WEIGHTS_TASK_NUM_EXECUTE, &unload_weights);
+
+//from lucas_driver
+Task tRead_bluetooth(CHECK_BLUETOOTH_TASK_PERIOD, CHECK_BLUETOOTH_TASK_NUM_EXECUTE,&loop_driver);
 
 // Tasks to check the 'watchdog' timer (These will need to be added in)
 //Task tCheck_watchdog(CHECK_WATCHDOG_TASK_PERIOD, CHECK_WATCHDOG_TASK_NUM_EXECUTE, &check_watchdog);
@@ -119,7 +125,8 @@ void setup() {
   robot_init();
   task_init();
   Wire.begin();
-  servos_init();
+  setup_driver();
+  servo_init();
 }
 
 //**********************************************************************************
@@ -160,6 +167,7 @@ void task_init() {
   taskManager.addTask(tReturn_to_base);
   taskManager.addTask(tDetect_base);
   taskManager.addTask(tUnload_weights);
+  taskManager.addTask(tRead_bluetooth);
 
   //taskManager.addTask(tCheck_watchdog);
   //taskManager.addTask(tVictory_dance);      
@@ -175,6 +183,7 @@ void task_init() {
   tReturn_to_base.enable();
   tDetect_base.enable();
   tUnload_weights.enable();
+  tRead_bluetooth.enable();
  //tCheck_watchdog.enable();
  //tVictory_dance.enable();
 
@@ -189,5 +198,5 @@ void task_init() {
 void loop() {
   
   taskManager.execute();    //execute the scheduler
-  Serial.println("Another scheduler execution cycle has oocured \n");
+//   Serial.println("Another scheduler execution cycle has occured \n");
 }

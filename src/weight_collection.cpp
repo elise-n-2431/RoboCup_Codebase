@@ -17,9 +17,9 @@ void weight_scan(/* whatever parameters */)
 }
 
 
-void collect_weight()
-{
-  /* When ready, collect the weight */
-   Serial.println("Collecting weight \n");
-}
+// void collect_weight()
+// {
+//   /* When ready, collect the weight */
+//    Serial.println("Collecting weight \n");
+// }
 
