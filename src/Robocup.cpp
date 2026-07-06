@@ -37,8 +37,8 @@
 #define COLOUR_READ_TASK_PERIOD             40
 #define SENSOR_AVERAGE_PERIOD               40
 #define SET_MOTOR_TASK_PERIOD               40
-#define WEIGHT_SCAN_TASK_PERIOD             2000 //Takes too long - make non blocking
-#define COLLECT_WEIGHT_TASK_PERIOD          40
+#define WEIGHT_SCAN_TASK_PERIOD             40
+#define COLLECT_WEIGHT_TASK_PERIOD          6500
 #define RETURN_TO_BASE_TASK_PERIOD          40
 #define DETECT_BASE_TASK_PERIOD             40
 #define UNLOAD_WEIGHTS_TASK_PERIOD          40
@@ -57,7 +57,7 @@
 #define SENSOR_AVERAGE_NUM_EXECUTE         -1
 #define SET_MOTOR_TASK_NUM_EXECUTE         -1
 #define WEIGHT_SCAN_TASK_NUM_EXECUTE       -1
-#define COLLECT_WEIGHT_TASK_NUM_EXECUTE    5
+#define COLLECT_WEIGHT_TASK_NUM_EXECUTE    -1
 #define RETURN_TO_BASE_TASK_NUM_EXECUTE    -1
 #define DETECT_BASE_TASK_NUM_EXECUTE       -1
 #define UNLOAD_WEIGHTS_TASK_NUM_EXECUTE    -1
@@ -173,17 +173,17 @@ void task_init() {
   //taskManager.addTask(tVictory_dance);      
 
   //enable the tasks
-  tRead_ultrasonic.enable();
-  tRead_infrared.enable();
-  tRead_colour.enable();
-  tSensor_average.enable();
-  tSet_motor.enable();
-  tWeight_scan.enable();
+  // tRead_ultrasonic.enable();
+  // tRead_infrared.enable();
+  // tRead_colour.enable();
+  // tSensor_average.enable();
+  // tSet_motor.enable();
+  // tWeight_scan.enable();
   tCollect_weight.enable();
-  tReturn_to_base.enable();
-  tDetect_base.enable();
-  tUnload_weights.enable();
-  tRead_bluetooth.enable();
+  // tReturn_to_base.enable();
+  // tDetect_base.enable();
+  // tUnload_weights.enable();
+  // tRead_bluetooth.enable();
  //tCheck_watchdog.enable();
  //tVictory_dance.enable();
 
@@ -198,5 +198,5 @@ void task_init() {
 void loop() {
   
   taskManager.execute();    //execute the scheduler
-//   Serial.println("Another scheduler execution cycle has occured \n");
+  Serial.println("Another scheduler execution cycle has occured \n");
 }

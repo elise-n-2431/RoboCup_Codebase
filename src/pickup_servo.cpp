@@ -6,33 +6,39 @@
 #include <Arduino.h>
 #include <Servo.h>
 
-Servo myservoA, myservoB, myservoC, myservoD;
+Servo myservoA;
 
 // Global variable defining the turn amount (in degrees)
-int TURN_ANGLE = 15;
+int pos = 0;
 
 // Center/neutral position for the servos
-const int CENTER_POS = 90;
+// const int CENTER_POS = 90;
 
 void servo_init() {
-    myservoA.attach(2);  // attaches the servo to the servo object using pin 2
-    myservoB.attach(3);  // attaches the servo to the servo object using pin 3
-    myservoC.attach(4);  // attaches the servo to the servo object using pin 4
-    myservoD.attach(5);  // attaches the servo to the servo object using pin 5
+    myservoA.attach(1, 500, 2500);  // attaches the servo to the servo object using pin 2
+    Serial.println("Initializing Servo \n");
 }
 
 void servo_exe() {
-    // Turn +TURN_ANGLE degrees from center
-    myservoA.write(CENTER_POS + TURN_ANGLE);
-    myservoB.write(CENTER_POS + TURN_ANGLE);
-    myservoC.write(CENTER_POS + TURN_ANGLE);
-    myservoD.write(CENTER_POS + TURN_ANGLE);
-    delay(1500);                           // waits for the servo to get there
+    myservoA.write(0);
+    delay(2000);                          
 
-    // Turn back -TURN_ANGLE degrees from center (i.e. the opposite direction)
-    myservoA.write(CENTER_POS - TURN_ANGLE);
-    myservoB.write(CENTER_POS - TURN_ANGLE);
-    myservoC.write(CENTER_POS - TURN_ANGLE);
-    myservoD.write(CENTER_POS - TURN_ANGLE);
-    delay(1500);
+    pos = myservoA.read();
+    Serial.print("Servo position 1: ");
+    Serial.println(pos);
+
+    myservoA.write(45);
+    delay(2000);
+
+    pos = myservoA.read(); 
+    Serial.print("Servo position 2: ");
+    Serial.println(pos);
+
+    myservoA.write(50);
+    delay(2000);
+
+    pos = myservoA.read(); 
+    Serial.print("Servo position 3: ");
+    Serial.println(pos);
+
 }
