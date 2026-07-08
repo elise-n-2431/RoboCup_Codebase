@@ -1,41 +1,82 @@
-/* Sweep
- by BARRAGAN <http://barraganstudio.com> 
- This example code is in the public domain.
-
- modified 8 Nov 2013
- by Scott Fitzgerald
- http://arduino.cc/en/Tutorial/Sweep
-*/ 
-
+#include <Wire.h>
+#include <SparkFunSX1509.h> // SparkFun SX1509 I/O Expander library, v2.0.1
 #include <Servo.h> 
- 
-Servo myservo;  // create servo object to control a servo 
-                // twelve servo objects can be created on most boards
- 
-int pos = 0;    // variable to store the servo position 
 
-void setup() 
-{ 
-  myservo.attach(1, 500, 2500);  // attaches the servo on pin 9 to the servo object 
-  pinMode(26, OUTPUT);
-} 
- 
-void loop() 
-{ 
-  myservo.write(-10);
-  digitalWrite(26, HIGH);
-  delay(2000);
 
-    // pos = myservo.read();
-    // Serial.print("Servo position 1: ");
-    // Serial.println(pos);
+Servo myservo;
+int pos = 0;
+const byte SX1509_LIMIT_ADDRESS = 0x3E;
 
-  myservo.write(90);
-  delay(2000);
-  digitalWrite(26, LOW);
-  delay(1000);
+const byte AIO6_PIN = 6;
+const byte EMAG_PIN = 26;
+const byte PROX_PIN = 20;
 
-    // pos = myservo.read(); 
-    // Serial.print("Servo position 3: ");
-    // Serial.println(pos);
-} 
+String state = "desc";
+SX1509 io;
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) { } 
+
+  if (!io.begin(SX1509_LIMIT_ADDRESS)) {
+    Serial.println("Failed to find SX1509 at 0x3E - check wiring/I2C cable");
+    while (1) { }
+  }
+
+  io.pinMode(AIO6_PIN, INPUT_PULLUP);
+
+  Serial.println("SX1509 limit switch expander ready");
+
+  myservo.attach(1, 500, 2500);
+  pinMode(EMAG_PIN, OUTPUT);
+
+}
+
+void loop() {
+  Serial.print(state);
+  Serial.print(" ");
+  Serial.print(io.digitalRead(AIO6_PIN) == LOW);
+  Serial.print(" ");
+  Serial.println(analogRead(PROX_PIN) > 500);
+
+  if (state == "desc") {
+      myservo.write(20);
+      delay(2000);
+      bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
+      bool metal = (analogRead(PROX_PIN) > 500);
+      if (pressed and metal) {
+        state = "inc";
+      } else {
+        state = "absent";
+      }
+
+  } else if (state == "inc") {
+      digitalWrite(EMAG_PIN, HIGH);
+      delay(200);
+      myservo.write(100);
+      delay(2000);
+      state = "dropping";
+
+  } else if (state == "absent") {
+    myservo.write(0);
+    delay(2000);
+    bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
+    bool metal = (analogRead(PROX_PIN) > 500);
+    if (pressed and metal) {
+      state = "inc";
+    } else {
+      state = "stationary";
+    }
+
+  } else if (state == "stationary") {
+    delay(1000);
+    digitalWrite(EMAG_PIN, HIGH);
+
+  } else if (state == "dropping") {
+    digitalWrite(EMAG_PIN, LOW);
+    delay(1000);
+    state = "desc";
+
+  }
+
+}
