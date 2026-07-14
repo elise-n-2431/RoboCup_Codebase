@@ -10,6 +10,8 @@ const byte SX1509_LIMIT_ADDRESS = 0x3E;
 const byte AIO6_PIN = 6;
 const byte EMAG_PIN = 26;
 const byte PROX_PIN = 20;
+const byte PROX_PIN_2 = 14;
+
 
 String state = "desc";
 SX1509 io;
@@ -29,6 +31,8 @@ void setup() {
 
   myservo.attach(1, 500, 2500);
   pinMode(EMAG_PIN, OUTPUT);
+  pinMode(PROX_PIN_2, INPUT);
+  pinMode(PROX_PIN, INPUT);
 
 }
 
@@ -38,16 +42,21 @@ void loop() {
   Serial.print(io.digitalRead(AIO6_PIN) == LOW);
   Serial.print(" ");
   Serial.println(analogRead(PROX_PIN) > 500);
+  Serial.println(analogRead(PROX_PIN_2));
 
   if (state == "desc") {
       myservo.write(20);
       delay(2000);
       bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
       bool metal = (analogRead(PROX_PIN) > 500);
-      if (pressed and metal) {
+      if (metal) {
         state = "inc";
-      } else {
+      } else if (!pressed ) {
+
+
         state = "absent";
+      } else {
+        state = "stationary";
       }
 
   } else if (state == "inc") {
@@ -62,7 +71,7 @@ void loop() {
     delay(2000);
     bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
     bool metal = (analogRead(PROX_PIN) > 500);
-    if (pressed and metal) {
+    if (metal) {
       state = "inc";
     } else {
       state = "stationary";
@@ -70,7 +79,7 @@ void loop() {
 
   } else if (state == "stationary") {
     delay(1000);
-    digitalWrite(EMAG_PIN, HIGH);
+    digitalWrite(EMAG_PIN, LOW);
 
   } else if (state == "dropping") {
     digitalWrite(EMAG_PIN, LOW);
