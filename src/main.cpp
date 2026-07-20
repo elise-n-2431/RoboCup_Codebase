@@ -1,18 +1,30 @@
+
+
 #include <Arduino.h>
+#include <Servo.h>
+#include "pickup_servo.h"
+#include "lucas_driver.h"
+#include "state_machine.h"
 
-// put function declarations here:
-int myFunction(int, int);
 
-// void setup() {
-//   // put your setup code here, to run once:
-//   int result = myFunction(2, 3);
-// }
+// define global variables
 
-// void loop() {
-//   // put your main code here, to run repeatedly:
-// }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+// define initial variables
+
+
+void setup() {
+
+
+
+}
+
+
+void loop() {
+    updateStateMachine();
+    runBackgroundTasks();
+}
+
+void runBackgroundTasks() {
+
 }
