@@ -24,8 +24,8 @@ enum CollectState {
 
 struct StateFlags {
     // state flags trigger a change in state
-
     bool state_changed = false;
+
     // nav focused
     bool target_identified = false;
     bool reverse_triggered = false;
