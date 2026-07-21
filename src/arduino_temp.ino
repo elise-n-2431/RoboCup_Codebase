@@ -44,7 +44,7 @@ void loop() {
   Serial.println(analogRead(PROX_PIN) > 500);
   Serial.println(analogRead(PROX_PIN_2));
 
-  if (state == "desc") {
+  if (state == "desc") { //collect_vert
       myservo.write(20);
       delay(2000);
       bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
@@ -59,14 +59,14 @@ void loop() {
         state = "stationary";
       }
 
-  } else if (state == "inc") {
+  } else if (state == "inc") { //dropping
       digitalWrite(EMAG_PIN, HIGH);
       delay(200);
       myservo.write(100);
       delay(2000);
       state = "dropping";
 
-  } else if (state == "absent") {
+  } else if (state == "absent") { //collect_hor
     myservo.write(0);
     delay(2000);
     bool pressed = (io.digitalRead(AIO6_PIN) == LOW);
@@ -77,11 +77,11 @@ void loop() {
       state = "stationary";
     }
 
-  } else if (state == "stationary") {
+  } else if (state == "stationary") { //idle
     delay(1000);
     digitalWrite(EMAG_PIN, LOW);
 
-  } else if (state == "dropping") {
+  } else if (state == "dropping") { //returning_to_idle
     digitalWrite(EMAG_PIN, LOW);
     delay(1000);
     state = "desc";

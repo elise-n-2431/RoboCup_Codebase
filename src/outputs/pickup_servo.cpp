@@ -16,36 +16,32 @@ const int hors_angle = 0;
 const int dropoff_angle = 100;
 const int idle_angle = 50;
 
-
 void servo_init() {
     myservo.attach(1, 500, 2500);
 }
 
 void servo_exe() {
-    switch (getCurrentState()) {
-        case IDLE:
-            break;
+    if (STATE_FLAGS.state_changed) {
+        switch (getCollectState()) {
+            case IDLE:
+                break;
 
-        case COLLECT_VERTICAL:
-            myservo.write(vert_angle);
-            delay(2000);
-            break;
+            case COLLECT_VERTICAL:
+                myservo.write(vert_angle);
+                break;
 
-        case COLLECT_HORISONTAL:
-            myservo.write(hors_angle);
-            delay(2000);    // shouldn't include delays like this.
-            break;
-        
-        case DROPPING:
-            // emag on
-            delay(200);
-            myservo.write(dropoff_angle);
-            delay(2000);
-            break;
+            case COLLECT_HORISONTAL:
+                myservo.write(hors_angle);
+                break;
+            
+            case DROPPING:
+                myservo.write(dropoff_angle);
+                break;
 
-        case RETURNING_TO_IDLE:
-            myservo.write(idle_angle);
-            break;
+            case RETURNING_TO_IDLE:
+                myservo.write(idle_angle);
+                break;
+        }
     }
-
 }
+

@@ -17,5 +17,7 @@ void proiximity_init() {
 void proximity_exe() {
     if (analogRead(PROX_PIN) > 500) {
         setSensorFlag(&SENSOR_FLAGS.metal_detected);
+    } else {
+        setSensorFlag(&SENSOR_FLAGS.metal_detected);
     }
 }

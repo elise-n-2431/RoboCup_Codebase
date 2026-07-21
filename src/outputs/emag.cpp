@@ -1,3 +1,4 @@
+#include "emag.h"
 #include "state_machine.h"
 #include "../inputs/sensors.h"
 #include <Arduino.h>
@@ -15,7 +16,7 @@ void emag_init() {
 
 
 void emag_exe() {
-    switch (getCurrentState()) {
+    switch (getCollectState()) {
 
         case IDLE:
             digitalWrite(EMAG_PIN, LOW);

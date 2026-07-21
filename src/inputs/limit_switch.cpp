@@ -18,5 +18,7 @@ void limit_switch_init() {
 void limit_switch_exe() {
     if (io.digitalRead(AIO6_PIN) == LOW) {
         setSensorFlag(&SENSOR_FLAGS.limit_switch_on);
+    } else {
+        resetSensorFlag(&SENSOR_FLAGS.limit_switch_on)
     }
 }

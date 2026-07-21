@@ -5,7 +5,7 @@
 #ifndef PROXIMITY_H
 #define PROXIMITY_H
 
-void proiximity_init();
+void proximity_init();
 void proximity_exe();
 
 #endif
