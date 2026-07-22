@@ -13,22 +13,6 @@
 
 // define global variables
 
-
-// define initial variables
-void runBackgroundTasks() { 
-    // these will raise a flag if a change in state is required
-    // todo: frequency control
-
-    // check inputs
-    proximity_exe();
-    limit_switch_exe();
-
-    // change outputs
-    servo_exe();
-    emag_exe();    
-
-}
-
 void setup() {
     servo_init();
     emag_init();
@@ -39,6 +23,14 @@ void setup() {
 
 void loop() {
     updateStateMachine();
-    runBackgroundTasks();
+    
+    // check inputs
+    proximity_exe();
+    limit_switch_exe();
+
+    // change outputs
+    servo_exe();
+    emag_exe();    
+
 }
 
