@@ -8,7 +8,7 @@
 const byte PROX_PIN = 20;
 const byte PROX_PIN_2 = 14;
 
-void proiximity_init() {
+void proximity_init() {
   pinMode(PROX_PIN_2, INPUT);
   pinMode(PROX_PIN, INPUT);
   

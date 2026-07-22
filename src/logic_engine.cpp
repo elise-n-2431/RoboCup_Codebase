@@ -1,6 +1,6 @@
 #include "logic_engine.h"
 #include "state_machine.h"
-#include "sensors.h"
+#include "inputs/sensors.h"
 
 int current_weights = 0;
 

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Servo.h>
+#include <DFRobot_MatrixLidar.h>
 
 #include "state_machine.h"
 #include "logic_engine.h"
@@ -14,7 +15,19 @@
 
 
 // define initial variables
+void runBackgroundTasks() { 
+    // these will raise a flag if a change in state is required
+    // todo: frequency control
 
+    // check inputs
+    proximity_exe();
+    limit_switch_exe();
+
+    // change outputs
+    servo_exe();
+    emag_exe();    
+
+}
 
 void setup() {
     servo_init();
@@ -29,16 +42,3 @@ void loop() {
     runBackgroundTasks();
 }
 
-void runBackgroundTasks() { 
-    // these will raise a flag if a change in state is required
-    // todo: frequency control
-
-    // check inputs
-    proximity_exe();
-    limit_switch_exe();
-
-    // change outputs
-    servo_exe();
-    emag_exe();    
-
-}

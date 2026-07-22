@@ -1,7 +1,7 @@
 
 #include "state_machine.h"
-#include <stdexcept>
-#include "sensors.h"
+// #include <stdexcept>
+#include "inputs/sensors.h"
 
 
 // enums and structs moved to h file
@@ -13,6 +13,8 @@ NavState prev_nav_state = STATIONARY;
 
 CollectState current_collect_state = IDLE;
 CollectState prev_collect_state = IDLE;
+
+StateFlags STATE_FLAGS;
 
 
 const int delay_idle = 100;
@@ -58,7 +60,7 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
     if (*flag) {
         if (current_nav_state != STATIONARY) {
             if (collectState != IDLE) {
-                throw std::invalid_argument("Cannot collect weights while moving");
+                // throw std::invalid_argument("Cannot collect weights while moving");
                 collectState = IDLE;
             }
         }
@@ -78,6 +80,69 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
 //     prev_collect_state = current_collect_state;
 //     current_collect_state = collectState;
 // }
+
+void changeStates() {
+    if (STATE_FLAGS.state_changed) {
+        switch (current_collect_state) {
+            case IDLE:
+                end_delay_ticks = current_ticks + delay_idle;
+                break;
+
+            case COLLECT_VERTICAL:
+                end_delay_ticks = current_ticks + delay_idle;
+                break;
+
+            case COLLECT_HORISONTAL:
+                end_delay_ticks = current_ticks + delay_idle;
+                break;
+            
+            case DROPPING:
+                end_delay_ticks = current_ticks + delay_idle;
+                break;
+
+            case RETURNING_TO_IDLE:
+                end_delay_ticks = current_ticks + delay_idle;
+                break;
+            };
+            
+    } else if (end_delay_ticks <= current_ticks) {
+        switch (getCollectState()) {
+            case IDLE:
+                if (SENSOR_FLAGS.metal_detected) { // currently uses inductive prox
+                    setStateFlag(&STATE_FLAGS.weight_in_entrance);
+                }
+                break;
+
+            case COLLECT_VERTICAL:
+                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
+                    setStateFlag(&STATE_FLAGS.weight_detected);
+                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
+                    setStateFlag(&STATE_FLAGS.no_vertical);
+                } else {
+                    // do nothing so far
+                }
+                break;
+
+            case COLLECT_HORISONTAL:
+                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
+                    setStateFlag(&STATE_FLAGS.weight_detected);
+                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
+                    setStateFlag(&STATE_FLAGS.no_horisontal);
+                } else {
+                    // do nothing so far
+                }
+                break;
+            
+            case DROPPING:
+                setStateFlag(&STATE_FLAGS.dropping_complete);
+                break;
+
+            case RETURNING_TO_IDLE:
+                setStateFlag(&STATE_FLAGS.returning_complete);
+                break;
+            }
+    }
+    }
 
 
 void updateStateMachine () {
@@ -137,68 +202,3 @@ void updateStateMachine () {
 
 };
 
-void changeStates() {
-    if (STATE_FLAGS.state_changed) {
-        switch (current_collect_state) {
-            case IDLE:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case COLLECT_VERTICAL:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case COLLECT_HORISONTAL:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-            
-            case DROPPING:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case RETURNING_TO_IDLE:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-            }
-        switch (current_nav_state) {
-            // tbc
-            }
-            
-    } else if (end_delay_ticks <= current_ticks) {
-        switch (getCollectState()) {
-            case IDLE:
-                if (SENSOR_FLAGS.metal_detected) { // currently uses inductive prox
-                    setStateFlag(&STATE_FLAGS.weight_in_entrance);
-                }
-                break;
-
-            case COLLECT_VERTICAL:
-                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.weight_detected);
-                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.no_vertical);
-                } else {
-                    // do nothing so far
-                }
-                break;
-
-            case COLLECT_HORISONTAL:
-                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.weight_detected);
-                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.no_horisontal);
-                } else {
-                    // do nothing so far
-                }
-                break;
-            
-            case DROPPING:
-                setStateFlag(&STATE_FLAGS.dropping_complete);
-                break;
-
-            case RETURNING_TO_IDLE:
-                setStateFlag(&STATE_FLAGS.returning_complete);
-                break;
-            }
-    }
-    }
