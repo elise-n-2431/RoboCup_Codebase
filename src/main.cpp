@@ -12,11 +12,13 @@
 #include "inputs/limit_switch.h"
 #include "inputs/tof.h"
 #include "inputs/xy_sensor.h"
+#include "map.h"
 
 
 // define global variables
 
 void setup() {
+    Serial2.begin(115200);
     // tof_init();
     xy_init();
     // servo_init();
@@ -29,6 +31,8 @@ void setup() {
 void loop() {
     // tof_exe();
     xy_exe();
+    display_map();
+
     // tof_visualize();
 
     // updateStateMachine();
