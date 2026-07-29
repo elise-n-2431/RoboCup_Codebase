@@ -28,6 +28,8 @@ Bitcraze_PMW3901 flow(FLOW_CS);
 int16_t og_X, og_Y;
 int16_t current_X, current_Y = 0;
 
+// Note: mm_moved = counts × (height_mm / focal_constant)
+
 void xy_init()
 {  
     if (!flow.begin()) {
@@ -45,7 +47,7 @@ void xy_exe()
     current_X += deltaX;
     current_Y += deltaY;
 
-    update_self(deltaX % 1, deltaY % 1);
+    update_self(deltaX, deltaY);
     
 
     // Serial2.print("dX: ");
