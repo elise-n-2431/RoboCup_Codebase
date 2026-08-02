@@ -76,16 +76,16 @@ void display_map() {
 
 float pose_x_mm = 0, pose_y_mm = 0, heading_rad = 0;
 
-void update_pose(float d_x_mm, float d_y_mm, float d_heading_rad) {
-    heading_rad += d_heading_rad;
-    // rotate the flow-sensor's local displacement into map frame
-    pose_x_mm += d_x_mm * cos(heading_rad) - d_y_mm * sin(heading_rad);
-    pose_y_mm += d_x_mm * sin(heading_rad) + d_y_mm * cos(heading_rad);
-}
+// void update_pose(float d_x_mm, float d_y_mm, float d_heading_rad) {
+//     heading_rad += d_heading_rad;
+//     // rotate the flow-sensor's local displacement into map frame
+//     pose_x_mm += d_x_mm * cos(heading_rad) - d_y_mm * sin(heading_rad);
+//     pose_y_mm += d_x_mm * sin(heading_rad) + d_y_mm * cos(heading_rad);
+// }
 
 
-int cell_x = (int)((pose_x_mm + world_x_mm) / CELL_SIZE_MM);
-int cell_y = (int)((pose_y_mm + world_y_mm) / CELL_SIZE_MM);
-if (cell_x >= 0 && cell_x < MAP_WIDTH && cell_y >= 0 && cell_y < MAP_HEIGHT) {
-    map[cell_x][cell_y] = 2; // obstacle
-}
+// int cell_x = (int)((pose_x_mm + world_x_mm) / CELL_SIZE_MM);
+// int cell_y = (int)((pose_y_mm + world_y_mm) / CELL_SIZE_MM);
+// if (cell_x >= 0 && cell_x < MAP_WIDTH && cell_y >= 0 && cell_y < MAP_HEIGHT) {
+//     map[cell_x][cell_y] = 2; // obstacle
+// }
