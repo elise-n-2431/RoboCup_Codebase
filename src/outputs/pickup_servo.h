@@ -5,7 +5,14 @@
 #ifndef PICKUP_SERVO_H
 #define PICKUP_SERVO_H
 
-void servo_init();
-void servo_exe();
+void pickup_servo_init();
+void pickup_servo_exe();
 
-#endif //PICKUP_SERVO_H
+static void moveCraneTo(int target, int speed);
+
+void craneVertical();
+void craneHorizontal();
+void craneDrop();
+void craneIdle();
+
+#endif
