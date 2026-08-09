@@ -1,5 +1,5 @@
-#ifndef SERIAL_INTERFACE_H
-#define SERIAL_INTERFACE_H
+#ifndef SERIAL_H
+#define SERIAL_H
 
 #include <Arduino.h>
 
@@ -19,7 +19,11 @@ enum RobotCommand
     CMD_MOTORS_ON,
     CMD_MOTORS_OFF,
 
-    CMD_COLLECT
+    CMD_COLLECT,
+
+    CMD_TOF_PRINT,
+    CMD_TOF_STREAM_ON,
+    CMD_TOF_STREAM_OFF
 };
 
 void serial_init();

@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <DFRobot_MatrixLidar.h>
-
+#include <Wire.h>
 #include "state_machine.h"
 #include "logic_engine.h"
 #include "comms/serial.h"
@@ -11,6 +11,7 @@
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
 #include "outputs/collection.h"
+#include "inputs/nav_tof.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
 #include "inputs/tof.h"
@@ -20,8 +21,18 @@
 
 // define global variables
 
+bool frontTofStreamEnabled = false;
+uint32_t lastFrontTofPrintMs = 0;
+
+constexpr uint16_t FRONT_TOF_PRINT_PERIOD_MS = 250;
+
+
+
 void setup() {
     serial_init();
+    nav_tof_init();
+    Wire.begin();
+    Wire.setClock(100000);
     // tof_init();
     // xy_init();
     pickup_servo_init();
@@ -31,6 +42,8 @@ void setup() {
     // proximity_init();
     // limit_switch_init();
 }
+
+
 
 
 void loop() {
@@ -49,6 +62,18 @@ void loop() {
     // // change outputs
     // servo_exe();
     // emag_exe();
+
+    nav_tof_update();
+
+    if (frontTofStreamEnabled &&
+        millis() - lastFrontTofPrintMs >= FRONT_TOF_PRINT_PERIOD_MS)
+    {
+        lastFrontTofPrintMs = millis();
+        nav_tof_print(Serial);
+        nav_tof_print(Serial2);
+    }
+
+
     RobotCommand command = serial_get_command();
 
 
@@ -126,7 +151,8 @@ void loop() {
 
             Serial.print("Drive power = ");
             Serial.println(getDrivePower());
-
+            Serial2.print("Drive power = ");
+            Serial2.println(getDrivePower());
             break;
 
 
@@ -138,7 +164,8 @@ void loop() {
 
             Serial.print("Drive power = ");
             Serial.println(getDrivePower());
-
+            Serial2.print("Drive power = ");
+            Serial2.println(getDrivePower());
             break;
 
 
@@ -172,14 +199,41 @@ void loop() {
             if (!collectionIsActive())
             {
                 Serial.println("Starting collection");
-
+                Serial2.println("Starting collection");
                 collection_start();
             }
             else
             {
                 Serial.println("Collection already running");
+                Serial2.println("Collection already running");
             }
 
+            break;
+
+        case CMD_TOF_PRINT:
+            nav_tof_print(Serial);
+            nav_tof_print(Serial2);
+            break;
+
+
+        case CMD_TOF_STREAM_ON:
+
+            frontTofStreamEnabled = true;
+
+            // Makes the first set print immediately
+            lastFrontTofPrintMs = millis() - FRONT_TOF_PRINT_PERIOD_MS;
+
+            Serial.println("Front ToF streaming ON");
+            Serial2.println("Front ToF streaming ON");
+            break;
+
+
+        case CMD_TOF_STREAM_OFF:
+
+            frontTofStreamEnabled = false;
+
+            Serial.println("Front ToF streaming OFF");
+            Serial2.println("Front ToF streaming OFF");
             break;
 
 

@@ -17,7 +17,7 @@ const int CRANE_SERVO_PIN = 29;
 const int IDLE_US       = 1500;
 const int VERTICAL_US   = 1050;
 const int HORIZONTAL_US = 950;
-const int DROPOFF_US    = 2100;
+const int DROPOFF_US    = 1900;
 
 static int currentPulse = IDLE_US;
 static int targetPulse  = IDLE_US;

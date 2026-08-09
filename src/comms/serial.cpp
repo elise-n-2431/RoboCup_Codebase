@@ -68,6 +68,21 @@ static RobotCommand parseLine(String command)
         return CMD_MOTORS_OFF;
     }
 
+    if (command == "tof")
+    {
+        return CMD_TOF_PRINT;
+    }
+
+    if (command == "tofon")
+    {
+        return CMD_TOF_STREAM_ON;
+    }
+
+    if (command == "toff")
+    {
+        return CMD_TOF_STREAM_OFF;
+    }
+
     return CMD_NONE;
 }
 
@@ -138,7 +153,7 @@ void serial_init()
     // USB serial monitor
     Serial.begin(115200);
 
-    // Bluetooth
+    // Bluetooth module
     Serial2.begin(115200);
 
     delay(500);
