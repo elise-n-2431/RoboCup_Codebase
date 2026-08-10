@@ -2,6 +2,7 @@
 #include "state_machine.h"
 // #include <stdexcept>
 #include "inputs/sensors.h"
+#include <Arduino.h>
 
 
 // enums and structs moved to h file
@@ -11,8 +12,8 @@
 NavState current_nav_state = STATIONARY;
 NavState prev_nav_state = STATIONARY;
 
-CollectState current_collect_state = IDLE;
-CollectState prev_collect_state = IDLE;
+CollectState current_collect_state = LOWERING_VERT;
+CollectState prev_collect_state = LOWERING_VERT;
 
 StateFlags STATE_FLAGS;
 
@@ -23,9 +24,25 @@ const int delay_collect_hor = 100;
 const int delay_dropping = 100;
 const int delay_retrun = 100;
 
-int current_ticks;
-int end_delay_ticks;
+unsigned long timeInNavState();
+unsigned long timeInCollectState();
 
+static unsigned long navStateEnteredAt = 0;
+static unsigned long collectStateEnteredAt = 0;
+
+// Timer 1 duration
+const unsigned long TIMER_1_DURATION = 5000; // 5 seconds
+
+
+unsigned long timeInNavState()
+{
+    return millis() - navStateEnteredAt;
+}
+
+unsigned long timeInCollectState()
+{
+    return millis() - collectStateEnteredAt;
+}
 
 void setStateFlag(bool* flag) {
     *flag = true;
@@ -40,161 +57,110 @@ CollectState getCollectState() {
     return current_collect_state;
 }
 
+bool timer1Expired()
+{
+    return timeInCollectState() >= TIMER_1_DURATION;
+}
 
-void checkChangeNavState(NavState navState, bool* flag) {
-    if (*flag) {
+
+void checkChangeNavState(NavState navState, bool flag) {
+    if (flag) {
         prev_nav_state = current_nav_state;
         current_nav_state = navState;
-        *flag = false;
-        setStateFlag(&STATE_FLAGS.state_changed);
+        flag = false;
+        navStateEnteredAt = millis();
     }
 
 }
 
-// void changeNavState(NavState navState) {
-//     prev_nav_state = current_nav_state;
-//     current_nav_state = navState;
-// }
-
-void checkChangeCollectState(CollectState collectState, bool* flag) {
-    if (*flag) {
-        if (current_nav_state != STATIONARY) {
+void checkChangeCollectState(CollectState collectState, bool flag) {
+    if (flag) {
+        if (current_nav_state != COLLECTING) {
             if (collectState != IDLE) {
-                // throw std::invalid_argument("Cannot collect weights while moving");
                 collectState = IDLE;
             }
         }
         prev_collect_state = current_collect_state;
         current_collect_state = collectState;
-        setStateFlag(&STATE_FLAGS.state_changed);
+        flag = false;
+        collectStateEnteredAt = millis();
     }
 }
 
-// void changeCollectState(CollectState collectState) { 
-//     if (current_nav_state != STATIONARY) {
-//         if (collectState != IDLE) {
-//             throw std::invalid_argument("Cannot collect weights while moving");
-//             collectState = IDLE;
-//         }
-//     }
-//     prev_collect_state = current_collect_state;
-//     current_collect_state = collectState;
-// }
 
-void changeStates() {
-    if (STATE_FLAGS.state_changed) {
-        switch (current_collect_state) {
-            case IDLE:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case COLLECT_VERTICAL:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case COLLECT_HORISONTAL:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-            
-            case DROPPING:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-
-            case RETURNING_TO_IDLE:
-                end_delay_ticks = current_ticks + delay_idle;
-                break;
-            };
-            
-    } else if (end_delay_ticks <= current_ticks) {
-        switch (getCollectState()) {
-            case IDLE:
-                if (SENSOR_FLAGS.metal_detected) { // currently uses inductive prox
-                    setStateFlag(&STATE_FLAGS.weight_in_entrance);
-                }
-                break;
-
-            case COLLECT_VERTICAL:
-                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.weight_detected);
-                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.no_vertical);
-                } else {
-                    // do nothing so far
-                }
-                break;
-
-            case COLLECT_HORISONTAL:
-                if (SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.weight_detected);
-                } else if (!SENSOR_FLAGS.limit_switch_on and SENSOR_FLAGS.metal_detected) {
-                    setStateFlag(&STATE_FLAGS.no_horisontal);
-                } else {
-                    // do nothing so far
-                }
-                break;
-            
-            case DROPPING:
-                setStateFlag(&STATE_FLAGS.dropping_complete);
-                break;
-
-            case RETURNING_TO_IDLE:
-                setStateFlag(&STATE_FLAGS.returning_complete);
-                break;
-            }
-    }
-    }
 
 
 void updateStateMachine () {
     // restricts state changes to defined stages. logic engine decides which flags to raise
-    changeStates();
+    // changeStates();
 
-    checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
-    resetStateFlag(&STATE_FLAGS.state_changed);
+    // checkChangeNavState(REVERSING, STATE_FLAGS.reverse_triggered);
+    // resetStateFlag(STATE_FLAGS.state_changed);
 
     switch(current_nav_state) {
-        case WALL_FINDING:
-            checkChangeNavState(TARGET_IDENTIFIED, &STATE_FLAGS.target_identified);
+        case STATIONARY:
+            checkChangeNavState(ROAMING, STATE_FLAGS.not_target_weight_onboard);
             break;
 
-        case TARGET_IDENTIFIED:
-            checkChangeNavState(STATIONARY, &STATE_FLAGS.weight_in_entrance);
+        case ROAMING:
+            checkChangeNavState(PURSUIT, STATE_FLAGS.target_identified);
             break;
 
-        case REVERSING:
-            checkChangeNavState(prev_nav_state, &STATE_FLAGS.reverse_complete);
+        case PURSUIT:
+            checkChangeNavState(SORTING, STATE_FLAGS.weight_in_entrance);
+            break;
+
+        case SORTING:
+            checkChangeNavState(ROAMING, STATE_FLAGS.dummy_identified);
+            checkChangeNavState(COLLECTING, STATE_FLAGS.metal_identified);
             break;
 
         case HOMING:
-            checkChangeNavState(STATIONARY, &STATE_FLAGS.home_reached);
+            checkChangeNavState(DROPPING, STATE_FLAGS.home_reached);
+            break;
+        
+        case DROPPING:
+            checkChangeNavState(STATIONARY, STATE_FLAGS.dropoff_complete);
             break;
 
-        case STATIONARY:
-            checkChangeNavState(HOMING, &STATE_FLAGS.collection_complete);
-            checkChangeNavState(WALL_FINDING, &STATE_FLAGS.collection_incomplete);
+        case COLLECTING:
+            checkChangeNavState(STATIONARY, STATE_FLAGS.collection_complete);
+            checkChangeNavState(ROAMING, STATE_FLAGS.collection_failed);
 
             switch(current_collect_state) {
+                case LOWERING_VERT:
+                    checkChangeCollectState(VERT_REACHED, timer1Expired());
+                    break;
+
+                case VERT_REACHED:
+                    checkChangeCollectState(PICKING_UP, STATE_FLAGS.weight_detected);
+                    checkChangeCollectState(LOWERING_HORI, STATE_FLAGS.no_vertical);
+                    break;
+
+                case LOWERING_HORI:
+                    checkChangeCollectState(HORI_REACHED, "timer 2 elapsed");
+                    break;
+                
+                case HORI_REACHED:
+                    checkChangeCollectState(PICKING_UP, STATE_FLAGS.weight_detected);
+                    checkChangeCollectState(RETURNING_FAILURE, STATE_FLAGS.no_horisontal);
+                    break;
+
+                case PICKING_UP:
+                    checkChangeCollectState(RETURNING_SUCCESS, "timer 3 elapsed");
+                    break;
+
+                case RETURNING_SUCCESS:
+                    // raise pickup_success flag
+                    break;
+                
+                case RETURNING_FAILURE:
+                    checkChangeCollectState(IDLE, "timer 4 elapsed");
+                    break;
+                
                 case IDLE:
-                    checkChangeCollectState(COLLECT_VERTICAL, &STATE_FLAGS.weight_in_entrance);
-                    break;
-
-                case COLLECT_VERTICAL:
-                    checkChangeCollectState(DROPPING, &STATE_FLAGS.weight_detected);
-                    checkChangeCollectState(COLLECT_HORISONTAL, &STATE_FLAGS.no_vertical);
-                    break;
-
-                case COLLECT_HORISONTAL:
-                    checkChangeCollectState(DROPPING, &STATE_FLAGS.weight_detected);
-                    checkChangeCollectState(RETURNING_TO_IDLE, &STATE_FLAGS.no_horisontal);
-                    break;
-
-                case DROPPING:
-                    checkChangeCollectState(IDLE, &STATE_FLAGS.dropping_complete);
-                    break;
-
-                case RETURNING_TO_IDLE:
-                    checkChangeCollectState(IDLE, &STATE_FLAGS.returning_complete);
-                    break;
+                    // raise pickup_success flag if iteration limit reached (cant_iterate)
+                    checkChangeCollectState(LOWERING_VERT, STATE_FLAGS.can_iterate); // should be on by default
 
             }
             break;

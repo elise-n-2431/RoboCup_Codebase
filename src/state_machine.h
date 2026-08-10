@@ -7,19 +7,24 @@
 #define STATE_MACHINE_H
 
 enum NavState {
-    WALL_FINDING,
-    TARGET_IDENTIFIED,
-    REVERSING,
+    STATIONARY,
+    ROAMING,
+    PURSUIT,
+    SORTING,
+    COLLECTING,
     HOMING,
-    STATIONARY
+    DROPPING
 };
 
 enum CollectState {
-    IDLE,
-    COLLECT_VERTICAL,
-    COLLECT_HORISONTAL,
-    DROPPING,
-    RETURNING_TO_IDLE
+    LOWERING_VERT,
+    VERT_REACHED,
+    LOWERING_HORI,
+    HORI_REACHED,
+    PICKING_UP,
+    RETURNING_SUCCESS, // returning to idle after a success
+    RETURNING_FAILURE, // returning to idle after a failure
+    IDLE
 };
 
 struct StateFlags {
@@ -32,8 +37,12 @@ struct StateFlags {
     bool reverse_complete = false;
     bool home_reached = false;
     bool collection_complete = false;
-    bool collection_incomplete = false;
+    bool collection_failed = false;
     bool dropoff_complete = false;
+    bool not_target_weight_onboard = false;
+    bool target_weight_onboard = false;
+    bool dummy_identified = false;
+    bool metal_identified = false;
 
     // collection focused
     bool weight_in_entrance = false; // detected by proximity
@@ -42,6 +51,8 @@ struct StateFlags {
     bool no_horisontal = false; // keep horisontal weight detection seperate so triggers don't overlap
     bool dropping_complete = false;
     bool returning_complete = false;
+    bool can_iterate = false;
+    bool cant_iterate = false;
 };
 
 void updateStateMachine();
