@@ -8,6 +8,7 @@
 
 const byte EMAG_PIN = 26;
 
+static bool emagState = false;
 
 void emag_init() {
     pinMode(EMAG_PIN, OUTPUT);
@@ -15,7 +16,7 @@ void emag_init() {
 }
 
 
-void emag_exe() {
+/*void emag_exe() {
     switch (getCollectState()) {
 
         case IDLE:
@@ -42,4 +43,23 @@ void emag_exe() {
 
     }
 
+}*/
+
+void emagOn()
+{
+    digitalWrite(EMAG_PIN, HIGH);
+    emagState = true;
+}
+
+
+void emagOff()
+{
+    digitalWrite(EMAG_PIN, LOW);
+    emagState = false;
+}
+
+
+bool emagIsOn()
+{
+    return emagState;
 }

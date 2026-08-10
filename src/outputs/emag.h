@@ -6,6 +6,10 @@
 #define EMAG_H
 
 void emag_init();
-void emag_exe();
 
-#endif //PICKUP_SERVO_H
+void emagOn();
+void emagOff();
+
+bool emagIsOn();
+
+#endif
