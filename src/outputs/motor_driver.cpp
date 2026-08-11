@@ -36,9 +36,9 @@ static int drivePower = 250;
 
 const int MIN_POWER  = 80;
 const int MAX_POWER  = 430;
-const int POWER_STEP = 25;
+const int POWER_STEP = 20;
 
-static float SCALING_FACTOR = 0.8;
+static float SCALING_FACTOR = 0.85;
 
 
 // Motors face opposite physical directions
@@ -69,6 +69,31 @@ static int clampPulse(int pulse)
 
     return pulse;
 }
+
+// Converts motor direction and power into a pulse width.
+//
+// Positive sign means pulse ABOVE 1500 us.
+// Negative sign means pulse BELOW 1500 us.
+//
+// Only the ABOVE 1500 side is scaled.
+static int makeMotorPulse(int motorSign)
+{
+    if (motorSign == 0) {
+        return STOP_US;
+    }
+
+    int power = drivePower;
+
+    // Reduce commands BELOW 1500 us
+    if (motorSign < 0) {
+        power = power * SCALING_FACTOR;
+    }
+
+    int pulse = STOP_US + motorSign * power;
+
+    return clampPulse(pulse);
+}
+
 
 
 static void writeMotors(int leftPulse, int rightPulse)
@@ -120,40 +145,51 @@ void driveTracks(int leftTrack, int rightTrack)
     leftTrack  = clampDirection(leftTrack);
     rightTrack = clampDirection(rightTrack);
 
-
     // Account for opposite physical orientation of motors
-    int leftSign =
-        LEFT_INVERTED ? -leftTrack : leftTrack;
+    int leftSign;
 
-    int rightSign =
-        RIGHT_INVERTED ? -rightTrack : rightTrack;
-
-    if (leftTrack > 0) {
-        drivePower = drivePower * SCALING_FACTOR;
+    if (LEFT_INVERTED) {
+        leftSign = -leftTrack;
+    }
+    else {
+        leftSign = leftTrack;
     }
 
-    if (rightTrack >0) {
-        drivePower = drivePower * SCALING_FACTOR;
+
+    int rightSign;
+
+    if (RIGHT_INVERTED) {
+        rightSign = -rightTrack;
+    }
+    else {
+        rightSign = rightTrack;
     }
 
-    int leftPulse =
-        STOP_US + leftSign * drivePower;
 
-    int rightPulse =
-        STOP_US + rightSign * drivePower;
+    // Generate pulse values.
+    // Anything above 1500 us is automatically scaled down.
+    int leftPulse = makeMotorPulse(leftSign);
+    int rightPulse = makeMotorPulse(rightSign);
 
 
     writeMotors(leftPulse, rightPulse);
-    Serial2.println(leftPulse);
-    Serial2.println(rightPulse);
-    Serial.println(leftPulse);
+
+
+    // Debug output
+    Serial.print("Left: ");
+    Serial.print(leftPulse);
+
+    Serial.print("   Right: ");
     Serial.println(rightPulse);
+
+
+    Serial2.print("Left: ");
+    Serial2.print(leftPulse);
+
+    Serial2.print("   Right: ");
+    Serial2.println(rightPulse);
 }
 
-
-// ============================================================
-// HIGH-LEVEL MOVEMENT COMMANDS
-// ============================================================
 
 void driveForward()
 {
