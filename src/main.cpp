@@ -7,7 +7,9 @@
 #include "outputs/DC_motors.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
-#include "inputs/nav_tof.h"
+// #include "inputs/nav_tof.h"
+//#include "outputs/collection.h"
+#include "inputs/tof_expander.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
 #include "inputs/xy_sensor.h"
@@ -22,7 +24,7 @@ void setup() {
     Wire.setClock(100000);
 
     //inputs
-    nav_tof_init();
+    // nav_tof_init();
     limit_switch_init();
     proximity_init();
     xy_init();
@@ -48,7 +50,8 @@ void loop() {
     emag_exe();
 
     //inputs
-    nav_tof_update();
+    tof_update();
+    tof_print_readings();
     limit_switch_exe();
     proximity_exe();
     xy_exe();
