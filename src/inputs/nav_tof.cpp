@@ -23,8 +23,6 @@ uint32_t lastNavTofReadMs = 0;
 
 bool nav_tof_init()
 {
-    Wire.begin();
-    Wire.setClock(400000);
 
     if (!io.begin(SX1509_ADDRESS))
     {

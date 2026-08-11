@@ -8,7 +8,8 @@
 
 const int NUM_WEIGHTS = 3;
 const int MAX_ITERATIONS = 3;
-void chooseAction();
-void incrementWeights();
+void choose_action();
+void increment_weights();
+void logic_exe();
 
 #endif

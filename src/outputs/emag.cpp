@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <Wire.h>
-#include <SparkFunSX1509.h> // SparkFun SX1509 I/O Expander library, v2.0.1
+#include <SparkFunSX1509.h>
 
 const byte EMAG_PIN = 26;
 
@@ -12,22 +12,22 @@ static bool emagState = false;
 void emag_init()
 {
     pinMode(EMAG_PIN, OUTPUT);
-    emagOff();
+    emag_off();
 }
 
-void emagOn()
+void emag_on()
 {
     digitalWrite(EMAG_PIN, HIGH);
     emagState = true;
 }
 
-void emagOff()
+void emag_off()
 {
     digitalWrite(EMAG_PIN, LOW);
     emagState = false;
 }
 
-bool emagIsOn()
+bool emag_is_on()
 {
     return emagState;
 }
@@ -41,15 +41,15 @@ void emag_exe()
         case LOWERING_HORI:
         case HORI_REACHED:
         case PICKING_UP:
-            emagOn();
+            emag_on();
             break;
 
         case RETURNING:
-            emagOff();
+            emag_off();
             break;
         case DECIDING:
         case IDLE:
-            emagOff();
+            emag_off();
             break;
     }
 }

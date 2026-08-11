@@ -6,10 +6,9 @@
 #define EMAG_H
 
 void emag_init();
-
-void emagOn();
-void emagOff();
-
-bool emagIsOn();
+void emag_on();
+void emag_off();
+bool emag_is_on();
+void emag_exe();
 
 #endif

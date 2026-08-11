@@ -4,7 +4,7 @@
 int current_weights = 0;
 int current_iterations = 0;
 
-void chooseAction() {
+void choose_action() {
     if (getNavState() != STATIONARY) {
         return;
     }
@@ -15,11 +15,11 @@ void chooseAction() {
     }
 }
 
-void incrementWeights() {
+void increment_weights() {
     current_weights += 1;
 }
 
-void evaluateDecidingState() {
+void eval_decide_state() {
     if (getCollectState() != DECIDING) {
         return;
     }
@@ -32,14 +32,16 @@ void evaluateDecidingState() {
     }
 }
 
-void evaluateCollectionOutcome() {
+void eval_collect_outcome() {
     if (STATE_FLAGS.collection_complete) {
-        incrementWeights();
+        increment_weights();
     }
 }
 
+
+
 void logic_exe() {
-    chooseAction();            
-    evaluateDecidingState();     
-    evaluateCollectionOutcome();
+    choose_action();            
+    eval_decide_state();     
+    eval_collect_outcome();
 }
