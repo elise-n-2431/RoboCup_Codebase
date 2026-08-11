@@ -10,8 +10,8 @@
 #include "outputs/motor_driver.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
-#include "outputs/collection.h"
-#include "inputs/nav_tof.h"
+//#include "outputs/collection.h"
+#include "inputs/tof_expander.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
 // #include "inputs/tof.h"
@@ -21,10 +21,6 @@
 
 // define global variables
 
-bool frontTofStreamEnabled = false;
-uint32_t lastFrontTofPrintMs = 0;
-
-constexpr uint16_t FRONT_TOF_PRINT_PERIOD_MS = 250;
 
 // MAIN.CPP
 
@@ -33,7 +29,7 @@ void setup() {
     // nav_tof_init();
     Wire.begin();
     Wire.setClock(100000);
-    // tof_init();
+    tof_init();
     // xy_init();
     // pickup_servo_init();
     // emag_init();
@@ -49,8 +45,9 @@ void setup() {
 
 void loop() {
 
-    logic_exe();
+    //logic_exe();
     updateStateMachine();
+    tof_update();
 
     // tof_exe();
     //xy_exe();
@@ -66,18 +63,12 @@ void loop() {
     // servo_exe();
     // emag_exe();
 
-    // nav_tof_update();
+    tof_print_readings();
 
-    if (frontTofStreamEnabled &&
-        millis() - lastFrontTofPrintMs >= FRONT_TOF_PRINT_PERIOD_MS)
-    {
-        lastFrontTofPrintMs = millis();
-        nav_tof_print(Serial);
-        nav_tof_print(Serial2);
-    }
+    
 
 
-    RobotCommand command = serial_get_command();
+    /*RobotCommand command = serial_get_command();
 
 
    switch (command)
@@ -249,5 +240,8 @@ void loop() {
 
     collection_exe();
     pickup_servo_exe();
+    */
 
 }
+
+
