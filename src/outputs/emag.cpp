@@ -9,40 +9,11 @@ const byte EMAG_PIN = 26;
 
 static bool emagState = false;
 
-void emag_init() {
+void emag_init()
+{
     pinMode(EMAG_PIN, OUTPUT);
-
+    emagOff();
 }
-
-
-/*void emag_exe() {
-    switch (getCollectState()) {
-
-        case IDLE:
-            digitalWrite(EMAG_PIN, LOW);
-            break;
-
-        case COLLECT_VERTICAL:
-            digitalWrite(EMAG_PIN, HIGH);
-            break;
-
-        case COLLECT_HORISONTAL:
-            digitalWrite(EMAG_PIN, HIGH);
-            break;
-
-        
-        case DROPPING:
-            digitalWrite(EMAG_PIN, HIGH);
-            break;
-
-
-        case RETURNING_TO_IDLE:
-            digitalWrite(EMAG_PIN, LOW);
-            break;
-
-    }
-
-}*/
 
 void emagOn()
 {
@@ -50,15 +21,35 @@ void emagOn()
     emagState = true;
 }
 
-
 void emagOff()
 {
     digitalWrite(EMAG_PIN, LOW);
     emagState = false;
 }
 
-
 bool emagIsOn()
 {
     return emagState;
+}
+
+void emag_exe()
+{
+    switch (getCollectState()) {
+
+        case LOWERING_VERT:
+        case VERT_REACHED:
+        case LOWERING_HORI:
+        case HORI_REACHED:
+        case PICKING_UP:
+            emagOn();
+            break;
+
+        case RETURNING:
+            emagOff();
+            break;
+        case DECIDING:
+        case IDLE:
+            emagOff();
+            break;
+    }
 }

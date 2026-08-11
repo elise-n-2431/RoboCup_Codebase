@@ -11,19 +11,10 @@
 NavState current_nav_state = STATIONARY;
 NavState prev_nav_state = STATIONARY;
 
-CollectState current_collect_state = LOWERING_VERT;
-CollectState prev_collect_state = LOWERING_VERT;
+CollectState current_collect_state = IDLE;
+CollectState prev_collect_state = IDLE;
 
-// StateFlags STATE_FLAGS;
-
-const int delay_idle = 100;
-const int delay_collect_vert = 100;
-const int delay_collect_hor = 100;
-const int delay_dropping = 100;
-const int delay_retrun = 100;
-const int MAX_ITERATIONS = 3;
-
-int current_pickup_iterations = 0;
+static bool pickup_succeeded = false;
 
 unsigned long timeInNavState();
 unsigned long timeInCollectState();
@@ -31,10 +22,12 @@ unsigned long timeInCollectState();
 static unsigned long navStateEnteredAt = 0;
 static unsigned long collectStateEnteredAt = 0;
 
-const unsigned long TIMER_1_DURATION = 2000;
-const unsigned long TIMER_2_DURATION = 2000;
-const unsigned long TIMER_3_DURATION = 2000;
-const unsigned long TIMER_4_DURATION = 2000;
+const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 2000;  
+const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000; 
+const unsigned long PICKUP_TIMEOUT_MS = 2000;           
+const unsigned long RETURN_TIMEOUT_MS = 2000;
+const unsigned long REVERSING_TIMEOUT_MS = 2000;
+
 
 
 unsigned long timeInNavState()
@@ -60,36 +53,10 @@ CollectState getCollectState() {
     return current_collect_state;
 }
 
-void check_timers() { 
-    switch (current_collect_state) { 
-        case LOWERING_VERT: 
-            if (timeInCollectState() >= TIMER_1_DURATION) { 
-                setStateFlag(&STATE_FLAGS.timer_1);
-            } 
-            break; 
-
-        case LOWERING_HORI: 
-            if (timeInCollectState() >= TIMER_2_DURATION) { 
-                setStateFlag(&STATE_FLAGS.timer_2); 
-            } 
-            break; 
-
-        case PICKING_UP: 
-            if (timeInCollectState() >= TIMER_3_DURATION) { 
-                setStateFlag(&STATE_FLAGS.timer_3); 
-            } 
-            break; 
-
-        case RETURNING_FAILURE: 
-            if (timeInCollectState() >= TIMER_4_DURATION) { 
-                setStateFlag(&STATE_FLAGS.timer_4);
-            } 
-            break; 
-
-        default: 
-            break; 
-    }
+NavState getNavState() {
+    return current_nav_state;
 }
+
 
 void checkChangeNavState(NavState navState, bool* flag) {
     if (*flag) {
@@ -116,17 +83,52 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
 }
 
 
-void updateStateMachine () {
-    // restricts state changes to defined stages. logic engine decides which flags to raise
-    // changeStates();
+void check_timers() { 
+    switch (current_collect_state) { 
+        case LOWERING_VERT: 
+            if (timeInCollectState() >= VERTICAL_LOWER_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.vertical_lower_timeout);
+            } 
+            break; 
 
-    // checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
-    // resetStateFlag(&STATE_FLAGS.state_changed);
+        case LOWERING_HORI: 
+            if (timeInCollectState() >= HORIZONTAL_LOWER_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.horizontal_lower_timeout); 
+            } 
+            break; 
+
+        case PICKING_UP: 
+            if (timeInCollectState() >= PICKUP_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.pickup_timeout); 
+            } 
+            break; 
+
+        case RETURNING: 
+            if (timeInCollectState() >= RETURN_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.return_timeout);
+            } 
+            break;
+
+        default: 
+            break; 
+    }
+    if (current_nav_state == REVERSING) {
+        if (timeInNavState() >= REVERSING_TIMEOUT_MS) { 
+            setStateFlag(&STATE_FLAGS.reverse_complete);
+        } 
+    }
+}
+
+void updateStateMachine() {
     check_timers();
-
-    switch(current_nav_state) {
+    if (current_nav_state != REVERSING) {
+        checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
+    }
+    
+    switch (current_nav_state) {
         case STATIONARY:
             checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
+            checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
             break;
 
         case ROAMING:
@@ -145,9 +147,13 @@ void updateStateMachine () {
         case HOMING:
             checkChangeNavState(DROPPING, &STATE_FLAGS.home_reached);
             break;
-        
+
         case DROPPING:
             checkChangeNavState(STATIONARY, &STATE_FLAGS.dropoff_complete);
+            break;
+
+        case REVERSING:
+            checkChangeNavState(prev_nav_state, &STATE_FLAGS.reverse_complete);
             break;
 
         case COLLECTING:
@@ -157,9 +163,15 @@ void updateStateMachine () {
                 break;
             }
 
-            switch(current_collect_state) {
+            switch (current_collect_state) {
+                case IDLE: {
+                    bool start_collecting = true;
+                    checkChangeCollectState(LOWERING_VERT, &start_collecting);
+                    break;
+                }
+
                 case LOWERING_VERT:
-                    checkChangeCollectState(VERT_REACHED, &STATE_FLAGS.timer_1);
+                    checkChangeCollectState(VERT_REACHED, &STATE_FLAGS.vertical_lower_timeout);
                     break;
 
                 case VERT_REACHED:
@@ -168,35 +180,42 @@ void updateStateMachine () {
                     break;
 
                 case LOWERING_HORI:
-                    checkChangeCollectState(HORI_REACHED, &STATE_FLAGS.timer_2);
+                    checkChangeCollectState(HORI_REACHED, &STATE_FLAGS.horizontal_lower_timeout);
                     break;
-                
+
                 case HORI_REACHED:
                     checkChangeCollectState(PICKING_UP, &STATE_FLAGS.magnet_hit);
-                    checkChangeCollectState(RETURNING_FAILURE, &STATE_FLAGS.no_horisontal);
+                    checkChangeCollectState(DECIDING, &STATE_FLAGS.no_horizontal);
                     break;
 
                 case PICKING_UP:
-                    checkChangeCollectState(RETURNING_SUCCESS, &STATE_FLAGS.timer_3);
+                    if (STATE_FLAGS.pickup_timeout) {
+                        pickup_succeeded = true;
+                    }
+                    checkChangeCollectState(RETURNING, &STATE_FLAGS.pickup_timeout);
                     break;
 
-                case RETURNING_SUCCESS:
-                    setStateFlag(&STATE_FLAGS.collection_complete);
-                    break;
-                
-                case RETURNING_FAILURE:
-                    checkChangeCollectState(IDLE, &STATE_FLAGS.timer_4);
-                    break;
-                
-                case IDLE:
-                    if(current_pickup_iterations >= MAX_ITERATIONS) {
-                        setStateFlag(&STATE_FLAGS.collection_failed);
-                    } else {
-                        checkChangeCollectState(LOWERING_VERT, &STATE_FLAGS.can_iterate); // should be on by default
+                case DECIDING:
+                    checkChangeCollectState(LOWERING_VERT, &STATE_FLAGS.can_iterate);
+                    if (STATE_FLAGS.cant_iterate) {
+                        pickup_succeeded = false;
                     }
+                    checkChangeCollectState(RETURNING, &STATE_FLAGS.cant_iterate);
+                    break;
+
+                case RETURNING:
+                    if (STATE_FLAGS.return_timeout) {
+                        if (pickup_succeeded) {
+                            setStateFlag(&STATE_FLAGS.collection_complete);
+                        } else {
+                            setStateFlag(&STATE_FLAGS.collection_failed);
+                        }
+                        resetStateFlag(&STATE_FLAGS.return_timeout);
+                        current_collect_state = IDLE;
+                        collectStateEnteredAt = millis();
+                    }
+                    break;
             }
             break;
-        }
-
-};
-
+    }
+}
