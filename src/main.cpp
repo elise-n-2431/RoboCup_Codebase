@@ -26,7 +26,7 @@ uint32_t lastFrontTofPrintMs = 0;
 
 constexpr uint16_t FRONT_TOF_PRINT_PERIOD_MS = 250;
 
-
+// MAIN.CPP
 
 void setup() {
     serial_init();
@@ -48,14 +48,16 @@ void setup() {
 
 
 void loop() {
+
+    logic_exe();
+    updateStateMachine();
+
     // tof_exe();
     //xy_exe();
     //display_map();
 
     // tof_visualize();
 
-    // updateStateMachine();
-    
     // // check inputs
     // proximity_exe();
     // limit_switch_exe();

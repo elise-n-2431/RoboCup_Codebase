@@ -7,6 +7,7 @@
 #define LOGIC_ENGINE_H
 
 const int NUM_WEIGHTS = 3;
+const int MAX_ITERATIONS = 3;
 void chooseAction();
 void incrementWeights();
 

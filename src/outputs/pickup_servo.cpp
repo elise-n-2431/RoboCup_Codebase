@@ -28,22 +28,17 @@ const int SLOW_STEP_US   = 10;
 const int MEDIUM_STEP_US = 20;
 const int FAST_STEP_US   = 30;
 
-
-// Speed settings
-const int SERVO_STEP_US = 5;
 const unsigned long SERVO_UPDATE_MS = 10;
 
 static unsigned long lastServoUpdate = 0;
 
-
+static void moveCraneTo(int target, int speed);
 
 void pickup_servo_init()
 {
     craneServo.attach(CRANE_SERVO_PIN, 500, 2500);
     craneIdle();
 }
-
-
 
 void craneIdle()
 {
@@ -74,9 +69,6 @@ static void moveCraneTo(int target, int speed)
     servoStepUs = speed;
 }
 
-
-
-
 void pickup_servo_exe()
 {
     switch(getCollectState()) {
@@ -101,79 +93,49 @@ void pickup_servo_exe()
             craneDrop();
             break;
 
-        case RETURNING_SUCCESS:
+        case RETURNING:
             craneIdle();
             break;
 
-        case RETURNING_FAILURE:
-            craneIdle();
+        case DECIDING:
+            // stay stationary
             break;
 
         case IDLE:
             // stay stationary
             break;
     }
-
 }
 
-// void pickup_servo_exe()
-// {
-//     unsigned long now = millis();
+// Ramps currentPulse toward targetPulse at servoStepUs per SERVO_UPDATE_MS.
+// Call every loop() tick, independent of pickup_servo_exe(), so movement
+// stays smooth regardless of how often collect state changes.
+void pickup_servo_update()
+{
+    unsigned long now = millis();
 
-//     if (now - lastServoUpdate < SERVO_UPDATE_MS) {
-//         return;
-//     }
+    if (now - lastServoUpdate < SERVO_UPDATE_MS) {
+        return;
+    }
 
-//     lastServoUpdate = now;
+    lastServoUpdate = now;
 
+    if (currentPulse < targetPulse)
+    {
+        currentPulse += servoStepUs;
 
-//     if (currentPulse < targetPulse)
-//     {
-//         currentPulse += servoStepUs;
+        if (currentPulse > targetPulse) {
+            currentPulse = targetPulse;
+        }
+    }
+    else if (currentPulse > targetPulse)
+    {
+        currentPulse -= servoStepUs;
 
-//         if (currentPulse > targetPulse) {
-//             currentPulse = targetPulse;
-//         }
-//     }
-//     else if (currentPulse > targetPulse)
-//     {
-//         currentPulse -= servoStepUs;
+        if (currentPulse < targetPulse) {
+            currentPulse = targetPulse;
+        }
+    }
 
-//         if (currentPulse < targetPulse) {
-//             currentPulse = targetPulse;
-//         }
-//     }
-
-
-//     craneServo.writeMicroseconds(currentPulse);
-// }
-
-
-
-// void servo_init() {
-//     myservo.attach(1, 500, 2500);
-// }
-
-// void servo_exe() {
-//     switch (getCollectState()) {
-//         case IDLE:
-//             break;
-
-//         case COLLECT_VERTICAL:
-//             myservo.write(vert_angle);
-//             break;
-
-//         case COLLECT_HORISONTAL:
-//             myservo.write(hors_angle);
-//             break;
-        
-//         case DROPPING:
-//             myservo.write(dropoff_angle);
-//             break;
-
-//         case RETURNING_TO_IDLE:
-//             myservo.write(idle_angle);
-//             break;
-//     }
-    
-// }
+    craneServo.writeMicroseconds(currentPulse);
+}
