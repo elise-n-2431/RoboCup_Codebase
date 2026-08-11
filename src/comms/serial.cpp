@@ -53,39 +53,40 @@ static RobotCommand parseChar(char c)
 // Convert a full text command into a RobotCommand
 // ------------------------------------------------------------
 
+#include "flag_control.h"   // add at top
+
 static RobotCommand parseLine(String command)
 {
     command.trim();
     command.toLowerCase();
 
-    if (command == "mon")
+    if (command == "mon")  { return CMD_MOTORS_ON; }
+    if (command == "moff") { return CMD_MOTORS_OFF; }
+    if (command == "tof")  { return CMD_TOF_PRINT; }
+    if (command == "tofon"){ return CMD_TOF_STREAM_ON; }
+    if (command == "toff") { return CMD_TOF_STREAM_OFF; }
+
+    // "flag <name>" — manually raise a state machine flag for a
+    // sensor that's disconnected or not yet firing.
+    if (command.startsWith("flag "))
     {
-        return CMD_MOTORS_ON;
+        String flagName = command.substring(5);
+        if (!setFlagByName(flagName))
+        {
+            Serial.print("Unknown flag: ");
+            Serial.println(flagName);
+        }
+        return CMD_NONE;  // handled here, nothing for the main loop to do
     }
 
-    if (command == "moff")
+    if (command == "flags")
     {
-        return CMD_MOTORS_OFF;
-    }
-
-    if (command == "tof")
-    {
-        return CMD_TOF_PRINT;
-    }
-
-    if (command == "tofon")
-    {
-        return CMD_TOF_STREAM_ON;
-    }
-
-    if (command == "toff")
-    {
-        return CMD_TOF_STREAM_OFF;
+        listFlagNames(Serial);
+        return CMD_NONE;
     }
 
     return CMD_NONE;
 }
-
 
 // ------------------------------------------------------------
 // Read commands from either USB Serial or Bluetooth Serial

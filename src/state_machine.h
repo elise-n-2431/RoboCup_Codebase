@@ -12,7 +12,8 @@ enum NavState {
     SORTING,
     COLLECTING,
     HOMING,
-    DROPPING,
+    OPENING,
+    CLOSING,
     REVERSING   
 };
 
@@ -31,7 +32,6 @@ struct StateFlags {
     // nav focused
     bool target_identified = false;
     bool reverse_triggered = false;
-    bool reverse_complete = false;
     bool home_reached = false;
     bool collection_complete = false;
     bool collection_failed = false;
@@ -49,10 +49,15 @@ struct StateFlags {
     bool can_iterate = false;
     bool cant_iterate = false;
 
-    bool vertical_lower_timeout = false;
-    bool horizontal_lower_timeout = false;
-    bool pickup_timeout = false;
-    bool return_timeout = false;   
+    // timers
+    bool vertical_lower_complete = false;
+    bool horizontal_lower_complete = false;
+    bool pickup_complete = false;
+    bool return_complete = false;  
+    
+    bool reverse_complete = false;
+    bool opening_complete = false;
+    bool closing_complete = false; 
 };
 
 void updateStateMachine();

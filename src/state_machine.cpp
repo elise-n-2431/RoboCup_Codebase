@@ -26,8 +26,10 @@ const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 2000;
 const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000; 
 const unsigned long PICKUP_TIMEOUT_MS = 2000;           
 const unsigned long RETURN_TIMEOUT_MS = 2000;
-const unsigned long REVERSING_TIMEOUT_MS = 2000;
 
+const unsigned long OPENING_TIMEOUT_MS = 2000;
+const unsigned long CLOSING_TIMEOUT_MS = 2000;
+const unsigned long REVERSING_TIMEOUT_MS = 2000;
 
 
 unsigned long timeInNavState()
@@ -84,42 +86,60 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
 
 
 void check_timers() { 
+    // Handles time delays in between states, raises flags when time has elapsed
+    
     switch (current_collect_state) { 
         case LOWERING_VERT: 
             if (timeInCollectState() >= VERTICAL_LOWER_TIMEOUT_MS) { 
-                setStateFlag(&STATE_FLAGS.vertical_lower_timeout);
+                setStateFlag(&STATE_FLAGS.vertical_lower_complete);
             } 
             break; 
 
         case LOWERING_HORI: 
             if (timeInCollectState() >= HORIZONTAL_LOWER_TIMEOUT_MS) { 
-                setStateFlag(&STATE_FLAGS.horizontal_lower_timeout); 
+                setStateFlag(&STATE_FLAGS.horizontal_lower_complete); 
             } 
             break; 
 
         case PICKING_UP: 
             if (timeInCollectState() >= PICKUP_TIMEOUT_MS) { 
-                setStateFlag(&STATE_FLAGS.pickup_timeout); 
+                setStateFlag(&STATE_FLAGS.pickup_complete); 
             } 
             break; 
 
         case RETURNING: 
             if (timeInCollectState() >= RETURN_TIMEOUT_MS) { 
-                setStateFlag(&STATE_FLAGS.return_timeout);
+                setStateFlag(&STATE_FLAGS.return_complete);
             } 
             break;
 
         default: 
             break; 
     }
-    if (current_nav_state == REVERSING) {
-        if (timeInNavState() >= REVERSING_TIMEOUT_MS) { 
-            setStateFlag(&STATE_FLAGS.reverse_complete);
-        } 
+    switch (current_nav_state) { 
+        case REVERSING:
+            if (timeInNavState() >= REVERSING_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.reverse_complete);
+            }
+            break;
+
+        case OPENING:
+            if (timeInNavState() >= OPENING_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.opening_complete);
+            }
+            break;
+
+        case CLOSING:
+            if (timeInNavState() >= CLOSING_TIMEOUT_MS) { 
+                setStateFlag(&STATE_FLAGS.closing_complete);
+            }
+            break;
     }
 }
 
 void updateStateMachine() {
+    // handles all state transitions and conditions
+
     check_timers();
     if (current_nav_state != REVERSING) {
         checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
@@ -145,11 +165,15 @@ void updateStateMachine() {
             break;
 
         case HOMING:
-            checkChangeNavState(DROPPING, &STATE_FLAGS.home_reached);
+            checkChangeNavState(OPENING, &STATE_FLAGS.home_reached);
             break;
 
-        case DROPPING:
-            checkChangeNavState(STATIONARY, &STATE_FLAGS.dropoff_complete);
+        case OPENING:
+            checkChangeNavState(CLOSING, &STATE_FLAGS.opening_complete);
+            break;
+
+        case CLOSING:
+            checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
             break;
 
         case REVERSING:
@@ -171,7 +195,7 @@ void updateStateMachine() {
                 }
 
                 case LOWERING_VERT:
-                    checkChangeCollectState(VERT_REACHED, &STATE_FLAGS.vertical_lower_timeout);
+                    checkChangeCollectState(VERT_REACHED, &STATE_FLAGS.vertical_lower_complete);
                     break;
 
                 case VERT_REACHED:
@@ -180,7 +204,7 @@ void updateStateMachine() {
                     break;
 
                 case LOWERING_HORI:
-                    checkChangeCollectState(HORI_REACHED, &STATE_FLAGS.horizontal_lower_timeout);
+                    checkChangeCollectState(HORI_REACHED, &STATE_FLAGS.horizontal_lower_complete);
                     break;
 
                 case HORI_REACHED:
@@ -189,10 +213,10 @@ void updateStateMachine() {
                     break;
 
                 case PICKING_UP:
-                    if (STATE_FLAGS.pickup_timeout) {
+                    if (STATE_FLAGS.pickup_complete) {
                         pickup_succeeded = true;
                     }
-                    checkChangeCollectState(RETURNING, &STATE_FLAGS.pickup_timeout);
+                    checkChangeCollectState(RETURNING, &STATE_FLAGS.pickup_complete);
                     break;
 
                 case DECIDING:
@@ -204,13 +228,13 @@ void updateStateMachine() {
                     break;
 
                 case RETURNING:
-                    if (STATE_FLAGS.return_timeout) {
+                    if (STATE_FLAGS.return_complete) {
                         if (pickup_succeeded) {
                             setStateFlag(&STATE_FLAGS.collection_complete);
                         } else {
                             setStateFlag(&STATE_FLAGS.collection_failed);
                         }
-                        resetStateFlag(&STATE_FLAGS.return_timeout);
+                        resetStateFlag(&STATE_FLAGS.return_complete);
                         current_collect_state = IDLE;
                         collectStateEnteredAt = millis();
                     }

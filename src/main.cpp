@@ -10,6 +10,7 @@
 #include "inputs/nav_tof.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
+#include "inputs/xy_sensor.h"
 #include "navigator.h"
 
 // Main.cpp 
@@ -24,6 +25,7 @@ void setup() {
     nav_tof_init();
     limit_switch_init();
     proximity_init();
+    xy_init();
 
     //outputs
     DC_motors_init();
@@ -49,6 +51,7 @@ void loop() {
     nav_tof_update();
     limit_switch_exe();
     proximity_exe();
+    xy_exe();
 
 }
 
