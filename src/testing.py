@@ -1,838 +1,787 @@
 import tkinter as tk
 from tkinter import ttk
+from dataclasses import dataclass
+from enum import Enum, auto
 import time
 
 
 # ============================================================
-# STATES
+# STATES - Mirrors your C++ enums
 # ============================================================
 
-NAV_STATES = [
-    "STATIONARY",
-    "ROAMING",
-    "PURSUIT",
-    "SORTING",
-    "COLLECTING",
-    "HOMING",
-    "DROPPING"
-]
-
-COLLECT_STATES = [
-    "LOWERING_VERT",
-    "VERT_REACHED",
-    "LOWERING_HORI",
-    "HORI_REACHED",
-    "PICKING_UP",
-    "RETURNING_SUCCESS",
-    "RETURNING_FAILURE",
-    "IDLE"
-]
+class NavState(Enum):
+    STATIONARY = auto()
+    ROAMING = auto()
+    PURSUIT = auto()
+    SORTING = auto()
+    HOMING = auto()
+    DROPPING = auto()
+    COLLECTING = auto()
 
 
-# ============================================================
-# TIMERS
-# ============================================================
-
-# Equivalent to:
-#
-# const unsigned long TIMER_1_DURATION = 5000;
-#
-# in your C++ code.
-#
-# Python uses seconds, so 5 seconds = 5.0
-TIMER_1_DURATION = 5.0
-
-TIMER_2_DURATION = 3.0
-TIMER_3_DURATION = 2.0
-TIMER_4_DURATION = 2.0
+class CollectState(Enum):
+    LOWERING_VERT = auto()
+    VERT_REACHED = auto()
+    LOWERING_HORI = auto()
+    HORI_REACHED = auto()
+    PICKING_UP = auto()
+    RETURNING_SUCCESS = auto()
+    RETURNING_FAILURE = auto()
+    IDLE = auto()
 
 
 # ============================================================
-# STATE
+# STATE FLAGS
 # ============================================================
 
-current_nav_state = "STATIONARY"
-prev_nav_state = "STATIONARY"
+@dataclass
+class StateFlags:
+    not_target_weight_onboard: bool = False
+    target_identified: bool = False
+    weight_in_entrance: bool = False
+    dummy_identified: bool = False
+    metal_identified: bool = False
 
-current_collect_state = "IDLE"
-prev_collect_state = "IDLE"
+    home_reached: bool = False
+    dropoff_complete: bool = False
 
-# Equivalent to millis() timestamps
-nav_state_entered_at = time.monotonic()
-collect_state_entered_at = time.monotonic()
+    collection_complete: bool = False
+    collection_failed: bool = False
 
+    timer_1: bool = False
+    timer_2: bool = False
+    timer_3: bool = False
+    timer_4: bool = False
 
-# ============================================================
-# FLAGS
-# ============================================================
+    weight_detected: bool = False
+    no_vertical: bool = False
+    no_horisontal: bool = False
 
-STATE_FLAGS = {
-    # Navigation
-    "target_identified": False,
-    "reverse_triggered": False,
-    "reverse_complete": False,
-    "home_reached": False,
-    "collection_complete": False,
-    "collection_failed": False,
-    "dropoff_complete": False,
-    "target_weight_onboard": False,
-    "dummy_identified": False,
-    "metal_identified": False,
-
-    # Collection
-    "weight_in_entrance": False,
-    "weight_detected": False,
-    "no_vertical": False,
-    "no_horisontal": False,
-    "dropping_complete": False,
-    "returning_complete": False,
-    "can_iterate": False,
-    "cant_iterate": False,
-}
-
-
-# ============================================================
-# TIMER FUNCTIONS
-# ============================================================
-
-def time_in_nav_state():
-    return time.monotonic() - nav_state_entered_at
-
-
-def time_in_collect_state():
-    return time.monotonic() - collect_state_entered_at
-
-
-def timer1_expired():
-    return time_in_collect_state() >= TIMER_1_DURATION
-
-
-def timer2_expired():
-    return time_in_collect_state() >= TIMER_2_DURATION
-
-
-def timer3_expired():
-    return time_in_collect_state() >= TIMER_3_DURATION
-
-
-def timer4_expired():
-    return time_in_collect_state() >= TIMER_4_DURATION
-
-
-# ============================================================
-# STATE CHANGE FUNCTIONS
-# ============================================================
-
-def check_change_nav_state(new_state, flag):
-    """
-    Python equivalent of:
-
-        checkChangeNavState(ROAMING, &STATE_FLAGS.target_weight_onboard);
-    """
-
-    global current_nav_state
-    global prev_nav_state
-    global nav_state_entered_at
-
-    if not STATE_FLAGS[flag]:
-        return
-
-    if current_nav_state == new_state:
-        return
-
-    prev_nav_state = current_nav_state
-    current_nav_state = new_state
-
-    # Equivalent to:
-    #
-    # navStateEnteredAt = millis();
-
-    nav_state_entered_at = time.monotonic()
-
-    log_transition(
-        f"NAV: {prev_nav_state} -> {current_nav_state}"
-        f"  [flag: {flag}]"
-    )
-
-    # Consume the flag
-    STATE_FLAGS[flag] = False
-
-
-def check_change_collect_state(new_state, condition):
-    """
-    Python equivalent of:
-
-        checkChangeCollectState(
-            VERT_REACHED,
-            timer1Expired()
-        );
-
-    or:
-
-        checkChangeCollectState(
-            PICKING_UP,
-            STATE_FLAGS.weight_detected
-        );
-    """
-
-    global current_collect_state
-    global prev_collect_state
-    global collect_state_entered_at
-
-    if not condition:
-        return
-
-    if current_collect_state == new_state:
-        return
-
-    # Your C++ logic:
-    #
-    # if (current_nav_state != STATIONARY) {
-    #     if (collectState != IDLE) {
-    #         collectState = IDLE;
-    #     }
-    # }
-    #
-    # This simulator follows that intention.
-
-    actual_state = new_state
-
-    if current_nav_state != "STATIONARY":
-        if new_state != "IDLE":
-            actual_state = "IDLE"
-
-    prev_collect_state = current_collect_state
-    current_collect_state = actual_state
-
-    # Equivalent to:
-    #
-    # collectStateEnteredAt = millis();
-
-    collect_state_entered_at = time.monotonic()
-
-    log_transition(
-        f"COLLECT: {prev_collect_state} -> {current_collect_state}"
-    )
+    can_iterate: bool = False
 
 
 # ============================================================
 # STATE MACHINE
 # ============================================================
 
-def update_state_machine():
+class StateMachine:
+
+    MAX_ITERATIONS = 3
+
+    def __init__(self):
+        self.flags = StateFlags()
+
+        self.current_nav_state = NavState.STATIONARY
+        self.prev_nav_state = NavState.STATIONARY
+
+        self.current_collect_state = CollectState.LOWERING_VERT
+        self.prev_collect_state = CollectState.LOWERING_VERT
+
+        self.current_pickup_iterations = 0
+
+        self.nav_state_entered_at = time.monotonic()
+        self.collect_state_entered_at = time.monotonic()
+
+        self.transition_log = []
 
     # --------------------------------------------------------
-    # NAVIGATION STATE MACHINE
+    # Utility
     # --------------------------------------------------------
 
-    if current_nav_state == "STATIONARY":
+    def set_flag(self, flag_name):
+        setattr(self.flags, flag_name, True)
+        self.log(f"FLAG RAISED: {flag_name}")
 
-        check_change_nav_state(
-            "ROAMING",
-            "target_weight_onboard"
-        )
+    def reset_flag(self, flag_name):
+        setattr(self.flags, flag_name, False)
 
-    elif current_nav_state == "ROAMING":
+    def flag_is_set(self, flag_name):
+        return getattr(self.flags, flag_name)
 
-        check_change_nav_state(
-            "PURSUIT",
-            "target_identified"
-        )
+    def log(self, message):
+        timestamp = time.strftime("%H:%M:%S")
+        self.transition_log.append(f"[{timestamp}] {message}")
 
-    elif current_nav_state == "PURSUIT":
+        # Keep log from growing forever
+        if len(self.transition_log) > 100:
+            self.transition_log.pop(0)
 
-        check_change_nav_state(
-            "SORTING",
-            "weight_in_entrance"
-        )
+    # --------------------------------------------------------
+    # Time
+    # --------------------------------------------------------
 
-    elif current_nav_state == "SORTING":
+    def time_in_nav_state(self):
+        return (time.monotonic() - self.nav_state_entered_at) * 1000
 
-        # Important:
-        # Your C++ currently checks these independently.
+    def time_in_collect_state(self):
+        return (time.monotonic() - self.collect_state_entered_at) * 1000
 
-        check_change_nav_state(
-            "ROAMING",
-            "dummy_identified"
-        )
+    # --------------------------------------------------------
+    # State changes
+    # --------------------------------------------------------
 
-        check_change_nav_state(
-            "COLLECTING",
-            "metal_identified"
-        )
+    def change_nav_state(self, new_state, flag_name):
 
-    elif current_nav_state == "HOMING":
+        if self.flag_is_set(flag_name):
 
-        check_change_nav_state(
-            "DROPPING",
-            "home_reached"
-        )
+            old_state = self.current_nav_state
 
-    elif current_nav_state == "DROPPING":
+            self.prev_nav_state = self.current_nav_state
+            self.current_nav_state = new_state
 
-        check_change_nav_state(
-            "STATIONARY",
-            "dropoff_complete"
-        )
+            # Reset flag when consumed
+            self.reset_flag(flag_name)
 
-    elif current_nav_state == "COLLECTING":
+            self.nav_state_entered_at = time.monotonic()
 
-        # Navigation transitions out of collection
+            self.log(
+                f"NAV: {old_state.name} -> {new_state.name}"
+                f"    [consumed: {flag_name}]"
+            )
 
-        check_change_nav_state(
-            "STATIONARY",
-            "collection_complete"
-        )
+            return True
 
-        check_change_nav_state(
-            "ROAMING",
-            "collection_failed"
-        )
+        return False
 
-        # ----------------------------------------------------
+    def change_collect_state(self, new_state, flag_name):
+
+        if self.flag_is_set(flag_name):
+
+            old_state = self.current_collect_state
+
+            # Same logic as your C++ code
+            if self.current_nav_state != NavState.COLLECTING:
+                if new_state != CollectState.IDLE:
+                    new_state = CollectState.IDLE
+
+            self.prev_collect_state = self.current_collect_state
+            self.current_collect_state = new_state
+
+            # Reset flag when consumed
+            self.reset_flag(flag_name)
+
+            self.collect_state_entered_at = time.monotonic()
+
+            self.log(
+                f"COLLECT: {old_state.name} -> {new_state.name}"
+                f"    [consumed: {flag_name}]"
+            )
+
+            return True
+
+        return False
+
+    # --------------------------------------------------------
+    # Timer checking
+    # --------------------------------------------------------
+
+    def check_timers(self):
+        """
+        This is intentionally NOT an exact copy of your C++ timer
+        implementation.
+
+        Your C++ code currently has:
+
+            if timer1:
+            else if timer2:
+            else if timer3:
+            else if timer4:
+
+        and all timers are 2000 ms.
+
+        That means timer_1 prevents timer_2/3/4 from ever firing.
+
+        For this test harness, timers are manually controlled using
+        the GUI buttons.
+        """
+        pass
+
+    # --------------------------------------------------------
+    # Main state machine
+    # --------------------------------------------------------
+
+    def update(self):
+
+        # ====================================================
+        # NAVIGATION STATE MACHINE
+        # ====================================================
+
+        if self.current_nav_state == NavState.STATIONARY:
+
+            self.change_nav_state(
+                NavState.ROAMING,
+                "not_target_weight_onboard"
+            )
+
+        elif self.current_nav_state == NavState.ROAMING:
+
+            self.change_nav_state(
+                NavState.PURSUIT,
+                "target_identified"
+            )
+
+        elif self.current_nav_state == NavState.PURSUIT:
+
+            self.change_nav_state(
+                NavState.SORTING,
+                "weight_in_entrance"
+            )
+
+        elif self.current_nav_state == NavState.SORTING:
+
+            # Mirrors your two checks.
+            #
+            # If both flags are raised simultaneously, both may
+            # be consumed during this update, so the second state
+            # change wins.
+            self.change_nav_state(
+                NavState.ROAMING,
+                "dummy_identified"
+            )
+
+            self.change_nav_state(
+                NavState.COLLECTING,
+                "metal_identified"
+            )
+
+        elif self.current_nav_state == NavState.HOMING:
+
+            self.change_nav_state(
+                NavState.DROPPING,
+                "home_reached"
+            )
+
+        elif self.current_nav_state == NavState.DROPPING:
+
+            self.change_nav_state(
+                NavState.STATIONARY,
+                "dropoff_complete"
+            )
+
+        # ====================================================
         # COLLECTION STATE MACHINE
-        # ----------------------------------------------------
+        # ====================================================
 
-        if current_collect_state == "LOWERING_VERT":
+        elif self.current_nav_state == NavState.COLLECTING:
 
-            check_change_collect_state(
-                "VERT_REACHED",
-                timer1_expired()
-            )
+            # Collection completed
+            if self.flags.collection_complete:
 
-        elif current_collect_state == "VERT_REACHED":
+                self.change_nav_state(
+                    NavState.STATIONARY,
+                    "collection_complete"
+                )
 
-            check_change_collect_state(
-                "PICKING_UP",
-                STATE_FLAGS["weight_detected"]
-            )
+                return
 
-            check_change_collect_state(
-                "LOWERING_HORI",
-                STATE_FLAGS["no_vertical"]
-            )
+            # Collection failed
+            if self.flags.collection_failed:
 
-        elif current_collect_state == "LOWERING_HORI":
+                self.change_nav_state(
+                    NavState.ROAMING,
+                    "collection_failed"
+                )
 
-            check_change_collect_state(
-                "HORI_REACHED",
-                timer2_expired()
-            )
+                return
 
-        elif current_collect_state == "HORI_REACHED":
+            # -----------------------------------------------
+            # Collection substates
+            # -----------------------------------------------
 
-            check_change_collect_state(
-                "PICKING_UP",
-                STATE_FLAGS["weight_detected"]
-            )
+            if self.current_collect_state == CollectState.LOWERING_VERT:
 
-            check_change_collect_state(
-                "RETURNING_FAILURE",
-                STATE_FLAGS["no_horisontal"]
-            )
+                self.change_collect_state(
+                    CollectState.VERT_REACHED,
+                    "timer_1"
+                )
 
-        elif current_collect_state == "PICKING_UP":
+            elif self.current_collect_state == CollectState.VERT_REACHED:
 
-            check_change_collect_state(
-                "RETURNING_SUCCESS",
-                timer3_expired()
-            )
+                self.change_collect_state(
+                    CollectState.PICKING_UP,
+                    "weight_detected"
+                )
 
-        elif current_collect_state == "RETURNING_SUCCESS":
+                self.change_collect_state(
+                    CollectState.LOWERING_HORI,
+                    "no_vertical"
+                )
 
-            # Add your success logic here
-            pass
+            elif self.current_collect_state == CollectState.LOWERING_HORI:
 
-        elif current_collect_state == "RETURNING_FAILURE":
+                self.change_collect_state(
+                    CollectState.HORI_REACHED,
+                    "timer_2"
+                )
 
-            check_change_collect_state(
-                "IDLE",
-                timer4_expired()
-            )
+            elif self.current_collect_state == CollectState.HORI_REACHED:
 
-        elif current_collect_state == "IDLE":
+                self.change_collect_state(
+                    CollectState.PICKING_UP,
+                    "weight_detected"
+                )
 
-            check_change_collect_state(
-                "LOWERING_VERT",
-                STATE_FLAGS["can_iterate"]
-            )
+                self.change_collect_state(
+                    CollectState.RETURNING_FAILURE,
+                    "no_horisontal"
+                )
 
+            elif self.current_collect_state == CollectState.PICKING_UP:
 
-# ============================================================
-# LOG
-# ============================================================
+                self.change_collect_state(
+                    CollectState.RETURNING_SUCCESS,
+                    "timer_3"
+                )
 
-transition_log = []
+            elif self.current_collect_state == CollectState.RETURNING_SUCCESS:
 
+                self.set_flag("collection_complete")
 
-def log_transition(message):
+            elif self.current_collect_state == CollectState.RETURNING_FAILURE:
 
-    timestamp = time.strftime("%H:%M:%S")
+                self.change_collect_state(
+                    CollectState.IDLE,
+                    "timer_4"
+                )
 
-    transition_log.append(
-        f"{timestamp}   {message}"
-    )
+            elif self.current_collect_state == CollectState.IDLE:
 
-    # Keep the log manageable
-    if len(transition_log) > 100:
-        transition_log.pop(0)
+                if self.current_pickup_iterations >= self.MAX_ITERATIONS:
+
+                    self.set_flag("collection_failed")
+
+                else:
+
+                    self.change_collect_state(
+                        CollectState.LOWERING_VERT,
+                        "can_iterate"
+                    )
 
 
 # ============================================================
 # GUI
 # ============================================================
 
-root = tk.Tk()
-root.title("State Machine Simulator")
-root.geometry("1150x750")
+class StateMachineTester:
 
+    def __init__(self, root):
 
-# ------------------------------------------------------------
-# Colours
-# ------------------------------------------------------------
+        self.root = root
+        self.root.title("State Machine Test Harness")
+        self.root.geometry("1100x750")
 
-GREEN = "#2ecc71"
-RED = "#e74c3c"
-BLUE = "#3498db"
-DARK = "#2c3e50"
-GREY = "#ecf0f1"
-YELLOW = "#f1c40f"
+        self.machine = StateMachine()
 
+        self.build_gui()
 
-# ------------------------------------------------------------
-# Top state display
-# ------------------------------------------------------------
+        # Run state machine repeatedly
+        self.update_gui()
 
-state_frame = ttk.LabelFrame(
-    root,
-    text="Current State",
-    padding=15
-)
+    # --------------------------------------------------------
+    # GUI construction
+    # --------------------------------------------------------
 
-state_frame.pack(
-    fill="x",
-    padx=10,
-    pady=10
-)
+    def build_gui(self):
 
+        # ====================================================
+        # TOP: CURRENT STATE
+        # ====================================================
 
-nav_label = tk.Label(
-    state_frame,
-    text="NAV: STATIONARY",
-    font=("Arial", 22, "bold"),
-    fg=BLUE
-)
-
-nav_label.grid(
-    row=0,
-    column=0,
-    padx=30
-)
-
-
-collect_label = tk.Label(
-    state_frame,
-    text="COLLECT: IDLE",
-    font=("Arial", 22, "bold"),
-    fg=GREEN
-)
-
-collect_label.grid(
-    row=0,
-    column=1,
-    padx=30
-)
-
-
-prev_nav_label = tk.Label(
-    state_frame,
-    text="Previous NAV: STATIONARY",
-    font=("Arial", 11)
-)
-
-prev_nav_label.grid(
-    row=1,
-    column=0,
-    padx=30,
-    pady=5
-)
-
-
-prev_collect_label = tk.Label(
-    state_frame,
-    text="Previous COLLECT: IDLE",
-    font=("Arial", 11)
-)
-
-prev_collect_label.grid(
-    row=1,
-    column=1,
-    padx=30,
-    pady=5
-)
-
-
-# ------------------------------------------------------------
-# Timer display
-# ------------------------------------------------------------
-
-timer_frame = ttk.LabelFrame(
-    root,
-    text="Timers",
-    padding=10
-)
-
-timer_frame.pack(
-    fill="x",
-    padx=10,
-    pady=5
-)
-
-
-collect_timer_label = tk.Label(
-    timer_frame,
-    text="Time in collect state: 0.00 s",
-    font=("Arial", 14)
-)
-
-collect_timer_label.pack(
-    side="left",
-    padx=20
-)
-
-
-timer1_label = tk.Label(
-    timer_frame,
-    text=f"Timer 1: 0.00 / {TIMER_1_DURATION:.2f} s",
-    font=("Arial", 14)
-)
-
-timer1_label.pack(
-    side="left",
-    padx=20
-)
-
-
-timer1_status_label = tk.Label(
-    timer_frame,
-    text="NOT EXPIRED",
-    font=("Arial", 14, "bold"),
-    fg=GREEN
-)
-
-timer1_status_label.pack(
-    side="left",
-    padx=20
-)
-
-
-# ------------------------------------------------------------
-# Flags
-# ------------------------------------------------------------
-
-flags_frame = ttk.LabelFrame(
-    root,
-    text="STATE_FLAGS — click to toggle",
-    padding=10
-)
-
-flags_frame.pack(
-    side="left",
-    fill="y",
-    padx=10,
-    pady=10
-)
-
-
-flag_buttons = {}
-
-
-def toggle_flag(flag):
-
-    STATE_FLAGS[flag] = not STATE_FLAGS[flag]
-
-    update_flag_button(flag)
-
-
-def update_flag_button(flag):
-
-    button = flag_buttons[flag]
-
-    if STATE_FLAGS[flag]:
-
-        button.config(
-            text=f"ON   {flag}",
-            bg=GREEN,
-            activebackground=GREEN
+        state_frame = ttk.LabelFrame(
+            self.root,
+            text="Current State",
+            padding=10
+        )
+        state_frame.pack(
+            fill="x",
+            padx=10,
+            pady=10
         )
 
-    else:
-
-        button.config(
-            text=f"OFF  {flag}",
-            bg=RED,
-            activebackground=RED
+        self.nav_state_label = ttk.Label(
+            state_frame,
+            text="",
+            font=("Arial", 20, "bold")
+        )
+        self.nav_state_label.grid(
+            row=0,
+            column=0,
+            padx=20
         )
 
-
-def create_flag_button(parent, flag, row):
-
-    button = tk.Button(
-        parent,
-        text=f"OFF  {flag}",
-        width=27,
-        bg=RED,
-        fg="white",
-        font=("Arial", 10, "bold"),
-        command=lambda: toggle_flag(flag)
-    )
-
-    button.grid(
-        row=row,
-        column=0,
-        pady=2
-    )
-
-    flag_buttons[flag] = button
-
-
-for row, flag in enumerate(STATE_FLAGS.keys()):
-
-    create_flag_button(
-        flags_frame,
-        flag,
-        row
-    )
-
-
-# ------------------------------------------------------------
-# Right side
-# ------------------------------------------------------------
-
-right_frame = tk.Frame(root)
-
-right_frame.pack(
-    side="right",
-    fill="both",
-    expand=True,
-    padx=10,
-    pady=10
-)
-
-
-# ------------------------------------------------------------
-# Transition log
-# ------------------------------------------------------------
-
-log_frame = ttk.LabelFrame(
-    right_frame,
-    text="Transition Log",
-    padding=10
-)
-
-log_frame.pack(
-    fill="both",
-    expand=True
-)
-
-
-log_text = tk.Text(
-    log_frame,
-    height=20,
-    width=70,
-    font=("Courier", 10),
-    state="disabled"
-)
-
-log_text.pack(
-    fill="both",
-    expand=True
-)
-
-
-def update_log():
-
-    log_text.config(state="normal")
-
-    log_text.delete(
-        "1.0",
-        tk.END
-    )
-
-    for entry in transition_log:
-
-        log_text.insert(
-            tk.END,
-            entry + "\n"
+        self.collect_state_label = ttk.Label(
+            state_frame,
+            text="",
+            font=("Arial", 20, "bold")
+        )
+        self.collect_state_label.grid(
+            row=0,
+            column=1,
+            padx=20
         )
 
-    log_text.see(tk.END)
+        self.prev_nav_label = ttk.Label(
+            state_frame,
+            text="",
+            font=("Arial", 12)
+        )
+        self.prev_nav_label.grid(
+            row=1,
+            column=0
+        )
 
-    log_text.config(state="disabled")
+        self.prev_collect_label = ttk.Label(
+            state_frame,
+            text="",
+            font=("Arial", 12)
+        )
+        self.prev_collect_label.grid(
+            row=1,
+            column=1
+        )
 
+        self.iteration_label = ttk.Label(
+            state_frame,
+            text=""
+        )
+        self.iteration_label.grid(
+            row=2,
+            column=0,
+            columnspan=2
+        )
 
-# ------------------------------------------------------------
-# Controls
-# ------------------------------------------------------------
+        # ====================================================
+        # FLAG BUTTONS
+        # ====================================================
 
-controls_frame = ttk.LabelFrame(
-    right_frame,
-    text="Controls",
-    padding=10
-)
+        flag_frame = ttk.LabelFrame(
+            self.root,
+            text="Raise State Flag",
+            padding=10
+        )
+        flag_frame.pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
 
-controls_frame.pack(
-    fill="x",
-    pady=10
-)
+        flags = [
+            ("not_target_weight_onboard", "Not Target Weight"),
+            ("target_identified", "Target Identified"),
+            ("weight_in_entrance", "Weight In Entrance"),
+            ("dummy_identified", "Dummy Identified"),
+            ("metal_identified", "Metal Identified"),
 
+            ("home_reached", "Home Reached"),
+            ("dropoff_complete", "Dropoff Complete"),
 
-def reset_machine():
+            ("weight_detected", "Weight Detected"),
+            ("no_vertical", "No Vertical"),
+            ("no_horisontal", "No Horizontal"),
 
-    global current_nav_state
-    global prev_nav_state
-    global current_collect_state
-    global prev_collect_state
-    global nav_state_entered_at
-    global collect_state_entered_at
+            ("can_iterate", "Can Iterate"),
 
-    current_nav_state = "STATIONARY"
-    prev_nav_state = "STATIONARY"
+            ("timer_1", "Timer 1"),
+            ("timer_2", "Timer 2"),
+            ("timer_3", "Timer 3"),
+            ("timer_4", "Timer 4"),
+        ]
 
-    current_collect_state = "IDLE"
-    prev_collect_state = "IDLE"
+        for index, (flag, text) in enumerate(flags):
 
-    nav_state_entered_at = time.monotonic()
-    collect_state_entered_at = time.monotonic()
+            row = index // 4
+            column = index % 4
 
-    for flag in STATE_FLAGS:
+            button = ttk.Button(
+                flag_frame,
+                text=text,
+                command=lambda f=flag: self.raise_flag(f)
+            )
 
-        STATE_FLAGS[flag] = False
-        update_flag_button(flag)
+            button.grid(
+                row=row,
+                column=column,
+                padx=5,
+                pady=5,
+                sticky="ew"
+            )
 
-    transition_log.clear()
+        for column in range(4):
+            flag_frame.columnconfigure(
+                column,
+                weight=1
+            )
 
-    log_transition("SYSTEM RESET")
+        # ====================================================
+        # COLLECTION CONTROL
+        # ====================================================
 
+        collection_frame = ttk.LabelFrame(
+            self.root,
+            text="Collection Controls",
+            padding=10
+        )
+        collection_frame.pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
 
-reset_button = tk.Button(
-    controls_frame,
-    text="RESET STATE MACHINE",
-    bg=DARK,
-    fg="white",
-    font=("Arial", 11, "bold"),
-    command=reset_machine
-)
+        ttk.Button(
+            collection_frame,
+            text="Increase Pickup Iteration",
+            command=self.increment_iteration
+        ).pack(
+            side="left",
+            padx=5
+        )
 
-reset_button.pack(
-    side="left",
-    padx=10
-)
+        ttk.Button(
+            collection_frame,
+            text="Set Iterations = 3",
+            command=self.set_max_iterations
+        ).pack(
+            side="left",
+            padx=5
+        )
 
+        ttk.Button(
+            collection_frame,
+            text="Reset Machine",
+            command=self.reset_machine
+        ).pack(
+            side="right",
+            padx=5
+        )
 
-def clear_log():
+        # ====================================================
+        # ACTIVE FLAGS
+        # ====================================================
 
-    transition_log.clear()
+        active_frame = ttk.LabelFrame(
+            self.root,
+            text="Currently Raised Flags",
+            padding=10
+        )
+        active_frame.pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
 
+        self.active_flags_label = ttk.Label(
+            active_frame,
+            text="None",
+            font=("Courier", 11)
+        )
+        self.active_flags_label.pack()
 
-clear_button = tk.Button(
-    controls_frame,
-    text="CLEAR LOG",
-    command=clear_log
-)
+        # ====================================================
+        # LOG
+        # ====================================================
 
-clear_button.pack(
-    side="left",
-    padx=10
-)
+        log_frame = ttk.LabelFrame(
+            self.root,
+            text="Transition Log",
+            padding=10
+        )
+        log_frame.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=10
+        )
+
+        self.log_text = tk.Text(
+            log_frame,
+            height=15,
+            state="disabled",
+            font=("Courier", 10)
+        )
+        self.log_text.pack(
+            fill="both",
+            expand=True
+        )
+
+    # --------------------------------------------------------
+    # Button actions
+    # --------------------------------------------------------
+
+    def raise_flag(self, flag_name):
+
+        self.machine.set_flag(flag_name)
+
+        # Immediately run an update so the transition happens
+        # without waiting for the GUI refresh cycle.
+        self.machine.update()
+
+        self.refresh_display()
+
+    def increment_iteration(self):
+
+        self.machine.current_pickup_iterations += 1
+
+        self.machine.log(
+            f"Pickup iterations = "
+            f"{self.machine.current_pickup_iterations}"
+        )
+
+        self.refresh_display()
+
+    def set_max_iterations(self):
+
+        self.machine.current_pickup_iterations = (
+            self.machine.MAX_ITERATIONS
+        )
+
+        self.machine.log(
+            f"Pickup iterations = "
+            f"{self.machine.current_pickup_iterations}"
+        )
+
+        self.refresh_display()
+
+    def reset_machine(self):
+
+        self.machine = StateMachine()
+
+        self.refresh_display()
+
+    # --------------------------------------------------------
+    # GUI updates
+    # --------------------------------------------------------
+
+    def update_gui(self):
+
+        self.machine.update()
+
+        self.refresh_display()
+
+        # Run again in 50 ms
+        self.root.after(
+            50,
+            self.update_gui
+        )
+
+    def refresh_display(self):
+
+        # ----------------------------------------------------
+        # Navigation state
+        # ----------------------------------------------------
+
+        nav = self.machine.current_nav_state
+
+        self.nav_state_label.config(
+            text=f"NAV: {nav.name}",
+            foreground=self.nav_colour(nav)
+        )
+
+        self.prev_nav_label.config(
+            text=(
+                f"Previous NAV: "
+                f"{self.machine.prev_nav_state.name}"
+            )
+        )
+
+        # ----------------------------------------------------
+        # Collection state
+        # ----------------------------------------------------
+
+        collect = self.machine.current_collect_state
+
+        self.collect_state_label.config(
+            text=f"COLLECT: {collect.name}",
+            foreground="darkgreen"
+        )
+
+        self.prev_collect_label.config(
+            text=(
+                f"Previous COLLECT: "
+                f"{self.machine.prev_collect_state.name}"
+            )
+        )
+
+        # ----------------------------------------------------
+        # Iterations
+        # ----------------------------------------------------
+
+        self.iteration_label.config(
+            text=(
+                f"Pickup iterations: "
+                f"{self.machine.current_pickup_iterations} / "
+                f"{self.machine.MAX_ITERATIONS}"
+            )
+        )
+
+        # ----------------------------------------------------
+        # Active flags
+        # ----------------------------------------------------
+
+        active = []
+
+        for name, value in vars(self.machine.flags).items():
+
+            if value:
+                active.append(name)
+
+        if active:
+            self.active_flags_label.config(
+                text=" | ".join(active),
+                foreground="red"
+            )
+        else:
+            self.active_flags_label.config(
+                text="None",
+                foreground="green"
+            )
+
+        # ----------------------------------------------------
+        # Log
+        # ----------------------------------------------------
+
+        self.log_text.config(state="normal")
+        self.log_text.delete("1.0", tk.END)
+
+        for entry in self.machine.transition_log:
+            self.log_text.insert(
+                tk.END,
+                entry + "\n"
+            )
+
+        self.log_text.see(tk.END)
+
+        self.log_text.config(state="disabled")
+
+    # --------------------------------------------------------
+    # Colours
+    # --------------------------------------------------------
+
+    def nav_colour(self, state):
+
+        colours = {
+            NavState.STATIONARY: "gray",
+            NavState.ROAMING: "blue",
+            NavState.PURSUIT: "orange",
+            NavState.SORTING: "purple",
+            NavState.HOMING: "brown",
+            NavState.DROPPING: "darkred",
+            NavState.COLLECTING: "darkgreen",
+        }
+
+        return colours.get(
+            state,
+            "black"
+        )
 
 
 # ============================================================
-# GUI UPDATE LOOP
+# MAIN
 # ============================================================
 
-def update_gui():
+if __name__ == "__main__":
 
-    # --------------------------------------------------------
-    # Run state machine
-    # --------------------------------------------------------
+    root = tk.Tk()
 
-    update_state_machine()
+    app = StateMachineTester(root)
 
-    # --------------------------------------------------------
-    # State labels
-    # --------------------------------------------------------
-
-    nav_label.config(
-        text=f"NAV: {current_nav_state}"
-    )
-
-    collect_label.config(
-        text=f"COLLECT: {current_collect_state}"
-    )
-
-    prev_nav_label.config(
-        text=f"Previous NAV: {prev_nav_state}"
-    )
-
-    prev_collect_label.config(
-        text=f"Previous COLLECT: {prev_collect_state}"
-    )
-
-    # --------------------------------------------------------
-    # Timer
-    # --------------------------------------------------------
-
-    elapsed = time_in_collect_state()
-
-    collect_timer_label.config(
-        text=f"Time in collect state: {elapsed:.2f} s"
-    )
-
-    timer1_label.config(
-        text=(
-            f"Timer 1: "
-            f"{elapsed:.2f} / "
-            f"{TIMER_1_DURATION:.2f} s"
-        )
-    )
-
-    if timer1_expired():
-
-        timer1_status_label.config(
-            text="EXPIRED",
-            fg=RED
-        )
-
-    else:
-
-        timer1_status_label.config(
-            text="NOT EXPIRED",
-            fg=GREEN
-        )
-
-    # --------------------------------------------------------
-    # Log
-    # --------------------------------------------------------
-
-    update_log()
-
-    # --------------------------------------------------------
-    # Run again in 50 ms
-    # --------------------------------------------------------
-
-    root.after(
-        50,
-        update_gui
-    )
-
-
-# ============================================================
-# START
-# ============================================================
-
-log_transition("SYSTEM STARTED")
-
-update_gui()
-
-root.mainloop()
+    root.mainloop()

@@ -14,7 +14,7 @@
 #include "inputs/nav_tof.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
-#include "inputs/tof.h"
+// #include "inputs/tof.h"
 #include "inputs/xy_sensor.h"
 #include "map.h"
 
@@ -30,17 +30,18 @@ constexpr uint16_t FRONT_TOF_PRINT_PERIOD_MS = 250;
 
 void setup() {
     serial_init();
-    nav_tof_init();
+    // nav_tof_init();
     Wire.begin();
     Wire.setClock(100000);
     // tof_init();
     // xy_init();
-    pickup_servo_init();
-    emag_init();
+    // pickup_servo_init();
+    // emag_init();
     motor_driver_init();
-    collection_init();
+    // collection_init();
     // proximity_init();
     // limit_switch_init();
+    Serial2.println("Testing123");
 }
 
 
@@ -63,7 +64,7 @@ void loop() {
     // servo_exe();
     // emag_exe();
 
-    nav_tof_update();
+    // nav_tof_update();
 
     if (frontTofStreamEnabled &&
         millis() - lastFrontTofPrintMs >= FRONT_TOF_PRINT_PERIOD_MS)

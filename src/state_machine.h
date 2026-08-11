@@ -46,13 +46,19 @@ struct StateFlags {
 
     // collection focused
     bool weight_in_entrance = false; // detected by proximity
-    bool weight_detected = false;   // detected by limit switch
+    bool magnet_hit = false;   // detected by limit switch
     bool no_vertical = false; // as transition takes time, don't switch states until either trigger
     bool no_horisontal = false; // keep horisontal weight detection seperate so triggers don't overlap
     bool dropping_complete = false;
     bool returning_complete = false;
     bool can_iterate = false;
     bool cant_iterate = false;
+
+    bool timer_1 = false;
+    bool timer_2 = false;
+    bool timer_3 = false;
+    bool timer_4 = false;
+
 };
 
 void updateStateMachine();

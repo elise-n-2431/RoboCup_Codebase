@@ -75,66 +75,105 @@ static void moveCraneTo(int target, int speed)
 }
 
 
+
+
 void pickup_servo_exe()
 {
-    unsigned long now = millis();
+    switch(getCollectState()) {
 
-    if (now - lastServoUpdate < SERVO_UPDATE_MS) {
-        return;
+        case LOWERING_VERT:
+            craneVertical();
+            break;
+
+        case VERT_REACHED:
+            // stay stationary
+            break;
+
+        case LOWERING_HORI:
+            craneHorizontal();
+            break;
+
+        case HORI_REACHED:
+            // stay stationary
+            break;
+
+        case PICKING_UP:
+            craneDrop();
+            break;
+
+        case RETURNING_SUCCESS:
+            craneIdle();
+            break;
+
+        case RETURNING_FAILURE:
+            craneIdle();
+            break;
+
+        case IDLE:
+            // stay stationary
+            break;
     }
 
-    lastServoUpdate = now;
-
-
-    if (currentPulse < targetPulse)
-    {
-        currentPulse += servoStepUs;
-
-        if (currentPulse > targetPulse) {
-            currentPulse = targetPulse;
-        }
-    }
-    else if (currentPulse > targetPulse)
-    {
-        currentPulse -= servoStepUs;
-
-        if (currentPulse < targetPulse) {
-            currentPulse = targetPulse;
-        }
-    }
-
-
-    craneServo.writeMicroseconds(currentPulse);
 }
 
+// void pickup_servo_exe()
+// {
+//     unsigned long now = millis();
+
+//     if (now - lastServoUpdate < SERVO_UPDATE_MS) {
+//         return;
+//     }
+
+//     lastServoUpdate = now;
 
 
-/*void servo_init() {
-    myservo.attach(1, 500, 2500);
-}
+//     if (currentPulse < targetPulse)
+//     {
+//         currentPulse += servoStepUs;
 
-void servo_exe() {
-    if (STATE_FLAGS.state_changed) {
-        switch (getCollectState()) {
-            case IDLE:
-                break;
+//         if (currentPulse > targetPulse) {
+//             currentPulse = targetPulse;
+//         }
+//     }
+//     else if (currentPulse > targetPulse)
+//     {
+//         currentPulse -= servoStepUs;
 
-            case COLLECT_VERTICAL:
-                myservo.write(vert_angle);
-                break;
+//         if (currentPulse < targetPulse) {
+//             currentPulse = targetPulse;
+//         }
+//     }
 
-            case COLLECT_HORISONTAL:
-                myservo.write(hors_angle);
-                break;
-            
-            case DROPPING:
-                myservo.write(dropoff_angle);
-                break;
 
-            case RETURNING_TO_IDLE:
-                myservo.write(idle_angle);
-                break;
-        }
-    }
-*/
+//     craneServo.writeMicroseconds(currentPulse);
+// }
 
+
+
+// void servo_init() {
+//     myservo.attach(1, 500, 2500);
+// }
+
+// void servo_exe() {
+//     switch (getCollectState()) {
+//         case IDLE:
+//             break;
+
+//         case COLLECT_VERTICAL:
+//             myservo.write(vert_angle);
+//             break;
+
+//         case COLLECT_HORISONTAL:
+//             myservo.write(hors_angle);
+//             break;
+        
+//         case DROPPING:
+//             myservo.write(dropoff_angle);
+//             break;
+
+//         case RETURNING_TO_IDLE:
+//             myservo.write(idle_angle);
+//             break;
+//     }
+    
+// }

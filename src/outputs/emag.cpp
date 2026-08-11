@@ -1,6 +1,5 @@
 #include "emag.h"
 #include "state_machine.h"
-#include "../inputs/sensors.h"
 #include <Arduino.h>
 #include <Servo.h>
 #include <Wire.h>

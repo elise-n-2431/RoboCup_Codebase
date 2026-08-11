@@ -17,12 +17,13 @@ static Servo motorRight;
 // ============================================================
 
 // Dual DC motor controller connected through SERIAL1 connector
-const int LEFT_PIN  = 0;
-const int RIGHT_PIN = 1;
+const int LEFT_PIN  = 30;
+const int RIGHT_PIN = 31;
 
 
 // Servo pulse values expected by motor controller
 const int STOP_US         = 1500;
+
 const int FULL_FORWARD_US = 1950;
 const int FULL_REVERSE_US = 1050;
 
@@ -36,6 +37,8 @@ static int drivePower = 250;
 const int MIN_POWER  = 80;
 const int MAX_POWER  = 430;
 const int POWER_STEP = 25;
+
+static float SCALING_FACTOR = 0.8;
 
 
 // Motors face opposite physical directions
@@ -100,7 +103,7 @@ void motor_driver_init()
     motorRight.attach(RIGHT_PIN);
 
     stopMotors();
-}
+} 
 
 
 // ============================================================
@@ -125,6 +128,13 @@ void driveTracks(int leftTrack, int rightTrack)
     int rightSign =
         RIGHT_INVERTED ? -rightTrack : rightTrack;
 
+    if (leftTrack > 0) {
+        drivePower = drivePower * SCALING_FACTOR;
+    }
+
+    if (rightTrack >0) {
+        drivePower = drivePower * SCALING_FACTOR;
+    }
 
     int leftPulse =
         STOP_US + leftSign * drivePower;
@@ -134,6 +144,10 @@ void driveTracks(int leftTrack, int rightTrack)
 
 
     writeMotors(leftPulse, rightPulse);
+    Serial2.println(leftPulse);
+    Serial2.println(rightPulse);
+    Serial.println(leftPulse);
+    Serial.println(rightPulse);
 }
 
 
