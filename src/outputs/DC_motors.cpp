@@ -4,7 +4,7 @@
 #include <Servo.h>
 #include "state_machine.h"
 #include "comms/serial.h"
-#include "navigator.h"
+// #include "navigator.h"
 
 static Servo motorLeft;
 static Servo motorRight;
@@ -116,6 +116,6 @@ void DC_motors_exe(DriveMode mode)
         return;
     }
 
-    NavCommand command = navigator_getCommand();
-    driveTracks(command.leftTrack, command.rightTrack);
+    // NavCommand command = navigator_getCommand();
+    // driveTracks(command.leftTrack, command.rightTrack);
 }

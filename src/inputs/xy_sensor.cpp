@@ -11,7 +11,7 @@
 
 #include <SPI.h>
 #include <Bitcraze_PMW3901.h>
-#include "map.h"
+// #include "map.h"
 
 #define FLOW_CS 10
 
@@ -47,7 +47,7 @@ void xy_exe()
     current_X += deltaX;
     current_Y += deltaY;
 
-    update_self(deltaX, deltaY);
+    // update_self(deltaX, deltaY);
     
 
     // Serial2.print("dX: ");

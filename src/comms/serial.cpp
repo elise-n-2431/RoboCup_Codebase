@@ -144,7 +144,6 @@ static RobotCommand readPort(Stream &port, String &buffer)
     return CMD_NONE;
 }
 
-
 // ------------------------------------------------------------
 // Initialise communications
 // ------------------------------------------------------------
