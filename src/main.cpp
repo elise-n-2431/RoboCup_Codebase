@@ -10,6 +10,7 @@
 // #include "inputs/nav_tof.h"
 //#include "outputs/collection.h"
 #include "inputs/tof_expander.h"
+#include "inputs/imu.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
 #include "inputs/xy_sensor.h"
@@ -24,44 +25,42 @@ void setup() {
     Wire.setClock(100000);
 
     //inputs
-    // nav_tof_init();
-    limit_switch_init();
-    proximity_init();
-    xy_init();
+    imu_init();
+    tof_init();
+    //limit_switch_init();
+    //proximity_init();
+    //xy_init();
 
     //outputs
-    DC_motors_init();
+    //DC_motors_init();
     pickup_servo_init();
     emag_init();
 
     // logic
     // navigator_init(); For later
-    proximity_init();
+    //proximity_init();
 }
 
 void loop() {
-    logic_exe();
-    updateStateMachine();
+    //logic_exe();
+    //updateStateMachine();
     // navigator_exe(); For later
 
     //outputs
-    DC_motors_exe(DRIVE_SERIAL);
-    pickup_servo_exe(); // does it also need to call update?
-    emag_exe();
+    //DC_motors_exe(DRIVE_SERIAL);
+    //pickup_servo_exe(); // does it also need to call update?
+    //emag_exe();
 
     //inputs
+    imu_update();
     tof_update();
     tof_print_readings();
-    limit_switch_exe();
-    proximity_exe();
-    xy_exe();
+    delay(3000);
+    //limit_switch_exe();
+    //proximity_exe();
+    //xy_exe();
 
 }
-
-
-
-
-
 
 
 // define global variables

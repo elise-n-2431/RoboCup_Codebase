@@ -41,6 +41,20 @@ const int TOF5_XSHUT = 7;
 const int TOF6_XSHUT = 8;
 const int TOF7_XSHUT = 15;
 
+// Navigation sensors
+const int NAV_OUTER_LEFT  = 6;
+const int NAV_INNER_LEFT  = 5;
+const int NAV_INNER_RIGHT = 0;
+const int NAV_OUTER_RIGHT = 7;
+
+// Weight detection sensors
+const int WEIGHT_LEFT_TOP     = 3;
+const int WEIGHT_LEFT_BOTTOM  = 4;
+const int WEIGHT_RIGHT_TOP    = 2;
+const int WEIGHT_RIGHT_BOTTOM = 1;
+
+
+
 
 
 static int tofDistances[8] = {
@@ -216,32 +230,91 @@ void tof_update()
 
 
 
-int getToFDistance(int sensorNumber)
-{
-    if (sensorNumber < 0 || sensorNumber > 7)
-    {
-        return -1;
-    }
 
-    return tofDistances[sensorNumber];
-}
+
 
 void tof_print_readings()
 {
-    for (int i = 0; i < 8; i++)
-    {
-        Serial.print("ToF ");
-        Serial.print(i);
-        Serial.print(": ");
+    Serial.print("NAV: ");
 
-        
-            Serial.print(tofDistances[i]);
-            Serial.print(" mm");
-       if (i < 7) 
-       {
-            Serial.print("   ");
-       }
-    }
+    Serial.print("OL=");
+    Serial.print(tof_get_nav_outer_left());
 
-    Serial.println();
+    Serial.print("  IL=");
+    Serial.print(tof_get_nav_inner_left());
+
+    Serial.print("  IR=");
+    Serial.print(tof_get_nav_inner_right());
+
+    Serial.print("  OR=");
+    Serial.println(tof_get_nav_outer_right());
+
+
+    Serial.print("WEIGHT: ");
+
+    Serial.print("LT=");
+    Serial.print(tof_get_weight_left_top());
+
+    Serial.print("  LB=");
+    Serial.print(tof_get_weight_left_bottom());
+
+    Serial.print("  RT=");
+    Serial.print(tof_get_weight_right_top());
+
+    Serial.print("  RB=");
+    Serial.println(tof_get_weight_right_bottom());
+}
+
+int tof_get_distance(int sensorNumber)
+{
+    return tofDistances[sensorNumber];
+}
+
+
+
+
+int tof_get_nav_outer_left()
+{
+    return tof_get_distance(NAV_OUTER_LEFT);
+}
+
+
+int tof_get_nav_inner_left()
+{
+    return tof_get_distance(NAV_INNER_LEFT);
+}
+
+
+int tof_get_nav_inner_right()
+{
+    return tof_get_distance(NAV_INNER_RIGHT);
+}
+
+
+int tof_get_nav_outer_right()
+{
+    return tof_get_distance(NAV_OUTER_RIGHT);
+}
+
+int tof_get_weight_left_top()
+{
+    return tof_get_distance(WEIGHT_LEFT_TOP);
+}
+
+
+int tof_get_weight_left_bottom()
+{
+    return tof_get_distance(WEIGHT_LEFT_BOTTOM);
+}
+
+
+int tof_get_weight_right_top()
+{
+    return tof_get_distance(WEIGHT_RIGHT_TOP);
+}
+
+
+int tof_get_weight_right_bottom()
+{
+    return tof_get_distance(WEIGHT_RIGHT_BOTTOM);
 }
