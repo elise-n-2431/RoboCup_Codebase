@@ -63,24 +63,76 @@ void loop() {
     //xy_exe();
 
 }*/
+
+void applyNavigatorCommand()
+{
+    NavCommand command =
+        navigator_getCommand();
+
+
+    if (command.motion == NAV_STOP)
+    {
+        if (motor_control_is_active())
+        {
+            motor_control_stop();
+        }
+
+        return;
+    }
+
+
+    if (command.motion == NAV_TURN)
+    {
+        if (!motor_control_is_turning())
+        {
+            motor_control_turn_to(
+                command.heading
+            );
+        }
+        else
+        {
+            motor_control_set_target_heading(
+                command.heading
+            );
+        }
+
+        return;
+    }
+
+
+    if (command.motion == NAV_DRIVE)
+    {
+        if (!motor_control_is_driving())
+        {
+            motor_control_drive_heading(
+                command.heading,
+                command.power
+            );
+        }
+        else
+        {
+            motor_control_set_target_heading(
+                command.heading
+            );
+        }
+
+        return;
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
     Serial2.begin(115200);
-
     delay(500);
-
-
     DC_motors_init();
-
     imu_init();
-
     motor_control_init();
-
     motor_control_comms_init();
-
-
-    Serial.println("Heading control ready");
+    navigator_init();
+    Serial.println(
+        "Motor heading control ready"
+    );
 }
 
 
@@ -90,10 +142,16 @@ void loop()
 
     motor_control_comms_exe();
 
+    // Navigator decides turn/drive
+    if (navigator_is_active())
+    {
+        navigator_exe();
+
+        applyNavigatorCommand();
+    }
+
     motor_control_update();
 }
-
-
 
 // define global variables
 

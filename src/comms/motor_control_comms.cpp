@@ -3,20 +3,24 @@
 #include <Arduino.h>
 
 #include "driving_controller.h"
+#include "navigator.h"
 
 
 static String bluetoothBuffer = "";
 
 
 // ============================================================
-// PROCESS COMPLETE COMMAND
+// PROCESS COMMAND
 // ============================================================
 
 static void processCommand(String command)
 {
     command.trim();
+    command.toLowerCase();
 
-    if (command.length() == 0) {
+
+    if (command.length() == 0)
+    {
         return;
     }
 
@@ -25,35 +29,60 @@ static void processCommand(String command)
     // STOP
     // --------------------------------------------------------
 
-    if (command.equalsIgnoreCase("stop"))
+    if (command == "stop")
     {
         motor_control_stop();
 
-        Serial.println("Motor control stopped");
-        Serial2.println("Motor control stopped");
+        Serial2.println("Stopped");
 
         return;
     }
 
-
-    // --------------------------------------------------------
-    // PRINT CURRENT GAINS
-    // --------------------------------------------------------
-
-    if (command.equalsIgnoreCase("gains"))
+    if (command.startsWith("nav "))
     {
-        Serial2.print("KP = ");
-        Serial2.println(motor_control_get_kp());
+        float heading =
+            command.substring(4).toFloat();
 
-        Serial2.print("KD = ");
-        Serial2.println(motor_control_get_kd());
+
+        // Cancel any previous direct command
+        motor_control_stop();
+
+
+        // Navigator now owns control
+        navigator_setTestHeading(
+            heading
+        );
+
+
+        Serial2.print("Navigator heading = ");
+        Serial2.println(heading);
 
         return;
     }
 
 
     // --------------------------------------------------------
-    // SET KP
+    // PRINT GAINS
+    // --------------------------------------------------------
+
+    if (command == "gains")
+    {
+        Serial2.print("Turn KP = ");
+        Serial2.println(
+            motor_control_get_kp()
+        );
+
+        Serial2.print("Drive KP = ");
+        Serial2.println(
+            motor_control_get_drive_kp()
+        );
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // TURN KP
     // --------------------------------------------------------
 
     if (command.startsWith("kp "))
@@ -61,13 +90,11 @@ static void processCommand(String command)
         float kp =
             command.substring(3).toFloat();
 
+
         motor_control_set_kp(kp);
 
 
-        Serial.print("KP changed to: ");
-        Serial.println(kp);
-
-        Serial2.print("KP = ");
+        Serial2.print("Turn KP = ");
         Serial2.println(kp);
 
         return;
@@ -75,22 +102,20 @@ static void processCommand(String command)
 
 
     // --------------------------------------------------------
-    // SET KD
+    // DRIVE KP
     // --------------------------------------------------------
 
-    if (command.startsWith("kd "))
+    if (command.startsWith("drivekp "))
     {
-        float kd =
-            command.substring(3).toFloat();
-
-        motor_control_set_kd(kd);
+        float kp =
+            command.substring(8).toFloat();
 
 
-        Serial.print("KD changed to: ");
-        Serial.println(kd);
+        motor_control_set_drive_kp(kp);
 
-        Serial2.print("KD = ");
-        Serial2.println(kd);
+
+        Serial2.print("Drive KP = ");
+        Serial2.println(kp);
 
         return;
     }
@@ -106,23 +131,61 @@ static void processCommand(String command)
             command.substring(5).toFloat();
 
 
-        Serial.print("Turn request: ");
-        Serial.println(angle);
-
-
-        Serial2.print("Turning ");
-        Serial2.println(angle);
+        // Direct control takes ownership
+        navigator_stop();
 
 
         motor_control_turn_relative(angle);
+
+
+        Serial2.print("Relative turn ");
+        Serial2.println(angle);
 
         return;
     }
 
 
     // --------------------------------------------------------
-    // UNKNOWN COMMAND
+    // DRIVE AT SPECIFIED POWER
     // --------------------------------------------------------
+
+    if (command.startsWith("drive "))
+    {
+        int power =
+            command.substring(6).toInt();
+
+
+        // Direct control takes ownership
+        navigator_stop();
+
+
+        motor_control_drive_current_heading(
+            power
+        );
+
+
+        Serial2.print("Driving at power ");
+        Serial2.println(power);
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // DRIVE AT DEFAULT POWER
+    // --------------------------------------------------------
+
+    if (command == "drive")
+    {
+        navigator_stop();
+
+        motor_control_drive_current_heading(300);
+
+        Serial2.println("Driving at power 300");
+
+        return;
+    }
+
 
     Serial2.print("Unknown command: ");
     Serial2.println(command);
@@ -130,7 +193,7 @@ static void processCommand(String command)
 
 
 // ============================================================
-// INITIALISE
+// INIT
 // ============================================================
 
 void motor_control_comms_init()
@@ -151,14 +214,17 @@ void motor_control_comms_exe()
             Serial2.read();
 
 
-        if (incoming == '\r') {
+        if (incoming == '\r')
+        {
             continue;
         }
 
 
         if (incoming == '\n')
         {
-            processCommand(bluetoothBuffer);
+            processCommand(
+                bluetoothBuffer
+            );
 
             bluetoothBuffer = "";
 

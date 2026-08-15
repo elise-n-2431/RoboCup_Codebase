@@ -18,7 +18,7 @@ const int FULL_REVERSE_US = 1050;
 
 static int drivePower = 250;
 
-const int MIN_POWER  = 80;
+const int MIN_POWER  = 280;
 const int MAX_POWER  = 430;
 const int POWER_STEP = 25;
 
@@ -193,5 +193,5 @@ void DC_motors_exe(DriveMode mode)
     }
 
     NavCommand command = navigator_getCommand();
-    driveTracks(command.leftTrack, command.rightTrack);
+    //driveTracks(command.leftTrack, command.rightTrack);
 }

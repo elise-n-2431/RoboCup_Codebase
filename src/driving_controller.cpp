@@ -8,15 +8,29 @@
 
 
 
-// To be tuned
-static float KP = 7.0;
-static float KD = 0.0;
+//to check if tunring or drving straight
+enum MotorControlMode
+{
+    CONTROL_IDLE,
+    CONTROL_TURNING,
+    CONTROL_DRIVE_HEADING
+};
 
+//start in idle
+static MotorControlMode controlMode = CONTROL_IDLE;
+
+// To be tuned
+static float TURN_KP = 7.0;
+
+static float DRIVE_KP = 10.0;
+
+const int MAX_DRIVE_CORRECTION = 100;
+
+static int driveBasePower = 300;
 
 // Minimum power for robot to actually rotate
 const int MIN_TURN_POWER = 300;
 
-// Keep early testing fairly gentle
 const int MAX_TURN_POWER = 450;
 
 
@@ -25,12 +39,14 @@ const float ANGLE_TOLERANCE = 2.5;
 
 
 // Must stay in tolerance this long before finishing
-const unsigned long SETTLE_TIME_MS = 150;
+const unsigned long SETTLE_TIME_MS = 100;
 
 
-// If the robot turns AWAY from the target,
+// If the robot turns away from the target,
 // change this from +1 to -1
 const int TURN_SIGN = 1;
+
+const int DRIVE_STEER_SIGN = 1;
 
 
 
@@ -40,8 +56,12 @@ static float targetHeading = 0.0;
 static float currentError = 0.0;
 static float previousError = 0.0;
 
+//varaibles used to chceck how long imu heading has been in tolerance zone
 static unsigned long previousTime = 0;
 static unsigned long toleranceStart = 0;
+
+const unsigned long CONTROL_PERIOD_MS = 20;
+
 
 
 //to make sure the angle is always positive for PD math
@@ -56,6 +76,12 @@ static float wrapHeading(float heading)
     }
 
     return heading;
+}
+
+void motor_control_set_target_heading(float heading)
+{
+    targetHeading =
+        wrapHeading(heading);
 }
 
 //also wraps the heading angle error
@@ -78,11 +104,10 @@ static float headingError(float target, float current)
 
 void motor_control_init()
 {
-    controlActive = false;
+    controlMode = CONTROL_IDLE;
 
     targetHeading = 0.0;
     currentError = 0.0;
-    previousError = 0.0;
 
     previousTime = millis();
     toleranceStart = 0;
@@ -107,9 +132,9 @@ void motor_control_turn_relative(float angle)
     previousTime = millis();
     toleranceStart = 0;
 
-    controlActive = true;
+    controlMode = CONTROL_TURNING;
 
-    //for testing printing to bluetooth as well as serial when plugged into teensy
+
     Serial.print("Current heading: ");
     Serial.println(currentHeading);
 
@@ -130,54 +155,81 @@ void motor_control_turn_relative(float angle)
 }
 
 
-
 void motor_control_turn_to(float heading)
 {
     targetHeading = wrapHeading(heading);
 
-    float currentHeading = imu_get_heading();
+    float currentHeading =
+        imu_get_heading();
 
-    currentError = headingError(targetHeading, currentHeading);
-
-    previousError = currentError;
+    currentError =
+        headingError(
+            targetHeading,
+            currentHeading
+        );
 
     previousTime = millis();
     toleranceStart = 0;
 
-    controlActive = true;
+    controlMode = CONTROL_TURNING;
+}
+
+
+void motor_control_drive_current_heading(int basePower)
+{
+    targetHeading = imu_get_heading();
+
+    driveBasePower = basePower;
+
+    currentError = 0.0;
+
+    previousTime = millis();
+
+    controlMode = CONTROL_DRIVE_HEADING;
+
+
+    Serial.print("Driving at heading: ");
+    Serial.println(targetHeading);
+
+    Serial.print("Base power: ");
+    Serial.println(driveBasePower);
+
+    Serial2.print("Driving at heading: ");
+    Serial2.println(targetHeading);
+
+    Serial2.print("Base power: ");
+    Serial2.println(driveBasePower);
+}
+
+void motor_control_drive_heading(float heading, int basePower)
+{
+    targetHeading = wrapHeading(heading);
+    driveBasePower = basePower;
+
+    currentError =
+        headingError(
+            targetHeading,
+            imu_get_heading()
+        );
+
+    previousTime = millis();
+
+    controlMode = CONTROL_DRIVE_HEADING;
 }
 
 
 
-void motor_control_update()
+static void updateTurnControl(float currentHeading, unsigned long currentTime)
 {
-    if (!controlActive) {
-        return;
-    }
+    currentError =
+        headingError(
+            targetHeading,
+            currentHeading
+        );
 
-
-    unsigned long currentTime = millis();
-
-    float dt =
-        (currentTime - previousTime) / 1000.0;
-
-
-    if (dt <= 0.0) {
-        return;
-    }
-
-
-    float currentHeading = imu_get_heading();
-
-
-    currentError = headingError(targetHeading, currentHeading);
-
-
-    //checking if the target has been reached
+    //we have reached the imu heading wanted
     if (fabs(currentError) <= ANGLE_TOLERANCE)
     {
-        // target reached so for testing turn off the motors
-        //has to be wihtin the tolerance for a certain amount of time however 
         DC_motors_setPower(0, 0);
 
 
@@ -192,56 +244,50 @@ void motor_control_update()
             >= SETTLE_TIME_MS
         )
         {
-            controlActive = false;
+            controlMode = CONTROL_IDLE;
 
             Serial.print("Turn complete. Heading: ");
             Serial.println(currentHeading);
-
-            Serial2.print("Turn complete. Heading: ");
-            Serial2.println(currentHeading);
         }
 
-
-        previousError = currentError;
-        previousTime = currentTime;
 
         return;
     }
 
-    //reset the time wihtihn the tolerance zone to stop accumiulation when not there
+
     toleranceStart = 0;
 
 
     
-    float derivative = (currentError - previousError) / dt;
+
+    float output =
+        TURN_KP * currentError;
 
 
-    float output = KP * currentError + KD * derivative;
+    int turnPower =
+        abs((int)output);
 
 
-    // --------------------------------------------------------
-    // CONVERT TO MOTOR POWER
-    // --------------------------------------------------------
-
-    int turnPower = abs((int)output);
-
-
-    if (turnPower < MIN_TURN_POWER) {
+    if (turnPower < MIN_TURN_POWER)
+    {
         turnPower = MIN_TURN_POWER;
     }
 
 
-    if (turnPower > MAX_TURN_POWER) {
+    if (turnPower > MAX_TURN_POWER)
+    {
         turnPower = MAX_TURN_POWER;
     }
 
 
     int direction;
 
-    if (output > 0) {
+    if (output > 0)
+    {
         direction = 1;
     }
-    else {
+    else
+    {
         direction = -1;
     }
 
@@ -252,31 +298,112 @@ void motor_control_update()
         * TURN_SIGN;
 
 
-    // Tracks run opposite directions for an on-the-spot turn
     DC_motors_setPower(
         turnPower,
         -turnPower
     );
+}
 
 
-    previousError = currentError;
+static void updateDriveHeadingControl(
+    float currentHeading
+)
+{
+    currentError =headingError(targetHeading, currentHeading);
+
+
+    float correction = DRIVE_KP * currentError;
+    correction *= DRIVE_STEER_SIGN;
+
+
+    // Don't let heading correction become enormous
+    if (correction > MAX_DRIVE_CORRECTION)
+    {
+        correction = MAX_DRIVE_CORRECTION;
+    }
+
+    if (correction < -MAX_DRIVE_CORRECTION)
+    {
+        correction = -MAX_DRIVE_CORRECTION;
+    }
+
+
+    int leftPower =
+        driveBasePower + (int)correction;
+
+    int rightPower =
+        driveBasePower - (int)correction;
+
+
+    DC_motors_setPower(
+        leftPower,
+        rightPower
+    );
+}
+
+void motor_control_update()
+{
+    if (controlMode == CONTROL_IDLE)
+    {
+        return;
+    }
+
+
+    unsigned long currentTime =
+        millis();
+
+
+    if (
+        currentTime - previousTime
+        < CONTROL_PERIOD_MS
+    )
+    {
+        return;
+    }
+
+
     previousTime = currentTime;
+
+
+    float currentHeading =
+        imu_get_heading();
+
+
+    if (controlMode == CONTROL_TURNING)
+    {
+        updateTurnControl(
+            currentHeading,
+            currentTime
+        );
+
+        return;
+    }
+
+
+    if (controlMode == CONTROL_DRIVE_HEADING)
+    {
+        updateDriveHeadingControl(
+            currentHeading
+        );
+
+        return;
+    }
 }
 
 
 
 void motor_control_stop()
 {
-    controlActive = false;
+    controlMode = CONTROL_IDLE;
 
     DC_motors_setPower(0, 0);
+    Serial.println("Motor control stopped");
+    Serial2.println("Motor control stopped");
 }
-
-
 
 bool motor_control_is_active()
 {
-    return controlActive;
+    return controlMode != CONTROL_IDLE;
 }
 
 
@@ -291,25 +418,39 @@ float motor_control_get_error()
     return currentError;
 }
 
+
 void motor_control_set_kp(float kp)
 {
-    KP = kp;
-}
-
-
-void motor_control_set_kd(float kd)
-{
-    KD = kd;
+    TURN_KP = kp;
 }
 
 
 float motor_control_get_kp()
 {
-    return KP;
+    return TURN_KP;
 }
 
 
-float motor_control_get_kd()
+
+
+void motor_control_set_drive_kp(float kp)
 {
-    return KD;
+    DRIVE_KP = kp;
+}
+
+
+float motor_control_get_drive_kp()
+{
+    return DRIVE_KP;
+}
+
+bool motor_control_is_turning()
+{
+    return controlMode == CONTROL_TURNING;
+}
+
+
+bool motor_control_is_driving()
+{
+    return controlMode == CONTROL_DRIVE_HEADING;
 }
