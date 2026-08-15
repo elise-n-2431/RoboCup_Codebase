@@ -3,6 +3,7 @@
 #include "state_machine.h"
 #include "logic_engine.h"
 #include "comms/serial.h"
+#include "comms/motor_control_comms.h"
 // #include "comms/command_router.h"
 #include "outputs/DC_motors.h"
 #include "outputs/pickup_servo.h"
@@ -15,11 +16,12 @@
 #include "inputs/limit_switch.h"
 #include "inputs/xy_sensor.h"
 #include "navigator.h"
+#include "driving_controller.h"
 
 // Main.cpp 
 // Contains the executable and initialisation files for the purpose of implementing a task scheduler
 
-void setup() {
+/*void setup() {
     serial_init();
     Wire.begin();
     Wire.setClock(100000);
@@ -60,7 +62,37 @@ void loop() {
     //proximity_exe();
     //xy_exe();
 
+}*/
+void setup()
+{
+    Serial.begin(115200);
+    Serial2.begin(115200);
+
+    delay(500);
+
+
+    DC_motors_init();
+
+    imu_init();
+
+    motor_control_init();
+
+    motor_control_comms_init();
+
+
+    Serial.println("Heading control ready");
 }
+
+
+void loop()
+{
+    imu_update();
+
+    motor_control_comms_exe();
+
+    motor_control_update();
+}
+
 
 
 // define global variables

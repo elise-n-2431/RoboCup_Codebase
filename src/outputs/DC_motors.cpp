@@ -28,6 +28,12 @@ const bool RIGHT_INVERTED = true;
 static int manualLeftTrack = 0;
 static int manualRightTrack = 0;
 
+/*to try and make the motors even as they turn faster when below 1500
+ then above so if the number sent will be under 1500 it will be scaled less */
+
+
+static float SCALING_FACTOR = 0.85;
+
 static void increaseDrivePower()
 {
     drivePower += POWER_STEP;
@@ -75,6 +81,73 @@ static void writeMotors(int leftPulse, int rightPulse)
     motorRight.writeMicroseconds(clampPulse(rightPulse));
 }
 
+//allows for a number between 0 and 1 to be sent to the motor for steering 
+static int makeMotorPulse(int motorPower)
+{
+    if (motorPower > MAX_POWER) {
+        motorPower = MAX_POWER;
+    }
+
+    if (motorPower < -MAX_POWER) {
+        motorPower = -MAX_POWER;
+    }
+
+    if (motorPower == 0) {
+        return STOP_US;
+    }
+
+    int direction;
+
+    if (motorPower > 0) {
+        direction = 1;
+    }
+    else {
+        direction = -1;
+    }
+
+    int power = abs(motorPower);
+
+    // Scales the side below 1500 as found with the testing
+    if (direction < 0) {
+        power = power * SCALING_FACTOR;
+    }
+
+    return clampPulse(
+        STOP_US + direction * power
+    );
+}
+
+
+
+void DC_motors_setPower(int leftPower, int rightPower)
+{
+    int leftMotorPower =
+        LEFT_INVERTED ? -leftPower : leftPower;
+
+    int rightMotorPower =
+        RIGHT_INVERTED ? -rightPower : rightPower;
+
+    int leftPulse = makeMotorPulse(leftMotorPower);
+    int rightPulse = makeMotorPulse(rightMotorPower);
+    writeMotors(
+        leftPulse,
+        rightPulse
+    );
+
+    Serial.print("Left pulse: ");
+    Serial.print(leftPulse);
+
+    Serial.print("   Right pulse: ");
+    Serial.println(rightPulse);
+
+    Serial2.print("Left pulse: ");
+    Serial2.print(leftPulse);
+
+    Serial2.print("   Right pulse: ");
+    Serial2.println(rightPulse);
+}
+
+
 static void driveTracks(int leftTrack, int rightTrack)
 {
     leftTrack  = clampDirection(leftTrack);
@@ -83,7 +156,10 @@ static void driveTracks(int leftTrack, int rightTrack)
     int leftSign  = LEFT_INVERTED  ? -leftTrack  : leftTrack;
     int rightSign = RIGHT_INVERTED ? -rightTrack : rightTrack;
 
-    writeMotors(STOP_US + leftSign * drivePower, STOP_US + rightSign * drivePower);
+    DC_motors_setPower(
+        leftTrack * drivePower,
+        rightTrack * drivePower
+    );
 }
 
 static void stopMotors()
