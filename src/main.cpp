@@ -3,8 +3,7 @@
 #include "state_machine.h"
 #include "logic_engine.h"
 #include "comms/serial.h"
-#include "comms/motor_control_comms.h"
-// #include "comms/command_router.h"
+#include "comms/flag_control.h"
 #include "outputs/DC_motors.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
@@ -17,6 +16,14 @@
 #include "inputs/xy_sensor.h"
 #include "navigator.h"
 #include "driving_controller.h"
+#include "inputs/encoders.h"
+#include "pose.h"
+
+static bool tofStreamEnabled = false;
+
+static unsigned long lastTofPrintTime = 0;
+
+const unsigned long TOF_PRINT_PERIOD_MS = 2500;
 
 // Main.cpp 
 // Contains the executable and initialisation files for the purpose of implementing a task scheduler
@@ -64,323 +71,193 @@ void loop() {
 
 }*/
 
-void applyNavigatorCommand()
+void handleRobotCommand(RobotCommand command)
 {
-    NavCommand command =
-        navigator_getCommand();
-
-
-    if (command.motion == NAV_STOP)
+    switch (command)
     {
-        if (motor_control_is_active())
-        {
+        // ====================================================
+        // MANUAL MOTOR COMMANDS
+        // ====================================================
+
+        case CMD_FORWARD:
+        case CMD_REVERSE:
+        case CMD_LEFT:
+        case CMD_RIGHT:
+        case CMD_STOP:
+        case CMD_SPEED_UP:
+        case CMD_SPEED_DOWN:
+
+            if (
+                !navigator_is_active() &&
+                !motor_control_is_active()
+            )
+            {
+                DC_motors_exe(command);
+            }
+
+            break;
+
+
+        // ====================================================
+        // TOF
+        // ====================================================
+
+        case CMD_TOF_PRINT:
+            Serial2.println("ToF reached");
+            tof_print_readings(Serial2);
+            tof_print_readings(Serial);
+
+            break;
+
+
+        case CMD_TOF_STREAM_ON:
+
+            tofStreamEnabled = true;
+
+            lastTofPrintTime =
+                millis() - TOF_PRINT_PERIOD_MS;
+
+            Serial.println("ToF streaming ON");
+            Serial2.println("ToF streaming ON");
+
+            break;
+
+
+        case CMD_TOF_STREAM_OFF:
+
+            tofStreamEnabled = false;
+
+            Serial.println("ToF streaming OFF");
+            Serial2.println("ToF streaming OFF");
+
+            break;
+
+
+        // ====================================================
+        // LATER
+        // ====================================================
+
+        case CMD_COLLECT:
+
+            Serial.println(
+                "Collection command received"
+            );
+
+            break;
+
+
+        case CMD_MOTORS_ON:
+
+            Serial.println(
+                "Motor enable command received"
+            );
+
+            break;
+
+
+        case CMD_MOTORS_OFF:
+
             motor_control_stop();
-        }
+            navigator_stop();
 
-        return;
-    }
+            DC_motors_setPower(0, 0);
 
-
-    if (command.motion == NAV_TURN)
-    {
-        if (!motor_control_is_turning())
-        {
-            motor_control_turn_to(
-                command.heading
+            Serial.println(
+                "Motors stopped"
             );
-        }
-        else
-        {
-            motor_control_set_target_heading(
-                command.heading
-            );
-        }
 
-        return;
-    }
+            break;
 
 
-    if (command.motion == NAV_DRIVE)
-    {
-        if (!motor_control_is_driving())
-        {
-            motor_control_drive_heading(
-                command.heading,
-                command.power
-            );
-        }
-        else
-        {
-            motor_control_set_target_heading(
-                command.heading
-            );
-        }
+        case CMD_NONE:
+        default:
 
-        return;
+            break;
     }
 }
 
 void setup()
 {
-    Serial.begin(115200);
-    Serial2.begin(115200);
-    delay(500);
+    // Communications
+    serial_init();
+    encoders_init();
+
+    // Hardware
     DC_motors_init();
+
     imu_init();
+
+    tof_init();
+
+    // Control
     motor_control_init();
-    motor_control_comms_init();
+
     navigator_init();
+
+    pose_init();
+
     Serial.println(
-        "Motor heading control ready"
+        "Navigation and heading control ready"
+    );
+
+    Serial2.println(
+        "Navigation and heading control ready"
+    );
+
+    Serial2.println(
+        "Type help for commands"
     );
 }
 
+static unsigned long lastPosePrint = 0;
+
+
+static bool poseStreamEnabled = true;
+
+static unsigned long lastPosePrintTime = 0;
+
+const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void loop()
 {
+    // Latest heading
     imu_update();
+    tof_update();
+    pose_update();
+    if (poseStreamEnabled && millis() - lastPosePrintTime >= POSE_PRINT_PERIOD_MS)
+    {
+    lastPosePrintTime = millis();
+    pose_print_csv(Serial2);
+    }
+    // USB + Bluetooth commands
+    RobotCommand command =
+        serial_exe();
 
-    motor_control_comms_exe();
 
-    // Navigator decides turn/drive
+    handleRobotCommand(
+        command
+    );
+
+    // Autonomous navigator
     if (navigator_is_active())
     {
         navigator_exe();
-
-        applyNavigatorCommand();
     }
 
+    // Run heading feedback control
     motor_control_update();
+
+    if (
+        tofStreamEnabled &&
+        millis() - lastTofPrintTime
+        >= TOF_PRINT_PERIOD_MS
+    )
+    {
+        lastTofPrintTime = millis();
+
+        tof_print_readings(Serial);
+        tof_print_readings(Serial2);
+    }
 }
 
-// define global variables
 
-// bool frontTofStreamEnabled = false;
-// uint32_t lastFrontTofPrintMs = 0;
-
-// constexpr uint16_t FRONT_TOF_PRINT_PERIOD_MS = 250;
-
-
-// void setup() {
-//     serial_init();
-//     // nav_tof_init();
-//     Wire.begin();
-//     Wire.setClock(100000);
-//     // tof_init();
-//     // xy_init();
-//     // pickup_servo_init();
-//     // emag_init();
-//     motor_driver_init();
-//     // collection_init();
-//     // proximity_init();
-//     // limit_switch_init();
-//     Serial2.println("Testing123");
-// }
-
-
-
-
-// void loop() {
-
-//     logic_exe();
-//     updateStateMachine();
-
-//     // tof_exe();
-//     //xy_exe();
-//     //display_map();
-
-//     // tof_visualize();
-
-//     // // check inputs
-//     // proximity_exe();
-//     // limit_switch_exe();
-
-//     // // change outputs
-//     // servo_exe();
-//     // emag_exe();
-
-//     // nav_tof_update();
-
-//     if (frontTofStreamEnabled &&
-//         millis() - lastFrontTofPrintMs >= FRONT_TOF_PRINT_PERIOD_MS)
-//     {
-//         lastFrontTofPrintMs = millis();
-//         nav_tof_print(Serial);
-//         nav_tof_print(Serial2);
-//     }
-
-
-//     RobotCommand command = serial_get_command();
-
-
-//    switch (command)
-//     {
-        
-
-//         case CMD_FORWARD:
-
-//             if (!collectionIsActive())
-//             {
-//                 driveForward();
-//                 Serial.println("Forward");
-//             }
-
-//             break;
-
-
-       
-
-//         case CMD_REVERSE:
-
-//             if (!collectionIsActive())
-//             {
-//                 driveReverse();
-//                 Serial.println("Reverse");
-//             }
-
-//             break;
-
-
-   
-
-
-//         case CMD_LEFT:
-
-//             if (!collectionIsActive())
-//             {
-//                 turnLeft();
-//                 Serial.println("Left");
-//             }
-
-//             break;
-
-
-
-//         case CMD_RIGHT:
-
-//             if (!collectionIsActive())
-//             {
-//                 turnRight();
-//                 Serial.println("Right");
-//             }
-
-//             break;
-
-
-
-
-//         case CMD_STOP:
-
-//             // Stop is always allowed, even during collection
-//             stopMotors();
-
-//             Serial.println("Stop");
-
-//             break;
-
-
-       
-
-//         case CMD_SPEED_UP:
-
-//             increaseDrivePower();
-
-//             Serial.print("Drive power = ");
-//             Serial.println(getDrivePower());
-//             Serial2.print("Drive power = ");
-//             Serial2.println(getDrivePower());
-//             break;
-
-
-       
-
-//         case CMD_SPEED_DOWN:
-
-//             decreaseDrivePower();
-
-//             Serial.print("Drive power = ");
-//             Serial.println(getDrivePower());
-//             Serial2.print("Drive power = ");
-//             Serial2.println(getDrivePower());
-//             break;
-
-
-    
-
-//         case CMD_MOTORS_ON:
-
-//             armMotors();
-
-//             Serial.println("Motors ON");
-
-//             break;
-
-
-
-
-//         case CMD_MOTORS_OFF:
-
-//             // Always allowed for safety
-//             disarmMotors();
-
-//             Serial.println("Motors OFF");
-
-//             break;
-
-
-  
-
-//         case CMD_COLLECT:
-
-//             if (!collectionIsActive())
-//             {
-//                 Serial.println("Starting collection");
-//                 Serial2.println("Starting collection");
-//                 collection_start();
-//             }
-//             else
-//             {
-//                 Serial.println("Collection already running");
-//                 Serial2.println("Collection already running");
-//             }
-
-//             break;
-
-//         case CMD_TOF_PRINT:
-//             nav_tof_print(Serial);
-//             nav_tof_print(Serial2);
-//             break;
-
-
-//         case CMD_TOF_STREAM_ON:
-
-//             frontTofStreamEnabled = true;
-
-//             // Makes the first set print immediately
-//             lastFrontTofPrintMs = millis() - FRONT_TOF_PRINT_PERIOD_MS;
-
-//             Serial.println("Front ToF streaming ON");
-//             Serial2.println("Front ToF streaming ON");
-//             break;
-
-
-//         case CMD_TOF_STREAM_OFF:
-
-//             frontTofStreamEnabled = false;
-
-//             Serial.println("Front ToF streaming OFF");
-//             Serial2.println("Front ToF streaming OFF");
-//             break;
-
-
-
-
-//         case CMD_NONE:
-//         default:
-//             break;
-//     }
-
-//     collection_exe();
-//     pickup_servo_exe();
-
-// }

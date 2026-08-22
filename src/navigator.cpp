@@ -1,155 +1,137 @@
 #include "navigator.h"
-#include "map.h"
+
 #include <Arduino.h>
 #include <math.h>
-#include "inputs/imu.h"
 
-static NavCommand currentCommand =
-{
-    NAV_STOP,
-    0.0,
-    0
-};
-/* Note: just placeholder, not written by me */
-/* Takes map and decides motor motion */
+#include "inputs/imu.h"
+#include "driving_controller.h"
+
+
+// ============================================================
+// NAVIGATOR STATE
+// ============================================================
 
 static float testHeading = 0.0;
 
 static bool testActive = false;
 
 
-// How far off-heading (in "cell direction" terms) we tolerate before
-// treating ourselves as aligned and driving straight instead of turning.
+// If further away than this,
+// turn before trying to drive.
 const float ALIGN_TOLERANCE = 3.0;
 
+
+// Normal navigation drive power
 const int NAV_DRIVE_POWER = 350;
 
-void navigator_init()
-{
-    currentCommand =
-    {
-        NAV_STOP,
-        0.0,
-        0
-    };
 
-    testActive = false;
+// ============================================================
+// ANGLE HELPERS
+// ============================================================
+
+static float wrapHeading(float heading)
+{
+    while (heading >= 360.0)
+    {
+        heading -= 360.0;
+    }
+
+
+    while (heading < 0.0)
+    {
+        heading += 360.0;
+    }
+
+
+    return heading;
 }
 
-static float headingError(float target, float current)
+
+static float headingError(
+    float target,
+    float current
+)
 {
-    float error = target - current;
+    float error =
+        target - current;
+
 
     while (error > 180.0)
     {
         error -= 360.0;
     }
 
+
     while (error < -180.0)
     {
         error += 360.0;
     }
 
+
     return error;
 }
 
 
-// Very simple frontier-seeking: scan the map for the nearest cell marked
-// FRONTIER, then point roughly at it. This is a starting structure, not
-// real path planning — no obstacle avoidance, no shortest-path routing.
-/*static bool findNearestFrontier(int &targetX, int &targetY)
+// ============================================================
+// INITIALISE
+// ============================================================
+
+void navigator_init()
 {
-    int bestDistSq = -1;
+    testHeading = 0.0;
 
-    for (int y = 0; y < MAP_HEIGHT; y++) {
-        for (int x = 0; x < MAP_WIDTH; x++) {
-            if (map[x][y] != 3 // frontier ) {
-                continue;
-            }
+    testActive = false;
+}
 
-            int dx = x - self_x;
-            int dy = y - self_y;
-            int distSq = dx * dx + dy * dy;
 
-            if (bestDistSq < 0 || distSq < bestDistSq) {
-                bestDistSq = distSq;
-                targetX = x;
-                targetY = y;
-            }
-        }
-    }
-
-    return bestDistSq >= 0;
-}*/
-
-// Turns coarse dx/dy toward a target into a track command.
-// TODO: replace with heading-based steering once heading_rad is reliable —
-// this version only looks at which axis has the bigger gap, it doesn't
-// know which way the robot is actually facing.
-/*static NavCommand commandTowards(int targetX, int targetY)
-{
-    int dx = targetX - self_x;
-    int dy = targetY - self_y;
-
-    if (dx == 0 && dy == 0) {
-        return {0, 0}; // arrived
-    }
-
-    if (abs(dx) > abs(dy)) {
-        return (dx > 0) ? NavCommand{+1, -1} : NavCommand{-1, +1}; // turn toward +x / -x
-    }
-
-    return (dy > 0) ? NavCommand{+1, +1} : NavCommand{-1, -1}; // drive toward +y / -y
-}*/
-
-/*void navigator_exe()
-{
-    int targetX, targetY;
-
-    if (!findNearestFrontier(targetX, targetY)) {
-        currentCommand = {0, 0}; // nothing left to explore — hold position
-        return;
-    }
-
-    currentCommand = commandTowards(targetX, targetY);
-}*/
+// ============================================================
+// TEMPORARY ABSOLUTE HEADING TEST
+// ============================================================
 
 void navigator_setTestHeading(float heading)
 {
-    testHeading = heading;
+    testHeading =
+        wrapHeading(heading);
 
-    while (testHeading >= 360.0)
+
+    // New navigator command replaces any direct
+    // turn/drive controller command.
+    if (motor_control_is_active())
     {
-        testHeading -= 360.0;
+        motor_control_stop();
     }
 
-    while (testHeading < 0.0)
-    {
-        testHeading += 360.0;
-    }
 
     testActive = true;
 
 
-    Serial.print("Navigator target heading: ");
-    Serial.println(testHeading);
+    Serial.print(
+        "Navigator target heading: "
+    );
 
-    Serial2.print("Navigator target heading: ");
-    Serial2.println(testHeading);
+    Serial.println(
+        testHeading
+    );
+
+
+    Serial2.print(
+        "Navigator target heading: "
+    );
+
+    Serial2.println(
+        testHeading
+    );
 }
 
+
+// ============================================================
+// NAVIGATOR
+// ============================================================
 
 void navigator_exe()
 {
     if (!testActive)
     {
-        currentCommand =
-        {
-            NAV_STOP,
-            0.0,
-            0
-        };
-
         return;
     }
 
@@ -165,47 +147,67 @@ void navigator_exe()
         );
 
 
-    // First align robot
+    // ========================================================
+    // NOT ALIGNED:
+    // TURN TO THE DESIRED HEADING
+    // ========================================================
+
     if (fabs(error) > ALIGN_TOLERANCE)
     {
-        currentCommand =
+        if (!motor_control_is_turning())
         {
-            NAV_TURN,
-            testHeading,
-            0
-        };
+            motor_control_turn_to(
+                testHeading
+            );
+        }
+        else
+        {
+            // Don't restart the controller every loop.
+            // Just update its target.
+            motor_control_set_target_heading(
+                testHeading
+            );
+        }
+
 
         return;
     }
 
 
-    // Once aligned, drive forward on that heading
-    currentCommand =
+    // ========================================================
+    // ALIGNED:
+    // DRIVE WHILE HOLDING THE HEADING
+    // ========================================================
+
+    if (!motor_control_is_driving())
     {
-        NAV_DRIVE,
-        testHeading,
-        NAV_DRIVE_POWER
-    };
+        motor_control_drive_heading(
+            testHeading,
+            NAV_DRIVE_POWER
+        );
+    }
+    else
+    {
+        motor_control_set_target_heading(
+            testHeading
+        );
+    }
 }
 
 
-NavCommand navigator_getCommand()
-{
-    return currentCommand;
-}
+// ============================================================
+// STOP NAVIGATION
+// ============================================================
 
 void navigator_stop()
 {
     testActive = false;
-
-    currentCommand =
-    {
-        NAV_STOP,
-        0.0,
-        0
-    };
 }
 
+
+// ============================================================
+// STATE
+// ============================================================
 
 bool navigator_is_active()
 {

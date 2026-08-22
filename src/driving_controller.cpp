@@ -50,7 +50,7 @@ const int DRIVE_STEER_SIGN = 1;
 
 
 
-static bool controlActive = false; //for testing, wehrther control being used
+
 
 static float targetHeading = 0.0;
 static float currentError = 0.0;

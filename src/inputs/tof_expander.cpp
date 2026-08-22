@@ -233,36 +233,36 @@ void tof_update()
 
 
 
-void tof_print_readings()
+void tof_print_readings(Stream &port)
 {
-    Serial.print("NAV: ");
+    port.print("NAV: ");
 
-    Serial.print("OL=");
-    Serial.print(tof_get_nav_outer_left());
+    port.print("OL=");
+    port.print(tof_get_nav_outer_left());
 
-    Serial.print("  IL=");
-    Serial.print(tof_get_nav_inner_left());
+    port.print("  IL=");
+    port.print(tof_get_nav_inner_left());
 
-    Serial.print("  IR=");
-    Serial.print(tof_get_nav_inner_right());
+    port.print("  IR=");
+    port.print(tof_get_nav_inner_right());
 
-    Serial.print("  OR=");
-    Serial.println(tof_get_nav_outer_right());
+    port.print("  OR=");
+    port.println(tof_get_nav_outer_right());
 
 
-    Serial.print("WEIGHT: ");
+    port.print("WEIGHT: ");
 
-    Serial.print("LT=");
-    Serial.print(tof_get_weight_left_top());
+    port.print("LT=");
+    port.print(tof_get_weight_left_top());
 
-    Serial.print("  LB=");
-    Serial.print(tof_get_weight_left_bottom());
+    port.print("  LB=");
+    port.print(tof_get_weight_left_bottom());
 
-    Serial.print("  RT=");
-    Serial.print(tof_get_weight_right_top());
+    port.print("  RT=");
+    port.print(tof_get_weight_right_top());
 
-    Serial.print("  RB=");
-    Serial.println(tof_get_weight_right_bottom());
+    port.print("  RB=");
+    port.println(tof_get_weight_right_bottom());
 }
 
 int tof_get_distance(int sensorNumber)

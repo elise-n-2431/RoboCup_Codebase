@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+
 enum RobotCommand
 {
     CMD_NONE,
@@ -26,7 +27,10 @@ enum RobotCommand
     CMD_TOF_STREAM_OFF
 };
 
+
 void serial_init();
-RobotCommand serial_get_command();
+
+RobotCommand serial_exe();
+
 
 #endif
