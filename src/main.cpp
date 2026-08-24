@@ -176,6 +176,45 @@ void handleRobotCommand(RobotCommand command)
     }
 }
 
+void printRobotTelemetry(Stream &port)
+{
+    port.print("ROBOT,");
+
+    port.print(pose_get_x_mm());
+    port.print(",");
+
+    port.print(pose_get_y_mm());
+    port.print(",");
+
+    port.print(pose_get_heading_deg());
+    port.print(",");
+
+    // Navigation ToFs
+    port.print(tof_get_nav_outer_left());
+    port.print(",");
+
+    port.print(tof_get_nav_inner_left());
+    port.print(",");
+
+    port.print(tof_get_nav_inner_right());
+    port.print(",");
+
+    port.print(tof_get_nav_outer_right());
+    port.print(",");
+
+    // Weight ToFs
+    port.print(tof_get_weight_left_top());
+    port.print(",");
+
+    port.print(tof_get_weight_left_bottom());
+    port.print(",");
+
+    port.print(tof_get_weight_right_top());
+    port.print(",");
+
+    port.println(tof_get_weight_right_bottom());
+}
+
 void setup()
 {
     // Communications
@@ -227,7 +266,7 @@ void loop()
     if (poseStreamEnabled && millis() - lastPosePrintTime >= POSE_PRINT_PERIOD_MS)
     {
     lastPosePrintTime = millis();
-    pose_print_csv(Serial2);
+    printRobotTelemetry(Serial2);
     }
     // USB + Bluetooth commands
     RobotCommand command =

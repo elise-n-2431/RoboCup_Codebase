@@ -1,8 +1,11 @@
 #include <stdint.h>
 #include <HardwareSerial.h>
+#include "pose.h"
 
-const int MAP_WIDTH = 10;
-const int MAP_HEIGHT = 10;
+const int CELL_SIZE_MM = 50;
+
+const int MAP_WIDTH = 98;
+const int MAP_HEIGHT = 48;
 
 // Figure out conversion rate
 
@@ -17,16 +20,56 @@ uint8_t map[MAP_WIDTH][MAP_HEIGHT];
 // 6: weight
 // 7: ramp
 
+enum MapState
+{
+    MAP_UNEXPLORED = 0,
+    MAP_EMPTY = 1,
+    MAP_OBSTACLE = 2,
+    MAP_FRONTIER = 3,
+    MAP_SELF = 4,
+    MAP_HOME = 5,
+    MAP_WEIGHT = 6,
+    MAP_RAMP = 7
+};
+
+// for testing put the robot in centre of the map
+const float MAP_ORIGIN_X_MM = 2450.0f;
+const float MAP_ORIGIN_Y_MM = 1200.0f;
+
+
+
 int self_x = 0;
 int self_y = 0;
 
 void update_self(int d_x, int d_y) {
-    if (abs(d_x) >= 1) {
-        self_x += 1;
-    } if (abs(d_y) >= 1) {
-        self_y += 1;
-    }
+        self_x =
+        world_to_cell_x(
+            pose_get_x_mm()
+        );
+
+    self_y =
+        world_to_cell_y(
+            pose_get_y_mm()
+        );
 }
+
+int world_to_cell_x(float x_mm)
+{
+    return (int)(
+        (x_mm + MAP_ORIGIN_X_MM)
+        / CELL_SIZE_MM
+    );
+}
+
+int world_to_cell_y(float y_mm)
+{
+    return (int)(
+        (y_mm + MAP_ORIGIN_Y_MM)
+        / CELL_SIZE_MM
+    );
+}
+
+
 
 void display_map() {
     for (int y = 0; y < MAP_HEIGHT; y++) {

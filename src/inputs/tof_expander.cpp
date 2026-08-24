@@ -54,6 +54,26 @@ const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
 
 
+const int NUM_TOF_SENSORS = 8;
+const int TOF_FILTER_SIZE = 3;
+
+const int NAV_TOF_MAX_MM = 800;
+const int WEIGHT_TOF_MAX_MM = 600;
+
+
+
+static int tofRawDistances[NUM_TOF_SENSORS];
+
+static int tofFilterBuffer[NUM_TOF_SENSORS][TOF_FILTER_SIZE];
+
+static int tofFilterIndex[NUM_TOF_SENSORS];
+
+static int tofFilterCount[NUM_TOF_SENSORS];
+
+static int tofFilteredDistances[NUM_TOF_SENSORS];
+
+static bool tofReadingValid[NUM_TOF_SENSORS];
+
 
 
 
@@ -195,40 +215,25 @@ void tof_init()
     initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
     initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
 
+    for (int sensor = 0; sensor < NUM_TOF_SENSORS; sensor++)
+    {
+        tofRawDistances[sensor] = -1;
+        tofFilteredDistances[sensor] = -1;
 
+        tofFilterIndex[sensor] = 0;
+        tofFilterCount[sensor] = 0;
+
+        for (int i = 0; i < TOF_FILTER_SIZE; i++)
+        {
+            tofFilterBuffer[sensor][i] = -1;
+        }
+    }
+    for (int sensor = 0; sensor < NUM_TOF_SENSORS; sensor++)
+    {
+        tofReadingValid[sensor] = false;
+    }
     Serial.println("ToF setup complete");
 }
-
-
-//the black and purple tofs read in different ways hence why below there are two different commands
-void tof_update()
-{
-    tofDistances[0] =
-        tof0.readRangeContinuousMillimeters();
-
-    tofDistances[1] =
-        tof1.read();
-
-    tofDistances[2] =
-        tof2.read();
-
-    tofDistances[3] =
-        tof3.read();
-
-    tofDistances[4] =
-        tof4.read();
-
-    tofDistances[5] =
-        tof5.readRangeContinuousMillimeters();
-
-    tofDistances[6] =
-        tof6.readRangeContinuousMillimeters();
-
-    tofDistances[7] =
-        tof7.readRangeContinuousMillimeters();
-}
-
-
 
 
 
@@ -265,11 +270,204 @@ void tof_print_readings(Stream &port)
     port.println(tof_get_weight_right_bottom());
 }
 
-int tof_get_distance(int sensorNumber)
+
+//3 size buffer meidan filter used for ToFs
+
+static int median3(int a,int b,int c)
 {
-    return tofDistances[sensorNumber];
+    if (a > b)
+    {
+        int temp = a;
+        a = b;
+        b = temp;
+    }
+
+    if (b > c)
+    {
+        int temp = b;
+        b = c;
+        c = temp;
+    }
+
+    if (a > b)
+    {
+        int temp = a;
+        a = b;
+        b = temp;
+    }
+
+    return b;
 }
 
+static void updateMedianFilter(int sensor, int distance, int maxDistance)
+{
+    if (
+        sensor < 0 ||
+        sensor >= NUM_TOF_SENSORS
+    )
+    {
+        return;
+    }
+
+
+    // Invalid / out-of-range reading
+    if (
+        distance <= 0 ||
+        distance > maxDistance
+    )
+    {
+        tofReadingValid[sensor] = false;
+
+        return;
+    }
+
+
+    tofReadingValid[sensor] = true;
+
+
+    tofFilterBuffer[sensor]
+                   [tofFilterIndex[sensor]]
+        = distance;
+
+
+    tofFilterIndex[sensor]++;
+
+
+    if (
+        tofFilterIndex[sensor]
+        >= TOF_FILTER_SIZE
+    )
+    {
+        tofFilterIndex[sensor] = 0;
+    }
+
+
+    if (
+        tofFilterCount[sensor]
+        < TOF_FILTER_SIZE
+    )
+    {
+        tofFilterCount[sensor]++;
+    }
+
+
+    if (tofFilterCount[sensor] == 1)
+    {
+        tofFilteredDistances[sensor] =
+            tofFilterBuffer[sensor][0];
+
+        return;
+    }
+
+
+    if (tofFilterCount[sensor] == 2)
+    {
+        int a =
+            tofFilterBuffer[sensor][0];
+
+        int b =
+            tofFilterBuffer[sensor][1];
+
+        tofFilteredDistances[sensor] =
+            (a + b) / 2;
+
+        return;
+    }
+
+
+    tofFilteredDistances[sensor] =
+        median3(
+            tofFilterBuffer[sensor][0],
+            tofFilterBuffer[sensor][1],
+            tofFilterBuffer[sensor][2]
+        );
+}
+
+
+//the black and purple tofs read in different ways hence why below there are two different commands
+void tof_update()
+{
+    int distance0 =  tof0.readRangeContinuousMillimeters();  
+    tofRawDistances[0] = distance0;
+    updateMedianFilter(0,distance0,NAV_TOF_MAX_MM);
+
+    int distance1 = tof1.read();
+    tofRawDistances[1] = distance1;
+    updateMedianFilter(1,distance1, WEIGHT_TOF_MAX_MM);
+    
+
+    int distance2 = tof2.read();    
+    tofRawDistances[2] = distance2;
+    updateMedianFilter(2,distance2, NAV_TOF_MAX_MM);
+    
+
+    int distance3 = tof3.read();
+    tofRawDistances[3] = distance3;
+    updateMedianFilter(3,distance3, NAV_TOF_MAX_MM);
+    
+
+    int distance4 = tof4.read();
+    tofRawDistances[4] = distance4;
+    updateMedianFilter(4,distance4, NAV_TOF_MAX_MM);
+    
+
+    int distance5 = tof5.readRangeContinuousMillimeters();
+    tofRawDistances[5] = distance5;
+    updateMedianFilter(5,distance5,NAV_TOF_MAX_MM);
+    
+
+    int distance6 = tof6.readRangeContinuousMillimeters();
+    tofRawDistances[6] = distance6;
+    updateMedianFilter(6,distance6,NAV_TOF_MAX_MM);
+
+
+    int distance7 = tof7.readRangeContinuousMillimeters();
+    tofRawDistances[7] = distance7;
+    updateMedianFilter(7,distance7, NAV_TOF_MAX_MM);
+}
+
+
+
+int tof_get_distance(
+    int sensorNumber
+)
+{
+    if (
+        sensorNumber < 0 ||
+        sensorNumber >= NUM_TOF_SENSORS
+    )
+    {
+        return 0;
+    }
+
+
+    if (!tofReadingValid[sensorNumber])
+    {
+        return 0;
+    }
+
+
+    return tofFilteredDistances[
+        sensorNumber
+    ];
+}
+
+int tof_get_raw_distance(
+    int sensorNumber
+)
+{
+    if (
+        sensorNumber < 0 ||
+        sensorNumber >= NUM_TOF_SENSORS
+    )
+    {
+        return -1;
+    }
+
+    return tofRawDistances[
+        sensorNumber
+    ];
+}
 
 
 

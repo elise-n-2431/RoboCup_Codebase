@@ -4,13 +4,15 @@
 void tof_init();
 void tof_update();
 
-int tof_get_distance(int sensorNumber);
 
 // Navigation ToFs
 int tof_get_nav_outer_left();
 int tof_get_nav_inner_left();
 int tof_get_nav_inner_right();
 int tof_get_nav_outer_right();
+
+int tof_get_raw_distance(int sensorNumber);
+int tof_get_distance(int sensorNumber);
 
 
 // Weight detection ToFs

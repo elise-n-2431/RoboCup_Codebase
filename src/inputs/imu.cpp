@@ -7,7 +7,7 @@
 #include <utility/imumaths.h>
 
 #include "imu.h"
-
+#include <math.h>
 
 // IMU OBJECT
 
@@ -34,6 +34,19 @@ static int calSystem = 0;
 static int calGyro   = 0;
 static int calAccel  = 0;
 static int calMag    = 0;
+
+
+float heading_samples[3] = {
+    0.0f,
+    0.0f,
+    0.0f
+};
+
+int heading_sample_index = 0;
+
+int heading_sample_count = 0;
+
+float filtered_heading = 0.0f;
 
 
 
@@ -128,6 +141,23 @@ static void saveCalibration()
 }
 
 
+float imu_angle_difference(
+    float angle1,
+    float angle2
+);
+
+float imu_median_heading(
+    float a,
+    float b,
+    float c
+);
+
+void imu_update_heading_filter(
+    float new_heading
+);
+
+
+
 // ============================================================
 // INITIALISATION
 // ============================================================
@@ -194,6 +224,7 @@ void imu_update()
     pitch   = euler.y();
     roll    = euler.z();
 
+    imu_update_heading_filter(heading);
 
     
     // Read calibration status
@@ -231,7 +262,7 @@ void imu_update()
 
 float imu_get_heading()
 {
-    return heading;
+    return filtered_heading;
 }
 
 
@@ -320,4 +351,126 @@ void imu_clear_calibration()
     Serial.println(
         "Saved IMU calibration cleared - restart and recalibrate"
     );
+}
+
+float imu_angle_difference(
+    float angle1,
+    float angle2
+)
+{
+    float difference =
+        angle1 - angle2;
+
+
+    while (difference > 180.0f)
+    {
+        difference -= 360.0f;
+    }
+
+
+    while (difference < -180.0f)
+    {
+        difference += 360.0f;
+    }
+
+
+    return difference;
+}
+
+
+float imu_median_heading(
+    float a,
+    float b,
+    float c
+)
+{
+    float score_a =
+        fabs(
+            imu_angle_difference(a, b)
+        )
+        +
+        fabs(
+            imu_angle_difference(a, c)
+        );
+
+
+    float score_b =
+        fabs(
+            imu_angle_difference(b, a)
+        )
+        +
+        fabs(
+            imu_angle_difference(b, c)
+        );
+
+
+    float score_c =
+        fabs(
+            imu_angle_difference(c, a)
+        )
+        +
+        fabs(
+            imu_angle_difference(c, b)
+        );
+
+
+    if (
+        score_a <= score_b
+        &&
+        score_a <= score_c
+    )
+    {
+        return a;
+    }
+
+
+    if (score_b <= score_c)
+    {
+        return b;
+    }
+
+
+    return c;
+}
+
+void imu_update_heading_filter(
+    float new_heading
+)
+{
+    heading_samples[
+        heading_sample_index
+    ] = new_heading;
+
+
+    heading_sample_index++;
+
+    if (heading_sample_index >= 3)
+    {
+        heading_sample_index = 0;
+    }
+
+
+    if (heading_sample_count < 3)
+    {
+        heading_sample_count++;
+    }
+
+
+    // Until we have three readings,
+    // just use the latest heading
+    if (heading_sample_count < 3)
+    {
+        filtered_heading =
+            new_heading;
+
+        return;
+    }
+
+
+    filtered_heading =
+        imu_median_heading(
+            heading_samples[0],
+            heading_samples[1],
+            heading_samples[2]
+        );
 }
