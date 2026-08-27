@@ -24,7 +24,11 @@ enum RobotCommand
 
     CMD_TOF_PRINT,
     CMD_TOF_STREAM_ON,
-    CMD_TOF_STREAM_OFF
+    CMD_TOF_STREAM_OFF,
+    OPEN_GATE,
+    CLOSE_GATE,
+    WEIGHT_TEST,
+    WEIGHT_STOP
 };
 
 

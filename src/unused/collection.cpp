@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#include "outputs/motor_driver.h"
+#include "driving_controller.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
 
@@ -38,9 +38,9 @@ static unsigned long stateStartTime = 0;
 // Tune them from physical testing.
 
 const unsigned long SETTLE_TIME_MS  = 1500;
-const unsigned long LOWER_TIME_MS   = 1700;
+const unsigned long LOWER_TIME_MS   = 2400;
 const unsigned long GRAB_TIME_MS    = 600;
-const unsigned long LIFT_TIME_MS    = 1200;
+const unsigned long LIFT_TIME_MS    = 1800;
 const unsigned long RELEASE_TIME_MS = 800;
 const unsigned long RETURN_TIME_MS  = 800;
 
@@ -73,16 +73,20 @@ void collection_init()
 void collection_start()
 {
     // Ignore another request while already collecting
-    if (collectionState != COLLECTION_IDLE) {
+    if (collectionState != COLLECTION_IDLE)
+    {
         return;
     }
 
     Serial.println("Collection started");
+    Serial2.println("Collection started");
 
-    // Always stop the chassis first
-    stopMotors();
+    // Stop chassis before operating crane
+    motor_control_stop();
 
-    changeState(COLLECTION_SETTLING);
+    changeState(
+        COLLECTION_SETTLING
+    );
 }
 
 
@@ -124,7 +128,7 @@ void collection_exe()
             {
                 Serial.println("Magnet ON");
 
-                emagOn();
+                emag_on();
 
                 changeState(COLLECTION_GRABBING);
             }
@@ -154,7 +158,7 @@ void collection_exe()
             {
                 Serial.println("Magnet OFF");
 
-                emagOff();
+                emag_off();
 
                 changeState(COLLECTION_RELEASING);
             }

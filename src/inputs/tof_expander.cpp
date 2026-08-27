@@ -19,6 +19,7 @@ static VL53L0X tof0;
 static VL53L0X tof5;
 static VL53L0X tof6;
 static VL53L0X tof7;
+static VL53L0X tof8;
 
 // black sensors
 static VL53L1X tof1;
@@ -40,6 +41,7 @@ const int TOF4_XSHUT = 6;
 const int TOF5_XSHUT = 7;
 const int TOF6_XSHUT = 8;
 const int TOF7_XSHUT = 15;
+const int TOF8_XSHUT = 9;
 
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
@@ -48,17 +50,18 @@ const int NAV_INNER_RIGHT = 0;
 const int NAV_OUTER_RIGHT = 7;
 
 // Weight detection sensors
-const int WEIGHT_LEFT_TOP     = 3;
-const int WEIGHT_LEFT_BOTTOM  = 4;
+const int WEIGHT_LEFT_TOP     = 4;
+const int WEIGHT_LEFT_BOTTOM  = 3;
 const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
+const int WEIGHT_MIDDLE = 8;
 
 
-const int NUM_TOF_SENSORS = 8;
+const int NUM_TOF_SENSORS = 9;
 const int TOF_FILTER_SIZE = 3;
 
-const int NAV_TOF_MAX_MM = 800;
-const int WEIGHT_TOF_MAX_MM = 600;
+const int NAV_TOF_MAX_MM = 1200;
+const int WEIGHT_TOF_MAX_MM = 800;
 
 
 
@@ -77,9 +80,9 @@ static bool tofReadingValid[NUM_TOF_SENSORS];
 
 
 
-static int tofDistances[8] = {
+static int tofDistances[9] = {
     0, 0, 0, 0,
-    0, 0, 0, 0
+    0, 0, 0, 0, 0
 };
 
 
@@ -159,7 +162,8 @@ static bool initialiseL1(
 
     sensor.setAddress(address);
 
-    sensor.setDistanceMode(VL53L1X::Long);
+    sensor.setDistanceMode(VL53L1X::Short);
+    sensor.setROISize(8, 8);
 
     sensor.setMeasurementTimingBudget(50000);
 
@@ -214,6 +218,7 @@ void tof_init()
     initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
     initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
     initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
+    initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
 
     for (int sensor = 0; sensor < NUM_TOF_SENSORS; sensor++)
     {
@@ -268,6 +273,9 @@ void tof_print_readings(Stream &port)
 
     port.print("  RB=");
     port.println(tof_get_weight_right_bottom());
+
+    port.print("  MIDDLE =");
+    port.println(tof_get_weight_middle());
 }
 
 
@@ -398,17 +406,17 @@ void tof_update()
 
     int distance2 = tof2.read();    
     tofRawDistances[2] = distance2;
-    updateMedianFilter(2,distance2, NAV_TOF_MAX_MM);
+    updateMedianFilter(2,distance2, WEIGHT_TOF_MAX_MM);
     
 
     int distance3 = tof3.read();
     tofRawDistances[3] = distance3;
-    updateMedianFilter(3,distance3, NAV_TOF_MAX_MM);
+    updateMedianFilter(3,distance3, WEIGHT_TOF_MAX_MM);
     
 
     int distance4 = tof4.read();
     tofRawDistances[4] = distance4;
-    updateMedianFilter(4,distance4, NAV_TOF_MAX_MM);
+    updateMedianFilter(4,distance4, WEIGHT_TOF_MAX_MM);
     
 
     int distance5 = tof5.readRangeContinuousMillimeters();
@@ -424,6 +432,10 @@ void tof_update()
     int distance7 = tof7.readRangeContinuousMillimeters();
     tofRawDistances[7] = distance7;
     updateMedianFilter(7,distance7, NAV_TOF_MAX_MM);
+
+    int distance8 = tof8.readRangeContinuousMillimeters();
+    tofRawDistances[8] = distance8;
+    updateMedianFilter(8,distance8, NAV_TOF_MAX_MM);
 }
 
 
@@ -511,6 +523,11 @@ int tof_get_weight_right_top()
     return tof_get_distance(WEIGHT_RIGHT_TOP);
 }
 
+
+int tof_get_weight_middle()
+{
+    return tof_get_distance(WEIGHT_MIDDLE);
+}
 
 int tof_get_weight_right_bottom()
 {

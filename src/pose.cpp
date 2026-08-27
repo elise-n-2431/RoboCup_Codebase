@@ -47,14 +47,6 @@ void pose_reset()
     previousRightCount =
         encoders_get_right_count();
 
-
-    Serial.print(
-        "Pose reset. Start heading: "
-    );
-
-    Serial.println(
-        startHeadingDeg
-    );
 }
 
 

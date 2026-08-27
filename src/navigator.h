@@ -21,5 +21,11 @@ void navigator_stop();
 
 bool navigator_is_active();
 
+void navigator_start_weight_test();
+
+void navigator_update_weight_test();
+
+void navigator_stop_weight_test();
+
 
 #endif

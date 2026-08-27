@@ -69,6 +69,7 @@ current_weight_tof = {
     "left_bottom": 0.0,
     "right_top": 0.0,
     "right_bottom": 0.0,
+    "middle": 0.0,
 }
 
 
@@ -612,34 +613,23 @@ def update_plot_view():
         current_y + VIEW_HALF_HEIGHT
     )
 
-
 def update_weight_diagnostics():
 
-    left_top = current_weight_tof[
-        "left_top"
-    ]
+    left_top = current_weight_tof["left_top"]
+    left_bottom = current_weight_tof["left_bottom"]
 
-    left_bottom = current_weight_tof[
-        "left_bottom"
-    ]
+    right_top = current_weight_tof["right_top"]
+    right_bottom = current_weight_tof["right_bottom"]
 
-    right_top = current_weight_tof[
-        "right_top"
-    ]
-
-    right_bottom = current_weight_tof[
-        "right_bottom"
-    ]
+    middle = current_weight_tof["middle"]
 
 
     left_difference = (
-        left_top
-        - left_bottom
+        left_top - left_bottom
     )
 
     right_difference = (
-        right_top
-        - right_bottom
+        right_top - right_bottom
     )
 
 
@@ -652,7 +642,9 @@ def update_weight_diagnostics():
         f"RIGHT  "
         f"Top: {right_top:.0f} mm   "
         f"Bottom: {right_bottom:.0f} mm   "
-        f"Difference: {right_difference:.0f} mm"
+        f"Difference: {right_difference:.0f} mm\n"
+
+        f"MIDDLE: {middle:.0f} mm"
     )
 
 
@@ -701,7 +693,7 @@ def update(frame):
         parts = line.split(",")
 
 
-        if len(parts) != 12:
+        if len(parts) != 13:
             continue
 
 
@@ -746,6 +738,9 @@ def update(frame):
             current_weight_tof[
                 "right_bottom"
             ] = float(parts[11])
+            current_weight_tof[
+                "middle"
+            ] = float(parts[12])
 
 
         except ValueError:

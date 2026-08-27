@@ -14,9 +14,7 @@ const int DEFAULT_DRIVE_POWER = 300;
 const int MAX_COMMAND_LENGTH = 40;
 
 
-// ============================================================
-// SIMPLE COMMANDS
-// ============================================================
+
 static RobotCommand parseSimpleCommand(const String &command)
 {
     if (command == "w" || command == "forward")
@@ -57,6 +55,23 @@ static RobotCommand parseSimpleCommand(const String &command)
 
     if (command == "toff")
         return CMD_TOF_STREAM_OFF;
+
+    if (command == "open")
+    {
+        return OPEN_GATE;
+    }
+    if (command == "close")
+    {
+        return CLOSE_GATE;
+    }
+    if (command == "weight")
+    {
+        return WEIGHT_TEST;
+    }
+    if (command == "stop")
+    {
+        return WEIGHT_STOP;
+    }
 
     return CMD_NONE;
 }
@@ -339,7 +354,7 @@ static RobotCommand readPort(
 void serial_init()
 {
     Serial.begin(115200);
-
+    Serial1.begin(115200);
     Serial2.begin(115200);
 
 

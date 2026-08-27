@@ -35,4 +35,8 @@ bool motor_control_is_turning();
 bool motor_control_is_driving();
 
 
+void motor_control_stop();
+
+
+
 #endif

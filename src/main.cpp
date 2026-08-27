@@ -7,8 +7,9 @@
 #include "outputs/DC_motors.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
+#include "outputs/smart_servo.h"
 // #include "inputs/nav_tof.h"
-//#include "outputs/collection.h"
+#include "unused/collection.h"
 #include "inputs/tof_expander.h"
 #include "inputs/imu.h"
 #include "inputs/proximity.h"
@@ -24,6 +25,9 @@ static bool tofStreamEnabled = false;
 static unsigned long lastTofPrintTime = 0;
 
 const unsigned long TOF_PRINT_PERIOD_MS = 2500;
+
+static int GATE_SERVO = 1;
+
 
 // Main.cpp 
 // Contains the executable and initialisation files for the purpose of implementing a task scheduler
@@ -139,9 +143,10 @@ void handleRobotCommand(RobotCommand command)
 
         case CMD_COLLECT:
 
-            Serial.println(
+            Serial2.println(
                 "Collection command received"
             );
+            collection_start();
 
             break;
 
@@ -167,7 +172,27 @@ void handleRobotCommand(RobotCommand command)
             );
 
             break;
+        case OPEN_GATE:
 
+            smartservo_gate_open();
+
+            break;
+
+
+        case CLOSE_GATE:
+
+            smartservo_gate_close();
+
+            break;
+
+        case WEIGHT_TEST:
+            navigator_start_weight_test();
+
+            break;
+
+        case WEIGHT_STOP:
+            navigator_stop_weight_test();;
+            break;
 
         case CMD_NONE:
         default:
@@ -212,7 +237,11 @@ void printRobotTelemetry(Stream &port)
     port.print(tof_get_weight_right_top());
     port.print(",");
 
-    port.println(tof_get_weight_right_bottom());
+    port.print(tof_get_weight_right_bottom());
+    port.print(",");
+
+    port.println(
+        tof_get_weight_middle());
 }
 
 void setup()
@@ -230,22 +259,19 @@ void setup()
 
     // Control
     motor_control_init();
-
+    pickup_servo_init();
+    emag_init();
     navigator_init();
+    collection_init();
 
     pose_init();
-
-    Serial.println(
-        "Navigation and heading control ready"
+    smartservo_init(
+        GATE_SERVO
     );
 
-    Serial2.println(
-        "Navigation and heading control ready"
-    );
+    delay(1000);
 
-    Serial2.println(
-        "Type help for commands"
-    );
+    smartservo_torque_on();
 }
 
 static unsigned long lastPosePrint = 0;
@@ -259,10 +285,13 @@ const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void loop()
 {
-    // Latest heading
+    
+    smartservo_update();
     imu_update();
     tof_update();
     pose_update();
+    collection_exe();
+    pickup_servo_update();
     if (poseStreamEnabled && millis() - lastPosePrintTime >= POSE_PRINT_PERIOD_MS)
     {
     lastPosePrintTime = millis();
@@ -286,7 +315,9 @@ void loop()
     // Run heading feedback control
     motor_control_update();
 
-    if (
+    navigator_update_weight_test();
+
+    /*if (
         tofStreamEnabled &&
         millis() - lastTofPrintTime
         >= TOF_PRINT_PERIOD_MS
@@ -296,7 +327,7 @@ void loop()
 
         tof_print_readings(Serial);
         tof_print_readings(Serial2);
-    }
+    }*/
 }
 
 
