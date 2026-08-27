@@ -37,6 +37,7 @@ const unsigned long OPENING_TIMEOUT_MS = 2000;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
 const unsigned long REVERSING_TIMEOUT_MS = 2000;
 
+StateFlags STATE_FLAGS;
 
 unsigned long timeInNavState()
 {
@@ -65,6 +66,38 @@ NavState getNavState() {
     return current_nav_state;
 }
 
+static const char* navStateName(NavState state)
+{
+    switch (state)
+    {
+        case STATIONARY: return "STATIONARY";
+        case ROAMING:     return "ROAMING";
+        case PURSUIT:     return "PURSUIT";
+        case SORTING:     return "SORTING";
+        case COLLECTING:  return "COLLECTING";
+        case HOMING:      return "HOMING";
+        case OPENING:     return "OPENING";
+        case CLOSING:     return "CLOSING";
+        case REVERSING:   return "REVERSING";
+        default:          return "UNKNOWN_NAV_STATE";
+    }
+}
+
+static const char* collectStateName(CollectState state)
+{
+    switch (state)
+    {
+        case IDLE:          return "IDLE";
+        case LOWERING_VERT: return "LOWERING_VERT";
+        case VERT_REACHED:  return "VERT_REACHED";
+        case LOWERING_HORI: return "LOWERING_HORI";
+        case HORI_REACHED:  return "HORI_REACHED";
+        case PICKING_UP:    return "PICKING_UP";
+        case RETURNING:     return "RETURNING";
+        case DECIDING:      return "DECIDING";
+        default:            return "UNKNOWN_COLLECT_STATE";
+    }
+}
 
 void checkChangeNavState(NavState navState, bool* flag) {
     if (*flag) {
@@ -72,8 +105,12 @@ void checkChangeNavState(NavState navState, bool* flag) {
         current_nav_state = navState;
         *flag = false;
         navStateEnteredAt = millis();
-    }
 
+        Serial.print("[NAV] ");
+        Serial.print(navStateName(prev_nav_state));
+        Serial.print(" -> ");
+        Serial.println(navStateName(current_nav_state));
+    }
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -87,9 +124,13 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         current_collect_state = collectState;
         *flag = false;
         collectStateEnteredAt = millis();
+
+        Serial.print("[COLLECT] ");
+        Serial.print(collectStateName(prev_collect_state));
+        Serial.print(" -> ");
+        Serial.println(collectStateName(current_collect_state));
     }
 }
-
 
 void check_timers() { 
     // Handles time delays in between states, raises flags when time has elapsed
@@ -140,6 +181,9 @@ void check_timers() {
                 setStateFlag(&STATE_FLAGS.closing_complete);
             }
             break;
+
+        default: 
+            break; 
     }
 }
 

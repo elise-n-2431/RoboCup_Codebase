@@ -28,6 +28,7 @@ enum CollectState {
     DECIDING    
 };
 
+
 struct StateFlags {
     // nav focused
     bool target_identified = false;

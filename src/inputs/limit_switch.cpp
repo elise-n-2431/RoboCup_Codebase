@@ -54,5 +54,5 @@ void limit_switch_exe() {
 }
 
 bool getLimitSwitch() {
-    return io.digitalRead(AIO6_PIN) == LOW
+    return io.digitalRead(AIO6_PIN) == LOW;
 }
