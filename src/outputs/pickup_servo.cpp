@@ -17,16 +17,16 @@ const int CRANE_SERVO_PIN = 29;
 const int IDLE_US       = 1500;
 const int VERTICAL_US   = 1050;
 const int HORIZONTAL_US = 950;
-const int DROPOFF_US    = 1900;
+const int DROPOFF_US    = 1950;
 
 static int currentPulse = IDLE_US;
 static int targetPulse  = IDLE_US;
 
 static int servoStepUs = 5;
 
-const int SLOW_STEP_US   = 10;
-const int MEDIUM_STEP_US = 20;
-const int FAST_STEP_US   = 30;
+const int SLOW_STEP_US   = 30;
+const int MEDIUM_STEP_US = 37;
+const int FAST_STEP_US   = 50;
 
 const unsigned long SERVO_UPDATE_MS = 10;
 

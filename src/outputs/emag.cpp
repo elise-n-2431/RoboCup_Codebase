@@ -5,11 +5,13 @@
 #include <Wire.h>
 #include <SparkFunSX1509.h>
 
-const byte EMAG_PIN = 26;
+const byte EMAG_PIN = 24;
+const int DUTY = 200;
+const int OFF = 0;
 
 static bool emagState = false;
 
-void emag_init()
+void emag_init() 
 {
     pinMode(EMAG_PIN, OUTPUT);
     emag_off();
@@ -17,13 +19,20 @@ void emag_init()
 
 void emag_on()
 {
-    digitalWrite(EMAG_PIN, HIGH);
+    analogWrite(
+        EMAG_PIN,
+        DUTY
+    );
+    //digitalWrite(EMAG_PIN, HIGH);
     emagState = true;
 }
 
 void emag_off()
 {
-    digitalWrite(EMAG_PIN, LOW);
+    analogWrite(
+        EMAG_PIN,
+        OFF
+    );
     emagState = false;
 }
 

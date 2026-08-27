@@ -7,7 +7,7 @@
 
 void pickup_servo_init();
 void pickup_servo_exe();
-
+void pickup_servo_update();
 static void moveCraneTo(int target, int speed);
 
 void craneVertical();

@@ -8,11 +8,17 @@
 
 // Chose to seperate navigation and collection state machines (may change later)
 
+
+StateFlags STATE_FLAGS;
+
+
+// Chose to separate navigation and collection state machines
 NavState current_nav_state = STATIONARY;
 NavState prev_nav_state = STATIONARY;
 
 CollectState current_collect_state = IDLE;
 CollectState prev_collect_state = IDLE;
+
 
 static bool pickup_succeeded = false;
 

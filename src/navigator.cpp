@@ -1,85 +1,796 @@
 #include "navigator.h"
-#include "map.h"
+
 #include <Arduino.h>
 #include <math.h>
 
-static NavCommand currentCommand = {0, 0};
+#include "inputs/imu.h"
+#include "driving_controller.h"
+#include "inputs/tof_expander.h"
+#include "unused/collection.h"
 
 
-/* Note: just placeholder, not written by me */
-/* Takes map and decides motor motion */
+enum WeightTestState
+{
+    WEIGHT_TEST_IDLE,
+    WEIGHT_TEST_SEARCHING,
+    WEIGHT_TEST_TURNING,
+    WEIGHT_TEST_APPROACHING,
+    WEIGHT_TEST_COLLECTING,
+    WEIGHT_TEST_FINISHED
+};
+
+static WeightTestState weightTestState = WEIGHT_TEST_IDLE;
+
+static const int WEIGHT_DETECT_MAX_MM = 600;
+
+static const int APPROACH_SLOW_MM = 300;
+static const int APPROACH_STOP_MM = 120;
+
+static const int WEIGHT_DETECT_DISTANCE_MM = 550;
+
+static unsigned long lastWeightDebugPrint = 0;
+
+static const unsigned long
+    WEIGHT_DEBUG_PERIOD_MS = 250;
+
+static int middleLostCount = 0;
+
+static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 
 
-// How far off-heading (in "cell direction" terms) we tolerate before
-// treating ourselves as aligned and driving straight instead of turning.
-const int ALIGN_TOLERANCE = 0;
+static const float LEFT_WEIGHT_TURN_DEG  = -25.0f;
+static const float RIGHT_WEIGHT_TURN_DEG = 25.0f;
+static const int WEIGHT_DIFFERENCE_MM = 100;
+static const int WEIGHT_STOP_DISTANCE_MM = 55;
+static int DETECTION_COUNT_REQUIRED = 3;
+
+static const int WEIGHT_SLOW_DISTANCE_MM = 150;
+
+static const int WEIGHT_APPROACH_POWER = 320;
+
+static const int WEIGHT_SLOW_POWER = 260;
+
+
+static int leftDetectionCount = 0;
+
+static int rightDetectionCount = 0;
+static float weightApproachHeading = 0.0f;
+
+static bool weightApproachSlowed = false;
+
+
+
+
+// ============================================================
+// NAVIGATOR STATE
+// ============================================================
+
+static float testHeading = 0.0;
+
+static bool testActive = false;
+
+
+// If further away than this,
+// turn before trying to drive.
+const float ALIGN_TOLERANCE = 3.0;
+
+
+// Normal navigation drive power
+const int NAV_DRIVE_POWER = 350;
+
+
+// ============================================================
+// ANGLE HELPERS
+// ============================================================
+
+
+static bool weightPairDetected(
+    int top,
+    int bottom,
+    int &difference
+)
+{
+    difference = 0;
+
+
+    // Bottom sensor must actually see an object
+    if (bottom <= 0)
+    {
+        return (
+        bottom <= WEIGHT_DETECT_DISTANCE_MM
+    );
+    }
+
+
+    // Top sees nothing, but bottom does.
+    // Strong evidence of a short object.
+    if (top <= 0)
+    {
+        return (
+        top <= WEIGHT_DETECT_DISTANCE_MM
+    );
+    }
+
+
+    // Both sensors see something.
+    // Compare their distances.
+    difference =
+        top - bottom;
+
+
+    return (
+        difference >= WEIGHT_DIFFERENCE_MM
+    );
+}
+
+static float wrapHeading(float heading)
+{
+    while (heading >= 360.0)
+    {
+        heading -= 360.0;
+    }
+
+
+    while (heading < 0.0)
+    {
+        heading += 360.0;
+    }
+
+
+    return heading;
+}
+
+
+static float headingError(
+    float target,
+    float current
+)
+{
+    float error =
+        target - current;
+
+
+    while (error > 180.0)
+    {
+        error -= 360.0;
+    }
+
+
+    while (error < -180.0)
+    {
+        error += 360.0;
+    }
+
+
+    return error;
+}
+
+
+// ============================================================
+// INITIALISE
+// ============================================================
 
 void navigator_init()
 {
-    currentCommand = {0, 0};
+    testHeading = 0.0;
+
+    testActive = false;
 }
 
-// Very simple frontier-seeking: scan the map for the nearest cell marked
-// FRONTIER, then point roughly at it. This is a starting structure, not
-// real path planning — no obstacle avoidance, no shortest-path routing.
-static bool findNearestFrontier(int &targetX, int &targetY)
+
+// ============================================================
+// TEMPORARY ABSOLUTE HEADING TEST
+// ============================================================
+
+void navigator_setTestHeading(float heading)
 {
-    int bestDistSq = -1;
+    testHeading =
+        wrapHeading(heading);
 
-    for (int y = 0; y < MAP_HEIGHT; y++) {
-        for (int x = 0; x < MAP_WIDTH; x++) {
-            if (map[x][y] != 3 /* frontier */) {
-                continue;
-            }
 
-            int dx = x - self_x;
-            int dy = y - self_y;
-            int distSq = dx * dx + dy * dy;
-
-            if (bestDistSq < 0 || distSq < bestDistSq) {
-                bestDistSq = distSq;
-                targetX = x;
-                targetY = y;
-            }
-        }
+    // New navigator command replaces any direct
+    // turn/drive controller command.
+    if (motor_control_is_active())
+    {
+        motor_control_stop();
     }
 
-    return bestDistSq >= 0;
+
+    testActive = true;
+
+
+    Serial.print(
+        "Navigator target heading: "
+    );
+
+    Serial.println(
+        testHeading
+    );
+
+
+    Serial2.print(
+        "Navigator target heading: "
+    );
+
+    Serial2.println(
+        testHeading
+    );
 }
 
-// Turns coarse dx/dy toward a target into a track command.
-// TODO: replace with heading-based steering once heading_rad is reliable —
-// this version only looks at which axis has the bigger gap, it doesn't
-// know which way the robot is actually facing.
-static NavCommand commandTowards(int targetX, int targetY)
-{
-    int dx = targetX - self_x;
-    int dy = targetY - self_y;
 
-    if (dx == 0 && dy == 0) {
-        return {0, 0}; // arrived
-    }
-
-    if (abs(dx) > abs(dy)) {
-        return (dx > 0) ? NavCommand{+1, -1} : NavCommand{-1, +1}; // turn toward +x / -x
-    }
-
-    return (dy > 0) ? NavCommand{+1, +1} : NavCommand{-1, -1}; // drive toward +y / -y
-}
+// ============================================================
+// NAVIGATOR
+// ============================================================
 
 void navigator_exe()
 {
-    int targetX, targetY;
-
-    if (!findNearestFrontier(targetX, targetY)) {
-        currentCommand = {0, 0}; // nothing left to explore — hold position
+    if (!testActive)
+    {
         return;
     }
 
-    currentCommand = commandTowards(targetX, targetY);
+
+    float currentHeading =
+        imu_get_heading();
+
+
+    float error =
+        headingError(
+            testHeading,
+            currentHeading
+        );
+
+
+    // ========================================================
+    // NOT ALIGNED:
+    // TURN TO THE DESIRED HEADING
+    // ========================================================
+
+    if (fabs(error) > ALIGN_TOLERANCE)
+    {
+        if (!motor_control_is_turning())
+        {
+            motor_control_turn_to(
+                testHeading
+            );
+        }
+        else
+        {
+            // Don't restart the controller every loop.
+            // Just update its target.
+            motor_control_set_target_heading(
+                testHeading
+            );
+        }
+
+
+        return;
+    }
+
+
+    // ========================================================
+    // ALIGNED:
+    // DRIVE WHILE HOLDING THE HEADING
+    // ========================================================
+
+    if (!motor_control_is_driving())
+    {
+        motor_control_drive_heading(
+            testHeading,
+            NAV_DRIVE_POWER
+        );
+    }
+    else
+    {
+        motor_control_set_target_heading(
+            testHeading
+        );
+    }
 }
 
-NavCommand navigator_getCommand()
+
+// ============================================================
+// STOP NAVIGATION
+// ============================================================
+
+void navigator_stop()
 {
-    return currentCommand;
+    testActive = false;
+}
+
+
+// ============================================================
+// STATE
+// ============================================================
+
+bool navigator_is_active()
+{
+    return testActive;
+}
+
+void navigator_start_weight_test()
+{
+    leftDetectionCount = 0;
+    rightDetectionCount = 0;
+
+    weightTestState =
+        WEIGHT_TEST_SEARCHING;
+
+
+    Serial2.println(
+        "Weight pursuit test started"
+    );
+}
+
+void navigator_stop_weight_test()
+{
+    motor_control_stop();
+
+    weightTestState =
+        WEIGHT_TEST_IDLE;
+
+
+    Serial2.println(
+        "Weight pursuit test stopped"
+    );
+}
+void navigator_update_weight_test()
+{
+    if (
+        weightTestState
+        == WEIGHT_TEST_IDLE
+    )
+    {
+        return;
+    }
+
+
+    // ========================================================
+    // SEARCHING
+    // ========================================================
+
+    if (
+        weightTestState
+        == WEIGHT_TEST_SEARCHING
+    )
+    {
+        int leftTop =
+            tof_get_weight_left_top();
+
+        int leftBottom =
+            tof_get_weight_left_bottom();
+
+        int rightTop =
+            tof_get_weight_right_top();
+
+        int rightBottom =
+            tof_get_weight_right_bottom();
+
+        
+
+
+        int leftDifference = 0;
+        int rightDifference = 0;
+
+
+        
+        bool leftDetected =
+            weightPairDetected(
+                leftTop,
+                leftBottom,
+                leftDifference
+            );
+
+
+        bool rightDetected =
+            weightPairDetected(
+                rightTop,
+                rightBottom,
+                rightDifference
+            );
+
+
+        // ====================================================
+        // CONSECUTIVE DETECTION COUNTS
+        // ====================================================
+
+        if (leftDetected)
+        {
+            leftDetectionCount++;
+        }
+        else
+        {
+            leftDetectionCount = 0;
+        }
+
+
+        if (rightDetected)
+        {
+            rightDetectionCount++;
+        }
+        else
+        {
+            rightDetectionCount = 0;
+        }
+
+        unsigned long now =
+    millis();
+
+
+        if (
+            now - lastWeightDebugPrint
+            >= WEIGHT_DEBUG_PERIOD_MS
+        )
+        {
+            lastWeightDebugPrint =
+                now;
+
+
+            Serial2.print("WEIGHT SEARCH | ");
+
+            Serial2.print("LT=");
+            Serial2.print(leftTop);
+
+            Serial2.print(" LB=");
+            Serial2.print(leftBottom);
+
+            Serial2.print(" DiffL=");
+            Serial2.print(leftDifference);
+
+
+            Serial2.print(" | RT=");
+            Serial2.print(rightTop);
+
+            Serial2.print(" RB=");
+            Serial2.print(rightBottom);
+
+            Serial2.print(" DiffR=");
+            Serial2.print(rightDifference);
+
+
+            Serial2.print(" | M=");
+            Serial2.println(
+                tof_get_weight_middle()
+            );
+        }
+
+
+        // ====================================================
+        // LEFT DETECTION
+        // ====================================================
+
+        if (
+            leftDetectionCount
+            >= DETECTION_COUNT_REQUIRED
+        )
+        {
+            Serial2.print(
+                "Weight detected LEFT. Difference: "
+            );
+
+            Serial2.println(
+                leftDifference
+            );
+
+
+            leftDetectionCount = 0;
+            rightDetectionCount = 0;
+
+
+            motor_control_turn_relative(
+                LEFT_WEIGHT_TURN_DEG
+            );
+
+
+            weightTestState =
+                WEIGHT_TEST_TURNING;
+
+
+            return;
+        }
+
+
+        // ====================================================
+        // RIGHT DETECTION
+        // ====================================================
+
+        if (
+            rightDetectionCount
+            >= DETECTION_COUNT_REQUIRED
+        )
+        {
+            Serial2.print(
+                "Weight detected RIGHT. Difference: "
+            );
+
+            Serial2.println(
+                rightDifference
+            );
+
+
+            leftDetectionCount = 0;
+            rightDetectionCount = 0;
+
+
+            motor_control_turn_relative(
+                RIGHT_WEIGHT_TURN_DEG
+            );
+
+
+            weightTestState =
+                WEIGHT_TEST_TURNING;
+
+
+            return;
+        }
+
+
+        return;
+    }
+
+
+    // ========================================================
+    // TURNING
+    // ========================================================
+
+    if (
+        weightTestState
+        == WEIGHT_TEST_TURNING
+    )
+    {
+        // Let the existing motor controller finish
+        // the commanded turn first.
+        if (motor_control_is_turning())
+        {
+            return;
+        }
+
+
+        // Turn has now finished.
+        int centreDistance =
+            tof_get_weight_middle();
+        Serial2.print(
+            "TURN FINISHED | Middle = "
+        );
+
+        Serial2.println(
+            centreDistance
+        );
+
+
+        // ====================================================
+        // CENTRE SENSOR ACQUIRED TARGET
+        // ====================================================
+
+        if (
+            centreDistance > 0
+            &&
+            centreDistance
+                <= WEIGHT_DETECT_DISTANCE_MM
+        )
+        {
+            Serial2.print(
+                "Centre acquired weight at "
+            );
+
+            Serial2.print(
+                centreDistance
+            );
+
+            Serial2.println(
+                " mm"
+            );
+
+            middleLostCount = 0;
+
+
+            // Save this heading.
+            // Do NOT keep resetting it to imu_get_heading()
+            // every loop.
+            weightApproachHeading =
+                imu_get_heading();
+
+
+            weightApproachSlowed =
+                false;
+
+
+            motor_control_drive_heading(
+                weightApproachHeading,
+                WEIGHT_APPROACH_POWER
+            );
+
+
+            weightTestState =
+                WEIGHT_TEST_APPROACHING;
+
+
+            return;
+        }
+
+
+        // ====================================================
+        // CENTRE DID NOT ACQUIRE TARGET
+        // ====================================================
+
+        Serial2.println(
+            "Centre did not acquire weight - rechecking side sensors"
+        );
+
+
+        leftDetectionCount = 0;
+        rightDetectionCount = 0;
+
+
+        weightTestState =
+            WEIGHT_TEST_SEARCHING;
+
+
+        return;
+    }
+
+
+    // ========================================================
+    // APPROACHING
+    // ========================================================
+
+    if (
+        weightTestState
+        == WEIGHT_TEST_APPROACHING
+    )
+    {
+        int centreDistance =
+            tof_get_weight_middle();
+
+
+        // ====================================================
+        // LOST TARGET
+        // ====================================================
+
+        if (centreDistance <= 0)
+        {
+            middleLostCount++;
+
+            if (
+                middleLostCount
+                >= MIDDLE_LOST_COUNT_REQUIRED
+            )
+            {
+                motor_control_stop();
+
+                Serial2.println(
+                    "Centre lost weight - reacquiring"
+                );
+
+                leftDetectionCount = 0;
+                rightDetectionCount = 0;
+                middleLostCount = 0;
+
+                weightTestState =
+                    WEIGHT_TEST_SEARCHING;
+            }
+
+            return;
+        }
+
+
+        // Got a valid centre reading again
+        middleLostCount = 0;
+
+
+        // ====================================================
+        // REACHED WEIGHT
+        // ====================================================
+
+        if (
+            centreDistance
+            <= WEIGHT_STOP_DISTANCE_MM
+        )
+        {
+            motor_control_stop();
+
+
+            Serial2.print(
+                "Weight reached at "
+            );
+
+            Serial2.print(
+                centreDistance
+            );
+
+            Serial2.println(
+                " mm"
+            );
+
+
+            collection_start();
+
+
+            weightTestState =
+                WEIGHT_TEST_COLLECTING;
+
+
+            return;
+        }
+
+
+        // ====================================================
+        // SLOW DOWN
+        // ====================================================
+
+        if (
+            centreDistance
+                <= WEIGHT_SLOW_DISTANCE_MM
+        )
+        {
+            // Only change drive mode/power ONCE.
+            if (!weightApproachSlowed)
+            {
+                motor_control_drive_heading(
+                    weightApproachHeading,
+                    WEIGHT_SLOW_POWER
+                );
+
+
+                weightApproachSlowed =
+                    true;
+
+
+                Serial2.println(
+                    "Slowing approach"
+                );
+            }
+
+
+            return;
+        }
+
+
+        // ====================================================
+        // NORMAL APPROACH
+        // ====================================================
+
+        // Motor controller is already driving toward
+        // weightApproachHeading.
+        //
+        // Do not restart motor_control_drive_heading()
+        // every navigator loop.
+
+        return;
+    }
+
+
+
+        if (
+            weightTestState
+            == WEIGHT_TEST_COLLECTING
+        )
+        {
+            // collection_exe() is running from main loop.
+            // Once it returns to IDLE, collection is complete.
+            if (!collectionIsActive())
+            {
+                Serial2.println(
+                    "Weight collection complete"
+                );
+
+                weightTestState =
+                    WEIGHT_TEST_FINISHED;
+            }
+
+
+            return;
+        }
+
+    // ========================================================
+    // FINISHED
+    // ========================================================
+
+    if (
+        weightTestState
+        == WEIGHT_TEST_FINISHED
+    )
+    {
+        return;
+    }
 }
