@@ -80,12 +80,61 @@ static bool tofReadingValid[NUM_TOF_SENSORS];
 
 
 
-static int tofDistances[9] = {
-    0, 0, 0, 0,
-    0, 0, 0, 0, 0
-};
+// static int tofDistances[9] = {
+//     0, 0, 0, 0,
+//     0, 0, 0, 0, 0
+// };
+
+int tof_get_nav_outer_left()
+{
+    return tof_get_distance(NAV_OUTER_LEFT);
+}
 
 
+int tof_get_nav_inner_left()
+{
+    return tof_get_distance(NAV_INNER_LEFT);
+}
+
+
+int tof_get_nav_inner_right()
+{
+    return tof_get_distance(NAV_INNER_RIGHT);
+}
+
+
+int tof_get_nav_outer_right()
+{
+    return tof_get_distance(NAV_OUTER_RIGHT);
+}
+
+int tof_get_weight_left_top()
+{
+    return tof_get_distance(WEIGHT_LEFT_TOP);
+}
+
+
+int tof_get_weight_left_bottom()
+{
+    return tof_get_distance(WEIGHT_LEFT_BOTTOM);
+}
+
+
+int tof_get_weight_right_top()
+{
+    return tof_get_distance(WEIGHT_RIGHT_TOP);
+}
+
+
+int tof_get_weight_middle()
+{
+    return tof_get_distance(WEIGHT_MIDDLE);
+}
+
+int tof_get_weight_right_bottom()
+{
+    return tof_get_distance(WEIGHT_RIGHT_BOTTOM);
+}
 
 
 static void shutdownAllToFs()
@@ -238,44 +287,6 @@ void tof_init()
         tofReadingValid[sensor] = false;
     }
     Serial.println("ToF setup complete");
-}
-
-
-
-
-void tof_print_readings(Stream &port)
-{
-    port.print("NAV: ");
-
-    port.print("OL=");
-    port.print(tof_get_nav_outer_left());
-
-    port.print("  IL=");
-    port.print(tof_get_nav_inner_left());
-
-    port.print("  IR=");
-    port.print(tof_get_nav_inner_right());
-
-    port.print("  OR=");
-    port.println(tof_get_nav_outer_right());
-
-
-    port.print("WEIGHT: ");
-
-    port.print("LT=");
-    port.print(tof_get_weight_left_top());
-
-    port.print("  LB=");
-    port.print(tof_get_weight_left_bottom());
-
-    port.print("  RT=");
-    port.print(tof_get_weight_right_top());
-
-    port.print("  RB=");
-    port.println(tof_get_weight_right_bottom());
-
-    port.print("  MIDDLE =");
-    port.println(tof_get_weight_middle());
 }
 
 
@@ -483,53 +494,39 @@ int tof_get_raw_distance(
 
 
 
-int tof_get_nav_outer_left()
+
+
+void tof_print_readings(Stream &port)
 {
-    return tof_get_distance(NAV_OUTER_LEFT);
-}
+    port.print("NAV: ");
+
+    port.print("OL=");
+    port.print(tof_get_nav_outer_left());
+
+    port.print("  IL=");
+    port.print(tof_get_nav_inner_left());
+
+    port.print("  IR=");
+    port.print(tof_get_nav_inner_right());
+
+    port.print("  OR=");
+    port.println(tof_get_nav_outer_right());
 
 
-int tof_get_nav_inner_left()
-{
-    return tof_get_distance(NAV_INNER_LEFT);
-}
+    port.print("WEIGHT: ");
 
+    port.print("LT=");
+    port.print(tof_get_weight_left_top());
 
-int tof_get_nav_inner_right()
-{
-    return tof_get_distance(NAV_INNER_RIGHT);
-}
+    port.print("  LB=");
+    port.print(tof_get_weight_left_bottom());
 
+    port.print("  RT=");
+    port.print(tof_get_weight_right_top());
 
-int tof_get_nav_outer_right()
-{
-    return tof_get_distance(NAV_OUTER_RIGHT);
-}
+    port.print("  RB=");
+    port.println(tof_get_weight_right_bottom());
 
-int tof_get_weight_left_top()
-{
-    return tof_get_distance(WEIGHT_LEFT_TOP);
-}
-
-
-int tof_get_weight_left_bottom()
-{
-    return tof_get_distance(WEIGHT_LEFT_BOTTOM);
-}
-
-
-int tof_get_weight_right_top()
-{
-    return tof_get_distance(WEIGHT_RIGHT_TOP);
-}
-
-
-int tof_get_weight_middle()
-{
-    return tof_get_distance(WEIGHT_MIDDLE);
-}
-
-int tof_get_weight_right_bottom()
-{
-    return tof_get_distance(WEIGHT_RIGHT_BOTTOM);
+    port.print("  MIDDLE =");
+    port.println(tof_get_weight_middle());
 }

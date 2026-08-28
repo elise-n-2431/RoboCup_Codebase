@@ -37,8 +37,6 @@ const unsigned long OPENING_TIMEOUT_MS = 2000;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
 const unsigned long REVERSING_TIMEOUT_MS = 2000;
 
-StateFlags STATE_FLAGS;
-
 unsigned long timeInNavState()
 {
     return millis() - navStateEnteredAt;

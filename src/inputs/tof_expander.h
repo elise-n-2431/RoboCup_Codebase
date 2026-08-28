@@ -18,6 +18,7 @@ int tof_get_weight_left_top();
 int tof_get_weight_left_bottom();
 int tof_get_weight_right_top();
 int tof_get_weight_right_bottom();
+int tof_get_weight_middle();
 
 
 void tof_print_readings(Stream &port);
