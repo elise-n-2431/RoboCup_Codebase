@@ -6,7 +6,7 @@
 #include <SparkFunSX1509.h> // SparkFun SX1509 I/O Expander library, v2.0.1
 
 const byte SX1509_LIMIT_ADDRESS = 0x3E;
-const byte AIO6_PIN = 6;
+const byte AIO5_PIN = 5;
 SX1509 io;
 
 const int CONSECUTIVE_HITS = 50;
@@ -14,12 +14,37 @@ int count_switch_on = 0;
 int count_switch_off = 0;
 
 
-void limit_switch_init() {
-  io.pinMode(AIO6_PIN, INPUT_PULLUP);
+void limit_switch_init()
+{
+    if (!io.begin(SX1509_LIMIT_ADDRESS))
+    {
+        Serial.println(
+            "ERROR: limit switch SX1509 not found"
+        );
 
+        return;
+    }
+
+    io.pinMode(
+        AIO5_PIN,
+        INPUT_PULLUP
+    );
+
+    Serial.println(
+        "Limit switch ready"
+    );
 }
 
 void limit_switch_exe() {
+    static unsigned long lastSwitchPrint = 0;
+
+    if (millis() - lastSwitchPrint >= 250)
+    {
+        lastSwitchPrint = millis();
+
+        Serial.print("LIMIT RAW = ");
+        Serial.println(io.digitalRead(AIO5_PIN));
+    }
     if (getCollectState() != VERT_REACHED &&
         getCollectState() != HORI_REACHED) {
         count_switch_on = 0;
@@ -27,7 +52,7 @@ void limit_switch_exe() {
         return;
     }
 
-    if (io.digitalRead(AIO6_PIN) == LOW) {
+    if (io.digitalRead(AIO5_PIN) == LOW) {
         count_switch_on++;
         count_switch_off = 0;
     } else {
@@ -54,5 +79,5 @@ void limit_switch_exe() {
 }
 
 bool getLimitSwitch() {
-    return io.digitalRead(AIO6_PIN) == LOW;
+    return io.digitalRead(AIO5_PIN) == LOW;
 }

@@ -26,9 +26,7 @@ enum RobotCommand
     CMD_TOF_STREAM_ON,
     CMD_TOF_STREAM_OFF,
     OPEN_GATE,
-    CLOSE_GATE,
-    WEIGHT_TEST,
-    WEIGHT_STOP
+    CLOSE_GATE
 };
 
 

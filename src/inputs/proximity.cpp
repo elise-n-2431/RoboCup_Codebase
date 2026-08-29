@@ -18,23 +18,41 @@ void proximity_init() {
   
 }
 
-// should involve centring
-void proximity_exe() {
-    if (analogRead(PROX_PIN) > 500) {
-        count_metal += 1;
-        count_dummy = 0;
-    } else {
+void proximity_exe()
+{
+    if (getNavState() != SORTING)
+    {
         count_metal = 0;
-        count_dummy += 1;
+        count_dummy = 0;
+        return;
     }
 
-    if (count_metal >= 50) {
+    if (analogRead(PROX_PIN) < 500)
+    {
+        count_metal++;
+        count_dummy = 0;
+    }
+    else
+    {
+        count_metal = 0;
+        count_dummy++;
+    }
+
+    if (count_metal >= CONSECUTIVE_HITS)
+    {
+        Serial.println("Sorting: METAL detected");
+
         setStateFlag(&STATE_FLAGS.metal_identified);
+
         count_metal = 0;
         count_dummy = 0;
+    }
+    else if (count_dummy >= CONSECUTIVE_HITS)
+    {
+        Serial.println("Sorting: DUMMY detected");
 
-    } else if (count_dummy >= 50) {
         setStateFlag(&STATE_FLAGS.dummy_identified);
+
         count_metal = 0;
         count_dummy = 0;
     }

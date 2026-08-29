@@ -64,15 +64,6 @@ static RobotCommand parseSimpleCommand(const String &command)
     {
         return CLOSE_GATE;
     }
-    if (command == "weight")
-    {
-        return WEIGHT_TEST;
-    }
-    if (command == "stop")
-    {
-        return WEIGHT_STOP;
-    }
-
     return CMD_NONE;
 }
 

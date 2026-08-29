@@ -8,7 +8,6 @@
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
 #include "outputs/smart_servo.h"
-// #include "inputs/nav_tof.h"
 #include "unused/collection.h"
 #include "inputs/tof_expander.h"
 #include "inputs/proximity.h"
@@ -18,6 +17,8 @@
 #include "driving_controller.h"
 #include "inputs/encoders.h"
 #include "pose.h"
+#include "inputs/colour_sensor.h"
+#include "inputs/imu.h"
 
 static bool tofStreamEnabled = false;
 
@@ -28,48 +29,6 @@ const unsigned long TOF_PRINT_PERIOD_MS = 2500;
 static int GATE_SERVO = 1;
 
 
-// Main.cpp 
-// Contains the executable and initialisation files for the purpose of implementing a task scheduler
-
-/*void setup() {
-    serial_init();
-    Wire.begin();
-    Wire.setClock(100000);
-
-    //inputs
-    // nav_tof_init();
-    limit_switch_init();
-    proximity_init();
-    xy_init();
-
-    //outputs
-    DC_motors_init();
-    pickup_servo_init();
-    emag_init();
-
-    // logic
-    // navigator_init(); For later
-    proximity_init();
-}
-
-void loop() {
-    logic_exe();
-    updateStateMachine();
-    // navigator_exe(); For later
-
-    //outputs
-    DC_motors_exe(DRIVE_SERIAL);
-    pickup_servo_exe(); // does it also need to call update?
-    emag_exe();
-
-    //inputs
-    tof_update();
-    tof_print_readings();
-    limit_switch_exe();
-    proximity_exe();
-    xy_exe();
-
-}*/
 
 void handleRobotCommand(RobotCommand command)
 {
@@ -180,16 +139,6 @@ void handleRobotCommand(RobotCommand command)
             smartservo_gate_close();
 
             break;
-
-        case WEIGHT_TEST:
-            navigator_start_weight_test();
-
-            break;
-
-        case WEIGHT_STOP:
-            navigator_stop_weight_test();;
-            break;
-
         case CMD_NONE:
         default:
 
@@ -240,6 +189,27 @@ void printRobotTelemetry(Stream &port)
         tof_get_weight_middle());
 }
 
+/*if (poseStreamEnabled && millis() - lastPosePrintTime >= POSE_PRINT_PERIOD_MS)
+    {
+    lastPosePrintTime = millis();
+    printRobotTelemetry(Serial2);
+    }*/
+    // USB + Bluetooth commands
+
+
+/*if (
+        tofStreamEnabled &&
+        millis() - lastTofPrintTime
+        >= TOF_PRINT_PERIOD_MS
+    )
+    {
+        lastTofPrintTime = millis();
+
+        tof_print_readings(Serial);
+        tof_print_readings(Serial2);
+    }*/
+
+
 void setup()
 {
     // Communications
@@ -252,14 +222,15 @@ void setup()
     imu_init();
 
     tof_init();
-
+    //limit swithc isnt working right now
+    //limit_switch_init();
+    proximity_init();
     // Control
     motor_control_init();
     pickup_servo_init();
     emag_init();
     navigator_init();
-    collection_init();
-
+    colour_sensor_init();
     pose_init();
     smartservo_init(
         GATE_SERVO
@@ -281,49 +252,36 @@ const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void loop()
 {
-    
-    smartservo_update();
     imu_update();
     tof_update();
     pose_update();
-    collection_exe();
+
+    //limit switch not working right now
+    //limit_switch_exe();
+
+    logic_exe();
+    updateStateMachine();
+
+
+    pickup_servo_exe();
+    emag_exe();
+
     pickup_servo_update();
-    if (poseStreamEnabled && millis() - lastPosePrintTime >= POSE_PRINT_PERIOD_MS)
-    {
-    lastPosePrintTime = millis();
-    printRobotTelemetry(Serial2);
-    }
-    // USB + Bluetooth commands
-    RobotCommand command =
-        serial_exe();
+    colour_sensor_update();
+    smartservo_update();
+    
 
+    RobotCommand command = serial_exe();
+    handleRobotCommand(command);
 
-    handleRobotCommand(
-        command
-    );
+    
+    //navigator_exe();
 
-    // Autonomous navigator
-    if (navigator_is_active())
-    {
-        navigator_exe();
-    }
+    proximity_exe();
+    
 
     // Run heading feedback control
     motor_control_update();
-
-    navigator_update_weight_test();
-
-    /*if (
-        tofStreamEnabled &&
-        millis() - lastTofPrintTime
-        >= TOF_PRINT_PERIOD_MS
-    )
-    {
-        lastTofPrintTime = millis();
-
-        tof_print_readings(Serial);
-        tof_print_readings(Serial2);
-    }*/
 }
 
 
