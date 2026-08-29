@@ -10,11 +10,5 @@ void navigator_init();
 
 void navigator_exe();
 
-void navigator_setTestHeading(float heading);
-
-void navigator_stop();
-
-bool navigator_is_active();
-
 
 #endif

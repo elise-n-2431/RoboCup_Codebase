@@ -2,9 +2,10 @@
 
 #include <Arduino.h>
 #include <math.h>
-
+#include "state_machine.h"
 #include "inputs/encoders.h"
 #include "inputs/imu.h"
+#include "inputs/tof_expander.h"
 
 
 // ============================================================
@@ -23,6 +24,10 @@ static float startHeadingDeg = 0.0;
 
 static long previousLeftCount = 0;
 static long previousRightCount = 0;
+
+static const unsigned long TELEMETRY_PERIOD_MS = 100;
+static unsigned long lastTelemetryTime = 0;
+static bool telemetryEnabled = true;
 
 
 void pose_init()
@@ -121,6 +126,7 @@ void pose_update()
     poseYmm +=
         forwardDistance *
         sin(headingRad);
+
 }
 
 
@@ -183,12 +189,62 @@ void pose_print(Stream &port)
     port.println(" deg");
 }
 
-void pose_print_csv(Stream &port)
+
+
+void pose_telemetry_exe()
 {
-    port.print("POSE,");
+    if (millis() - lastTelemetryTime < TELEMETRY_PERIOD_MS) return;
+
+    lastTelemetryTime = millis();
+
+    pose_print_telemetry(Serial);
+    pose_print_telemetry(Serial2);
+}
+
+void pose_print_telemetry(Stream &port)
+{
+    port.print("ROBOT,");
+
     port.print(pose_get_x_mm());
     port.print(",");
+
     port.print(pose_get_y_mm());
     port.print(",");
-    port.println(pose_get_heading_deg());
+
+    port.print(pose_get_heading_deg());
+    port.print(",");
+
+    port.print(getNavStateName());
+    port.print(",");
+
+    port.print(getCollectStateName());
+    port.print(",");
+
+    port.print(tof_get_nav_outer_left());
+    port.print(",");
+
+    port.print(tof_get_nav_inner_left());
+    port.print(",");
+
+    port.print(tof_get_nav_inner_right());
+    port.print(",");
+
+    port.print(tof_get_nav_outer_right());
+    port.print(",");
+
+    port.print(tof_get_weight_left_top());
+    port.print(",");
+
+    port.print(tof_get_weight_left_bottom());
+    port.print(",");
+
+    port.print(tof_get_weight_right_top());
+    port.print(",");
+
+    port.print(tof_get_weight_right_bottom());
+    port.print(",");
+
+    port.println(tof_get_weight_middle());
 }
+
+

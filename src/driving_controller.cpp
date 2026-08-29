@@ -20,7 +20,7 @@ enum MotorControlMode
 static MotorControlMode controlMode = CONTROL_IDLE;
 
 // To be tuned
-static float TURN_KP = 7.0;
+static float TURN_KP = 22.0;
 
 static float DRIVE_KP = 10.0;
 
@@ -54,7 +54,6 @@ const int DRIVE_STEER_SIGN = 1;
 
 static float targetHeading = 0.0;
 static float currentError = 0.0;
-static float previousError = 0.0;
 
 //varaibles used to chceck how long imu heading has been in tolerance zone
 static unsigned long previousTime = 0;
@@ -123,13 +122,10 @@ void motor_control_turn_relative(float angle)
 {
     float currentHeading = imu_get_heading();
 
-    targetHeading =
-        wrapHeading(currentHeading + angle);
+    targetHeading = wrapHeading(currentHeading + angle);
 
-    currentError =
-        headingError(targetHeading, currentHeading);
+    currentError = headingError(targetHeading, currentHeading);
 
-    previousError = currentError;
 
     previousTime = millis();
     toleranceStart = 0;
@@ -407,11 +403,6 @@ void motor_control_stop()
     Serial2.println("Motor control stopped");
 }
 
-bool motor_control_is_active()
-{
-    return controlMode != CONTROL_IDLE;
-}
-
 
 float motor_control_get_target()
 {
@@ -459,4 +450,10 @@ bool motor_control_is_turning()
 bool motor_control_is_driving()
 {
     return controlMode == CONTROL_DRIVE_HEADING;
+}
+
+void motor_control_reverse(int power)
+{
+    controlMode = CONTROL_IDLE;
+    DC_motors_setPower(-power, -power);
 }

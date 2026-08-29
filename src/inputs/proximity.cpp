@@ -7,7 +7,7 @@
 const byte PROX_PIN = 20;
 const byte PROX_PIN_2 = 14;
 
-const int CONSECUTIVE_HITS = 50;
+const int CONSECUTIVE_HITS = 20;
 int count_metal = 0;
 int count_dummy = 0;
 

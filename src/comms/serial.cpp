@@ -1,85 +1,14 @@
 #include "serial.h"
 
 #include "flag_control.h"
-#include "navigator.h"
 #include "driving_controller.h"
 
 
 static String usbBuffer = "";
 static String bluetoothBuffer = "";
 
-
-
-const int DEFAULT_DRIVE_POWER = 300;
+const int DEFAULT_DRIVE_POWER = 400;
 const int MAX_COMMAND_LENGTH = 40;
-
-
-
-static RobotCommand parseSimpleCommand(const String &command)
-{
-    if (command == "w" || command == "forward")
-        return CMD_FORWARD;
-
-    if (command == "s" || command == "reverse")
-        return CMD_REVERSE;
-
-    if (command == "a" || command == "left")
-        return CMD_LEFT;
-
-    if (command == "d" || command == "right")
-        return CMD_RIGHT;
-
-    if (command == "x")
-        return CMD_STOP;
-
-    if (command == "+")
-        return CMD_SPEED_UP;
-
-    if (command == "-")
-        return CMD_SPEED_DOWN;
-
-    if (command == "c" || command == "collect")
-        return CMD_COLLECT;
-
-    if (command == "mon")
-        return CMD_MOTORS_ON;
-
-    if (command == "moff")
-        return CMD_MOTORS_OFF;
-
-    if (command == "tof")
-        return CMD_TOF_PRINT;
-
-    if (command == "tofon")
-        return CMD_TOF_STREAM_ON;
-
-    if (command == "toff")
-        return CMD_TOF_STREAM_OFF;
-
-    if (command == "open")
-    {
-        return OPEN_GATE;
-    }
-    if (command == "close")
-    {
-        return CLOSE_GATE;
-    }
-    return CMD_NONE;
-}
-
-// ============================================================
-// CONTROL OWNERSHIP
-// ============================================================
-
-static void stopAutomaticControl()
-{
-    navigator_stop();
-
-    if (motor_control_is_active())
-    {
-        motor_control_stop();
-    }
-}
 
 
 
@@ -87,13 +16,9 @@ static void printHelp(Stream &port)
 {
     port.println("Commands:");
 
-    port.println("  w / s / a / d       manual drive");
-    port.println("  x or stop           stop all driving/navigation");
-    port.println("  + / -               manual drive power");
 
     port.println("  turn <deg>          relative IMU turn");
     port.println("  drive [power]       drive holding current heading");
-    port.println("  nav <heading>       turn to absolute heading then drive");
 
     port.println("  kp <value>          set turn Kp");
     port.println("  drivekp <value>     set heading-hold Kp");
@@ -102,12 +27,26 @@ static void printHelp(Stream &port)
     port.println("  flag <name>         raise state-machine test flag");
     port.println("  flags               list test flags");
 
-    port.println("  c / collect         collection command");
 
-    port.println("  tof                 print ToF");
-    port.println("  tofon               ToF stream on");
-    port.println("  toff                ToF stream off");
 }
+
+static RobotCommand parseSimpleCommand(const String &command)
+{
+    if (command == "open")
+    {
+        return OPEN_GATE;
+    }
+    if (command == "close")
+    {
+        return CLOSE_GATE;
+    }
+    if (command == "help")
+    {
+        printHelp(Serial2);
+        return CMD_NONE;
+    }
+}
+
 
 
 // ============================================================
@@ -134,8 +73,7 @@ static RobotCommand parseLine(
 
     if (command == "stop")
     {
-        navigator_stop();
-        motor_control_stop();
+
 
         port.println("Stopped");
 
@@ -143,18 +81,7 @@ static RobotCommand parseLine(
     }
 
 
-    if (command.startsWith("nav "))
-    {
-        float heading =
-            command.substring(4).toFloat();
-
-        navigator_setTestHeading(heading);
-
-        port.print("Navigator heading = ");
-        port.println(heading);
-
-        return CMD_NONE;
-    }
+    
 
 
     if (command.startsWith("turn "))
@@ -162,7 +89,7 @@ static RobotCommand parseLine(
         float angle =
             command.substring(5).toFloat();
 
-        navigator_stop();
+
 
         motor_control_turn_relative(angle);
 
@@ -175,11 +102,11 @@ static RobotCommand parseLine(
 
     if (command == "drive")
     {
-        navigator_stop();
 
-        motor_control_drive_current_heading(300);
+        motor_control_drive_current_heading(DEFAULT_DRIVE_POWER);
 
-        port.println("Driving at power 300");
+        port.print("Driving at power ");
+        port.println(DEFAULT_DRIVE_POWER);
 
         return CMD_NONE;
     }
@@ -187,10 +114,8 @@ static RobotCommand parseLine(
 
     if (command.startsWith("drive "))
     {
-        int power =
-            command.substring(6).toInt();
+        int power = command.substring(6).toInt();
 
-        navigator_stop();
 
         motor_control_drive_current_heading(power);
 
@@ -203,8 +128,7 @@ static RobotCommand parseLine(
 
     if (command.startsWith("kp "))
     {
-        float kp =
-            command.substring(3).toFloat();
+        float kp = command.substring(3).toFloat();
 
         motor_control_set_kp(kp);
 
@@ -217,8 +141,7 @@ static RobotCommand parseLine(
 
     if (command.startsWith("drivekp "))
     {
-        float kp =
-            command.substring(8).toFloat();
+        float kp = command.substring(8).toFloat();
 
         motor_control_set_drive_kp(kp);
 
@@ -244,10 +167,6 @@ static RobotCommand parseLine(
         return CMD_NONE;
     }
 
-
-    // ========================================================
-    // FLAGS
-    // ========================================================
 
     if (command.startsWith("flag "))
     {
@@ -275,19 +194,10 @@ static RobotCommand parseLine(
 
         return CMD_NONE;
     }
-
-
-    // ========================================================
-    // SIMPLE ROUTED COMMAND
-    // ========================================================
-
     return parseSimpleCommand(command);
 }
 
 
-// ============================================================
-// SERIAL PORT READER
-// ============================================================
 
 static RobotCommand readPort(
     Stream &port,
@@ -323,7 +233,7 @@ static RobotCommand readPort(
         buffer += incoming;
 
 
-        if (buffer.length() > 40)
+        if (buffer.length() > MAX_COMMAND_LENGTH)
         {
             buffer = "";
 
@@ -338,9 +248,6 @@ static RobotCommand readPort(
 }
 
 
-// ============================================================
-// INITIALISE SERIAL
-// ============================================================
 
 void serial_init()
 {
@@ -362,9 +269,7 @@ void serial_init()
 }
 
 
-// ============================================================
-// RUN SERIAL
-// ============================================================
+
 RobotCommand serial_exe()
 {
     RobotCommand command =
@@ -387,6 +292,3 @@ RobotCommand serial_exe()
 }
 
 
-// ============================================================
-// GET SIMPLE COMMAND
-// ============================================================

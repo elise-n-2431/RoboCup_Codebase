@@ -69,6 +69,9 @@ void resetStateFlag(bool*);
 CollectState getCollectState();
 NavState getNavState();
 
+const char* getNavStateName();
+const char* getCollectStateName();
+
 extern StateFlags STATE_FLAGS;
 
 #endif

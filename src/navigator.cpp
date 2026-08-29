@@ -57,34 +57,24 @@ enum PursuitState
 
 static PursuitState pursuitState = PURSUIT_START;
 
+enum ReversingState
+{
+    REVERSE_START,
+    REVERSE_BACKING,
+    REVERSE_TURNING,
+    REVERSE_FINISHED
+};
 
-// ============================================================
-// NAVIGATOR STATE
-// ============================================================
+static ReversingState reversingState = REVERSE_START;
 
-static float testHeading = 0.0;
-
-static bool testActive = false;
-
-
-// If further away than this,
-// turn before trying to drive.
-const float ALIGN_TOLERANCE = 3.0;
-
-
-// Normal navigation drive power
-const int NAV_DRIVE_POWER = 350;
+static const int REVERSE_POWER = 250;
+static const unsigned long REVERSE_TIME_MS = 2000;
+//to time when the reverse started so it knows when to count 1 second from
+static unsigned long reverseStartedAt = 0;
 
 
-// ============================================================
-// ANGLE HELPERS
-// ============================================================
 
-static bool weightPairDetected(
-    int top,
-    int bottom,
-    int &difference
-)
+static bool weightPairDetected(int top,int bottom,int &difference)
 {
     difference = 0;
 
@@ -110,111 +100,17 @@ static bool weightPairDetected(
     // Both sensors see something.
     // A closer bottom reading indicates a short object
     // sticking out from the background.
-    difference =
-        top - bottom;
+    difference = top - bottom;
 
     return (
         difference >= WEIGHT_DIFFERENCE_MM
     );
 }
 
-static float wrapHeading(float heading)
-{
-    while (heading >= 360.0)
-    {
-        heading -= 360.0;
-    }
-
-
-    while (heading < 0.0)
-    {
-        heading += 360.0;
-    }
-
-
-    return heading;
-}
-
-
-static float headingError(
-    float target,
-    float current
-)
-{
-    float error =
-        target - current;
-
-
-    while (error > 180.0)
-    {
-        error -= 360.0;
-    }
-
-
-    while (error < -180.0)
-    {
-        error += 360.0;
-    }
-
-
-    return error;
-}
-
-
-// ============================================================
-// INITIALISE
-// ============================================================
 
 void navigator_init()
 {
-    testHeading = 0.0;
-
-    testActive = false;
 }
-
-
-// ============================================================
-// TEMPORARY ABSOLUTE HEADING TEST
-// ============================================================
-
-void navigator_setTestHeading(float heading)
-{
-    testHeading =
-        wrapHeading(heading);
-
-
-    // New navigator command replaces any direct
-    // turn/drive controller command.
-    if (motor_control_is_active())
-    {
-        motor_control_stop();
-    }
-
-
-    testActive = true;
-
-
-    Serial.print(
-        "Navigator target heading: "
-    );
-
-    Serial.println(
-        testHeading
-    );
-
-
-    Serial2.print(
-        "Navigator target heading: "
-    );
-
-    Serial2.println(
-        testHeading
-    );
-}
-
-
-
-
 
 
 //for now it just has the ability to  look for weights and riase flags
@@ -236,9 +132,7 @@ static void roaming_exe()
     int leftDifference = 0;
     int rightDifference = 0;
 
-
     bool leftDetected = weightPairDetected(leftTop,leftBottom,leftDifference);
-
     bool rightDetected = weightPairDetected(rightTop,rightBottom,rightDifference);
 
 
@@ -261,25 +155,6 @@ static void roaming_exe()
         rightDetectionCount = 0;
     }
 
-    static unsigned long lastRoamPrint = 0;
-
-    if (millis() - lastRoamPrint >= 250)
-    {
-        lastRoamPrint = millis();
-
-        Serial2.print("ROAM | LT=");
-        Serial2.print(leftTop);
-        Serial2.print(" LB=");
-        Serial2.print(leftBottom);
-        Serial2.print(" | RT=");
-        Serial2.print(rightTop);
-        Serial2.print(" RB=");
-        Serial2.println(rightBottom);
-    }
-
-
-   
-
     if (leftDetectionCount >= DETECTION_COUNT_REQUIRED)
     {
         weightTargetSide = TARGET_LEFT;
@@ -288,7 +163,7 @@ static void roaming_exe()
         leftDetectionCount = 0;
         rightDetectionCount = 0;
 
-        Serial.println("Roaming: weight detected LEFT");
+        Serial2.println("Roaming: weight detected LEFT");
 
         setStateFlag(&STATE_FLAGS.target_identified);
         return;
@@ -304,7 +179,7 @@ static void roaming_exe()
         leftDetectionCount = 0;
         rightDetectionCount = 0;
 
-        Serial.println("Roaming: weight detected RIGHT");
+        Serial2.println("Roaming: weight detected RIGHT");
 
         setStateFlag(&STATE_FLAGS.target_identified);
         return;
@@ -312,9 +187,7 @@ static void roaming_exe()
 
 }
 
-// ============================================================
-// PURSUIT
-// ============================================================
+
 static void pursuit_exe()
 {
     switch (pursuitState)
@@ -323,19 +196,19 @@ static void pursuit_exe()
         {
             if (weightTargetSide == TARGET_LEFT)
             {
-                Serial.println("Pursuit: turning LEFT toward weight");
+                Serial2.println("Pursuit: turning LEFT toward weight");
                 motor_control_turn_relative(LEFT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                Serial.println("Pursuit: turning RIGHT toward weight");
+                Serial2.println("Pursuit: turning RIGHT toward weight");
                 motor_control_turn_relative(RIGHT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else
             {
-                Serial.println("Pursuit started without target side");
+                Serial2.println("Pursuit started without target side");
             }
 
             break;
@@ -345,7 +218,7 @@ static void pursuit_exe()
         {
             if (motor_control_is_turning()) return;
 
-            Serial.println("Pursuit: turn complete");
+            Serial2.println("Pursuit: turn complete");
             pursuitState = PURSUIT_ACQUIRING;
 
             break;
@@ -357,9 +230,9 @@ static void pursuit_exe()
 
             if (centreDistance > 0 && centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
             {
-                Serial.print("Pursuit: centre acquired weight at ");
-                Serial.print(centreDistance);
-                Serial.println(" mm");
+                Serial2.print("Pursuit: centre acquired weight at ");
+                Serial2.print(centreDistance);
+                Serial2.println(" mm");
 
                 middleLostCount = 0;
                 weightApproachHeading = imu_get_heading();
@@ -385,7 +258,7 @@ static void pursuit_exe()
                 {
                     motor_control_stop();
 
-                    Serial.println("Pursuit: centre lost weight");
+                    Serial2.println("Pursuit: centre lost weight");
 
                     middleLostCount = 0;
                     pursuitState = PURSUIT_ACQUIRING;
@@ -401,9 +274,9 @@ static void pursuit_exe()
             {
                 motor_control_stop();
 
-                Serial.print("Pursuit: weight reached at ");
-                Serial.print(centreDistance);
-                Serial.println(" mm");
+                Serial2.print("Pursuit: weight reached at ");
+                Serial2.print(centreDistance);
+                Serial2.println(" mm");
 
                 pursuitState = PURSUIT_FINISHED;
                 setStateFlag(&STATE_FLAGS.weight_in_entrance);
@@ -419,7 +292,7 @@ static void pursuit_exe()
                     motor_control_drive_heading(weightApproachHeading, WEIGHT_SLOW_POWER);
                     weightApproachSlowed = true;
 
-                    Serial.println("Pursuit: slowing approach");
+                    Serial2.println("Pursuit: slowing approach");
                 }
 
                 return;
@@ -442,6 +315,69 @@ static void pursuit_exe()
     }
 }
 
+static void reversing_exe()
+{
+    switch (reversingState)
+    {
+        case REVERSE_START:
+        {
+            Serial.println("Reverse: backing away");
+
+            motor_control_reverse(REVERSE_POWER);
+            reverseStartedAt = millis();
+
+            reversingState = REVERSE_BACKING;
+            break;
+        }
+
+        case REVERSE_BACKING:
+        {
+            if (millis() - reverseStartedAt < REVERSE_TIME_MS) return;
+
+            motor_control_stop();
+
+            if (weightTargetSide == TARGET_LEFT)
+            {
+                Serial.println("Reverse: turning RIGHT");
+                motor_control_turn_relative(-LEFT_WEIGHT_TURN_DEG);
+            }
+            else if (weightTargetSide == TARGET_RIGHT)
+            {
+                Serial.println("Reverse: turning LEFT");
+                motor_control_turn_relative(-RIGHT_WEIGHT_TURN_DEG);
+            }
+            else
+            {
+                Serial.println("Reverse: no target side, skipping turn");
+                reversingState = REVERSE_FINISHED;
+                return;
+            }
+
+            reversingState = REVERSE_TURNING;
+            break;
+        }
+
+        case REVERSE_TURNING:
+        {
+            if (motor_control_is_turning()) return;
+
+            Serial.println("Reverse: turn complete");
+            reversingState = REVERSE_FINISHED;
+            break;
+        }
+
+        case REVERSE_FINISHED:
+        {
+            Serial.println("Reverse: manoeuvre complete");
+
+            weightTargetSide = TARGET_NONE;
+            reversingState = REVERSE_START;
+
+            setStateFlag(&STATE_FLAGS.reverse_complete);
+            break;
+        }
+    }
+}
 
 
 
@@ -460,30 +396,12 @@ void navigator_exe()
         case HOMING:
             // homing_exe();
             break;
+        case REVERSING:
+            reversing_exe();
+            break;
 
         default:
             break;
     }
 }
 
-
-
-
-// ============================================================
-// STOP NAVIGATION
-// ============================================================
-
-void navigator_stop()
-{
-    testActive = false;
-}
-
-
-// ============================================================
-// STATE
-// ============================================================
-
-bool navigator_is_active()
-{
-    return testActive;
-}

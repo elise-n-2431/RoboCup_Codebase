@@ -19,6 +19,7 @@ NavState prev_nav_state = STATIONARY;
 CollectState current_collect_state = IDLE;
 CollectState prev_collect_state = IDLE;
 
+static NavState reverseReturnState = ROAMING;
 
 static bool pickup_succeeded = false;
 
@@ -35,7 +36,6 @@ const unsigned long RETURN_TIMEOUT_MS = 2000;
 
 const unsigned long OPENING_TIMEOUT_MS = 2000;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
-const unsigned long REVERSING_TIMEOUT_MS = 2000;
 
 unsigned long timeInNavState()
 {
@@ -47,9 +47,53 @@ unsigned long timeInCollectState()
     return millis() - collectStateEnteredAt;
 }
 
-void setStateFlag(bool* flag) {
-    *flag = true;
+//prinout for the gui 
+static const char* stateFlagName(bool* flag)
+{
+    if (flag == &STATE_FLAGS.target_identified) return "target_identified";
+    if (flag == &STATE_FLAGS.reverse_triggered) return "reverse_triggered";
+    if (flag == &STATE_FLAGS.home_reached) return "home_reached";
+    if (flag == &STATE_FLAGS.collection_complete) return "collection_complete";
+    if (flag == &STATE_FLAGS.collection_failed) return "collection_failed";
+    if (flag == &STATE_FLAGS.dropoff_complete) return "dropoff_complete";
+    if (flag == &STATE_FLAGS.not_target_weight_onboard) return "not_target_weight_onboard";
+    if (flag == &STATE_FLAGS.target_weight_onboard) return "target_weight_onboard";
+    if (flag == &STATE_FLAGS.dummy_identified) return "dummy_identified";
+    if (flag == &STATE_FLAGS.metal_identified) return "metal_identified";
+
+    if (flag == &STATE_FLAGS.weight_in_entrance) return "weight_in_entrance";
+    if (flag == &STATE_FLAGS.magnet_hit) return "magnet_hit";
+    if (flag == &STATE_FLAGS.no_vertical) return "no_vertical";
+    if (flag == &STATE_FLAGS.no_horizontal) return "no_horizontal";
+    if (flag == &STATE_FLAGS.can_iterate) return "can_iterate";
+    if (flag == &STATE_FLAGS.cant_iterate) return "cant_iterate";
+
+    if (flag == &STATE_FLAGS.vertical_lower_complete) return "vertical_lower_complete";
+    if (flag == &STATE_FLAGS.horizontal_lower_complete) return "horizontal_lower_complete";
+    if (flag == &STATE_FLAGS.pickup_complete) return "pickup_complete";
+    if (flag == &STATE_FLAGS.return_complete) return "return_complete";
+    if (flag == &STATE_FLAGS.reverse_complete) return "reverse_complete";
+    if (flag == &STATE_FLAGS.opening_complete) return "opening_complete";
+    if (flag == &STATE_FLAGS.closing_complete) return "closing_complete";
+
+    return "unknown";
 }
+
+void setStateFlag(bool* flag)
+{
+    if (*flag) return;
+
+    *flag = true;
+
+    const char* name = stateFlagName(flag);
+
+    Serial.print("FLAG,");
+    Serial.println(name);
+
+    Serial2.print("FLAG,");
+    Serial2.println(name);
+}
+
 void resetStateFlag(bool* flag) {
     if (*flag) {
         *flag = false;
@@ -97,6 +141,17 @@ static const char* collectStateName(CollectState state)
     }
 }
 
+const char* getNavStateName()
+{
+    return navStateName(current_nav_state);
+}
+
+const char* getCollectStateName()
+{
+    return collectStateName(current_collect_state);
+}
+
+
 void checkChangeNavState(NavState navState, bool* flag) {
     if (*flag) {
         prev_nav_state = current_nav_state;
@@ -104,10 +159,10 @@ void checkChangeNavState(NavState navState, bool* flag) {
         *flag = false;
         navStateEnteredAt = millis();
 
-        Serial.print("[NAV] ");
-        Serial.print(navStateName(prev_nav_state));
-        Serial.print(" -> ");
-        Serial.println(navStateName(current_nav_state));
+        Serial2.print("[NAV] ");
+        Serial2.print(navStateName(prev_nav_state));
+        Serial2.print(" -> ");
+        Serial2.println(navStateName(current_nav_state));
     }
 }
 
@@ -123,10 +178,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         *flag = false;
         collectStateEnteredAt = millis();
 
-        Serial.print("[COLLECT] ");
-        Serial.print(collectStateName(prev_collect_state));
-        Serial.print(" -> ");
-        Serial.println(collectStateName(current_collect_state));
+        Serial2.print("[COLLECT] ");
+        Serial2.print(collectStateName(prev_collect_state));
+        Serial2.print(" -> ");
+        Serial2.println(collectStateName(current_collect_state));
     }
 }
 
@@ -162,12 +217,6 @@ void check_timers() {
             break; 
     }
     switch (current_nav_state) { 
-        case REVERSING:
-            if (timeInNavState() >= REVERSING_TIMEOUT_MS) { 
-                setStateFlag(&STATE_FLAGS.reverse_complete);
-            }
-            break;
-
         case OPENING:
             if (timeInNavState() >= OPENING_TIMEOUT_MS) { 
                 setStateFlag(&STATE_FLAGS.opening_complete);
@@ -189,7 +238,9 @@ void updateStateMachine() {
     // handles all state transitions and conditions
 
     check_timers();
-    if (current_nav_state != REVERSING) {
+    if (current_nav_state != REVERSING && STATE_FLAGS.reverse_triggered)
+    {
+        reverseReturnState = current_nav_state;
         checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
     }
     
@@ -208,7 +259,11 @@ void updateStateMachine() {
             break;
 
         case SORTING:
-            checkChangeNavState(ROAMING, &STATE_FLAGS.dummy_identified);
+            if (STATE_FLAGS.dummy_identified)
+            {
+                reverseReturnState = ROAMING; 
+            }
+            checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
             checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 
@@ -225,7 +280,7 @@ void updateStateMachine() {
             break;
 
         case REVERSING:
-            checkChangeNavState(prev_nav_state, &STATE_FLAGS.reverse_complete);
+            checkChangeNavState(reverseReturnState, &STATE_FLAGS.reverse_complete);
             break;
 
         case COLLECTING:
