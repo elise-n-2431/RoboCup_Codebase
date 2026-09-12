@@ -6,7 +6,7 @@
 #ifndef MAP_H
 #define MAP_H
 
-void display_map();
-void update_self(int, int);
+void map_init();
+void map_update();
 
 #endif

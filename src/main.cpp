@@ -19,6 +19,7 @@
 #include "inputs/colour_sensor.h"
 #include "inputs/imu.h"
 #include "comms/command_router.h"
+#include "map.h"
 
 
 static int GATE_SERVO = 1;
@@ -41,6 +42,7 @@ void setup()
     //limit_switch_init();
     proximity_init();
     // Control
+    map_init();
     motor_control_init();
     pickup_servo_init();
     emag_init();
@@ -51,12 +53,11 @@ void setup()
         GATE_SERVO
     );
 
-    delay(1000);
+    delay(3000);
 
     smartservo_torque_on();
 }
 
-static unsigned long lastPosePrint = 0;
 
 
 static bool poseStreamEnabled = true;
@@ -70,6 +71,7 @@ void loop()
     imu_update();
     tof_update();
     pose_update();
+    map_update();
 
     //limit switch not working right now
     //limit_switch_exe();
@@ -90,10 +92,10 @@ void loop()
     RobotCommand command = serial_exe();
     command_router_exe(command);
 
-    navigator_exe();
-    motor_control_update();
+    // navigator_exe();
+    // motor_control_update();
 
-    pose_telemetry_exe();
+    // pose_telemetry_exe();
 }
 
 
