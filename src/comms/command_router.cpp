@@ -1,8 +1,8 @@
 #include "command_router.h"
 
-#include "driving_controller.h"
+#include "navigator.h"
 #include "outputs/smart_servo.h"
-#include "inputs/tof_expander.h"
+
 
 void command_router_exe(RobotCommand command)
 {
@@ -17,10 +17,9 @@ void command_router_exe(RobotCommand command)
             break;
 
         case CMD_STOP:
-            motor_control_stop();
+            navigator_stop();
             break;
-
-        case CMD_NONE:
+            
         default:
             break;
     }
