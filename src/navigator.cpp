@@ -67,6 +67,37 @@ enum ReversingState
 
 static ReversingState reversingState = REVERSE_START;
 
+enum RoamingState
+{
+    ROAM_START,
+    ROAM_DRIVING,
+    ROAM_BACKING,
+    ROAM_TURNING
+};
+
+static RoamingState roamingState = ROAM_START;
+
+
+// ============================================================
+// ROAMING TUNING
+// ============================================================
+
+static int ROAM_POWER = 300;
+
+// Distance at which normal avoidance begins
+static int ROAM_FRONT_BLOCK_MM = 250;
+
+static int ROAM_CRITICAL_MM = 90;
+
+// Normal avoidance turn
+static float ROAM_AVOID_TURN_DEG = 45.0f;
+
+// More aggressive recovery turn later if needed
+static float ROAM_RECOVERY_TURN_DEG = 90.0f;
+
+static int ROAM_REVERSE_POWER = 250;
+static unsigned long ROAM_REVERSE_TIME_MS = 500;
+
 static const int REVERSE_POWER = 250;
 static const unsigned long REVERSE_TIME_MS = 2000;
 //to time when the reverse started so it knows when to count 1 second from
@@ -98,8 +129,6 @@ static bool weightPairDetected(int top,int bottom,int &difference)
     }
 
     // Both sensors see something.
-    // A closer bottom reading indicates a short object
-    // sticking out from the background.
     difference = top - bottom;
 
     return (
@@ -112,6 +141,23 @@ void navigator_init()
 {
 }
 
+
+static int clearanceValue(int distance)
+{
+    // 0 currently means nothing useful was detected,
+    // so treat it as far away for choosing the clearer side.
+    if (distance <= 0)
+    {
+        return 1200;
+    }
+
+    return distance;
+}
+
+static bool obstacleCloserThan(int distance,int threshold)
+{
+    return (distance > 0 && distance < threshold);
+}
 
 //for now it just has the ability to  look for weights and riase flags
 static void roaming_exe()

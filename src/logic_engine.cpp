@@ -19,6 +19,17 @@ void increment_weights() {
     current_weights += 1;
 }
 
+void reset_weights()
+{
+    current_weights = 0;
+}
+
+void reset_collection_iterations()
+{
+    current_iterations = 0;
+}
+
+
 void eval_decide_state() {
     if (getCollectState() != DECIDING) {
         return;
@@ -38,6 +49,16 @@ void eval_collect_outcome() {
     }
 }
 
+
+void eval_dropoff_outcome()
+{
+    if (STATE_FLAGS.dropoff_complete)
+    {
+        reset_weights();
+        reset_collection_iterations();
+        resetStateFlag(&STATE_FLAGS.dropoff_complete);
+    }
+}
 
 
 void logic_exe() {

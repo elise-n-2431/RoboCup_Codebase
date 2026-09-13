@@ -277,6 +277,10 @@ void updateStateMachine() {
 
         case CLOSING:
             checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
+            if (STATE_FLAGS.closing_complete)
+            {
+                setStateFlag(&STATE_FLAGS.dropoff_complete);
+            }
             break;
 
         case REVERSING:
