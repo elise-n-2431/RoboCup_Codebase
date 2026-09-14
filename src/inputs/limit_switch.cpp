@@ -9,7 +9,7 @@ const byte SX1509_LIMIT_ADDRESS = 0x3E;
 const byte AIO5_PIN = 5;
 SX1509 io;
 
-const int CONSECUTIVE_HITS = 50;
+const int CONSECUTIVE_HITS = 5;
 int count_switch_on = 0;
 int count_switch_off = 0;
 
@@ -36,15 +36,15 @@ void limit_switch_init()
 }
 
 void limit_switch_exe() {
-    static unsigned long lastSwitchPrint = 0;
+    /*static unsigned long lastSwitchPrint = 0;
 
     if (millis() - lastSwitchPrint >= 250)
     {
         lastSwitchPrint = millis();
 
-        Serial.print("LIMIT RAW = ");
-        Serial.println(io.digitalRead(AIO5_PIN));
-    }
+        Serial2.print("LIMIT RAW = ");
+        Serial2.println(io.digitalRead(AIO5_PIN));
+    }*/
     if (getCollectState() != VERT_REACHED &&
         getCollectState() != HORI_REACHED) {
         count_switch_on = 0;
@@ -52,7 +52,7 @@ void limit_switch_exe() {
         return;
     }
 
-    if (io.digitalRead(AIO5_PIN) == LOW) {
+    if (io.digitalRead(AIO5_PIN) == HIGH) {
         count_switch_on++;
         count_switch_off = 0;
     } else {
@@ -60,12 +60,12 @@ void limit_switch_exe() {
         count_switch_off++;
     }
 
-    if (count_switch_on >= 50) {
+    if (count_switch_on >= CONSECUTIVE_HITS) {
         setStateFlag(&STATE_FLAGS.magnet_hit);
         count_switch_on = 0;
         count_switch_off = 0;
     }
-    else if (count_switch_off >= 50) {
+    else if (count_switch_off >= CONSECUTIVE_HITS) {
         if (getCollectState() == VERT_REACHED) {
             setStateFlag(&STATE_FLAGS.no_vertical);
         }
@@ -79,5 +79,5 @@ void limit_switch_exe() {
 }
 
 bool getLimitSwitch() {
-    return io.digitalRead(AIO5_PIN) == LOW;
+    return io.digitalRead(AIO5_PIN) == HIGH;
 }

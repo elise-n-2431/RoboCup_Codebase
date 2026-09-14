@@ -18,6 +18,7 @@
 #include "pose.h"
 #include "inputs/colour_sensor.h"
 #include "inputs/imu.h"
+#include "inputs/ultrasound.h"
 #include "comms/command_router.h"
 #include "map.h"
 
@@ -38,8 +39,7 @@ void setup()
     imu_init();
 
     tof_init();
-    //limit swithc isnt working right now
-    //limit_switch_init();
+    limit_switch_init();
     proximity_init();
     // Control
     map_init();
@@ -56,6 +56,7 @@ void setup()
     delay(3000);
 
     smartservo_torque_on();
+    ultrasound_init();
 }
 
 
@@ -73,8 +74,9 @@ void loop()
     pose_update();
     map_update();
 
-    //limit switch not working right now
-    //limit_switch_exe();
+
+    ultrasound_exe();
+    limit_switch_exe();
 
     logic_exe();
     updateStateMachine();
@@ -87,7 +89,6 @@ void loop()
     pickup_servo_update();
     colour_sensor_update();
     smartservo_update();
-    
 
     // RobotCommand command = serial_exe();
     // command_router_exe(command);

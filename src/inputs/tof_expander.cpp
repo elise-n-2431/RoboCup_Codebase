@@ -62,7 +62,7 @@ const int TOF_FILTER_SIZE = 3;
 
 const int NAV_TOF_MAX_MM = 1200;
 const int WEIGHT_TOF_MAX_MM = 800;
-
+const unsigned long TOF_STALE_MS = 250;
 
 
 static int tofRawDistances[NUM_TOF_SENSORS];
@@ -74,16 +74,313 @@ static int tofFilterIndex[NUM_TOF_SENSORS];
 static int tofFilterCount[NUM_TOF_SENSORS];
 
 static int tofFilteredDistances[NUM_TOF_SENSORS];
+static int tofRangeStatus[NUM_TOF_SENSORS];
 
+static bool tofOnline[NUM_TOF_SENSORS];
 static bool tofReadingValid[NUM_TOF_SENSORS];
+static bool tofNoReturn[NUM_TOF_SENSORS];
+
+static unsigned long tofLastReadingAt[NUM_TOF_SENSORS];
+static uint32_t tofSampleNumber[NUM_TOF_SENSORS];
+
+
+static void shutdownAllToFs()
+{
+    for (int i = 0; i < 16; i++)
+    {
+        tofExpander.digitalWrite(i, LOW);
+    }
+
+    delay(100);
+}
+
+//code needed ot initialise purple tofs
+
+static bool initialiseL0(VL53L0X &sensor, int xshutPin, int address, int number)
+{
+    tofExpander.digitalWrite(xshutPin, HIGH);
+    delay(100);
+    sensor.setTimeout(500);
+
+    if (!sensor.init()) {
+        Serial.print("ERROR: L0 ToF ");
+        Serial.print(number);
+        Serial.println(" failed");
+
+        tofExpander.digitalWrite(xshutPin, LOW);
+        return false;
+    }
+
+    sensor.setAddress(address);
+    sensor.startContinuous();
+    sensor.setTimeout(5);
+
+    Serial.print("L0 ToF ");
+    Serial.print(number);
+    Serial.print(" ready at 0x");
+    Serial.println(address, HEX);
+
+    return true;
+}
+
+//code needed to initialise black tofs
+
+static bool initialiseL1(VL53L1X &sensor, int xshutPin, int address, int number)
+{
+    tofExpander.digitalWrite(xshutPin, HIGH);
+    delay(100);
+    sensor.setTimeout(500);
+
+    if (!sensor.init()) {
+        Serial.print("ERROR: L1 ToF ");
+        Serial.print(number);
+        Serial.println(" failed");
+
+        tofExpander.digitalWrite(xshutPin, LOW);
+        return false;
+    }
+
+    sensor.setAddress(address);
+    sensor.setDistanceMode(VL53L1X::Short);
+    sensor.setROISize(8, 8);
+    sensor.setMeasurementTimingBudget(50000);
+    sensor.startContinuous(50);
+    sensor.setTimeout(5);
+
+    Serial.print("L1 ToF ");
+    Serial.print(number);
+    Serial.print(" ready at 0x");
+    Serial.println(address, HEX);
+
+    return true;
+}
+
+
+void tof_init()
+{
+    Wire.begin();
+    Serial.println("Starting ToF setup...");
+
+    for (int i = 0; i < NUM_TOF_SENSORS; i++) {
+        tofOnline[i] = tofReadingValid[i] = tofNoReturn[i] = false;
+        tofRawDistances[i] = tofFilteredDistances[i] = tofRangeStatus[i] = -1;
+        tofFilterIndex[i] = tofFilterCount[i] = 0;
+        tofLastReadingAt[i] = tofSampleNumber[i] = 0;
+    }
+
+    if (!tofExpander.begin(TOF_EXPANDER_ADDRESS)) {
+        Serial.println("ERROR: ToF expander not found");
+        return;
+    }
+
+    for (int i = 0; i < 16; i++) tofExpander.pinMode(i, OUTPUT);
+    shutdownAllToFs();
+
+    tofOnline[0] = initialiseL0(tof0, TOF0_XSHUT, 0x30, 0);
+    tofOnline[1] = initialiseL1(tof1, TOF1_XSHUT, 0x31, 1);
+    tofOnline[2] = initialiseL1(tof2, TOF2_XSHUT, 0x32, 2);
+    tofOnline[3] = initialiseL1(tof3, TOF3_XSHUT, 0x33, 3);
+    tofOnline[4] = initialiseL1(tof4, TOF4_XSHUT, 0x34, 4);
+    tofOnline[5] = initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
+    tofOnline[6] = initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
+    tofOnline[7] = initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
+    tofOnline[8] = initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
+
+    Serial.println("ToF setup complete");
+}
+
+
+//3 size buffer meidan filter used for ToFs
+
+static int median3(int a,int b,int c)
+{
+    if (a > b)
+    {
+        int temp = a;
+        a = b;
+        b = temp;
+    }
+
+    if (b > c)
+    {
+        int temp = b;
+        b = c;
+        c = temp;
+    }
+
+    if (a > b)
+    {
+        int temp = a;
+        a = b;
+        b = temp;
+    }
+
+    return b;
+}
+
+
+static void updateMedianFilter(int number, int distance, int maxDistance)
+{
+    if (distance <= 0) {
+        tofFilterIndex[number] = tofFilterCount[number] = 0;
+        return;
+    }
+
+    distance = min(distance, maxDistance);
+
+    tofFilterBuffer[number][tofFilterIndex[number]] = distance;
+    tofFilterIndex[number] = (tofFilterIndex[number] + 1) % TOF_FILTER_SIZE;
+    tofFilterCount[number] = min(tofFilterCount[number] + 1, TOF_FILTER_SIZE);
+
+    if (tofFilterCount[number] == 1) {
+        tofFilteredDistances[number] = distance;
+    } else if (tofFilterCount[number] == 2) {
+        tofFilteredDistances[number] = min(tofFilterBuffer[number][0],
+                                           tofFilterBuffer[number][1]);
+    } else {
+        tofFilteredDistances[number] = median3(tofFilterBuffer[number][0],
+                                              tofFilterBuffer[number][1],
+                                              tofFilterBuffer[number][2]);
+    }
+}
+
+
+static void saveReading(int number, int distance, int maxDistance)
+{
+    // Positive = distance, zero = fresh weak return, negative = unusable.
+    if (millis() - tofLastReadingAt[number] > TOF_STALE_MS) {
+        tofFilterIndex[number] = tofFilterCount[number] = 0;
+    }
+
+    tofReadingValid[number] = distance > 0;
+    tofNoReturn[number] = distance == 0;
+    tofLastReadingAt[number] = millis();
+    tofSampleNumber[number]++;
+
+    updateMedianFilter(number, distance, maxDistance);
+}
 
 
 
+static void updateL0(VL53L0X &sensor, int number, int maxDistance)
+{
+    if (!tofOnline[number]) return;
 
-// static int tofDistances[9] = {
-//     0, 0, 0, 0,
-//     0, 0, 0, 0, 0
-// };
+    uint8_t ready = sensor.readReg(VL53L0X::RESULT_INTERRUPT_STATUS);
+
+    if (sensor.last_status != 0) {
+        saveReading(number, -1, maxDistance);
+        return;
+    }
+
+    if (!(ready & 7)) return;
+
+    int status = (sensor.readReg(VL53L0X::RESULT_RANGE_STATUS) & 0x78) >> 3;
+
+    if (sensor.last_status != 0) {
+        saveReading(number, -1, maxDistance);
+        return;
+    }
+
+    int distance = sensor.readRangeContinuousMillimeters();
+
+    tofRawDistances[number] = distance;
+    tofRangeStatus[number] = status;
+
+    if (sensor.timeoutOccurred() || sensor.last_status != 0) {
+        saveReading(number, -1, maxDistance);
+    } else if (status == 11 && distance > 0 && distance < 8190) {
+        // L0 device status 11: range measurement completed.
+        saveReading(number, distance, maxDistance);
+    } else if (status == 4) {
+        // L0 device status 4: insufficient return signal.
+        saveReading(number, 0, maxDistance);
+    } else {
+        saveReading(number, -1, maxDistance);
+    }
+}
+
+static void updateL1(VL53L1X &sensor, int number, int maxDistance)
+{
+    if (!tofOnline[number]) return;
+
+    bool ready = sensor.dataReady();
+
+    if (sensor.last_status != 0) {
+        saveReading(number, -1, maxDistance);
+        return;
+    }
+
+    if (!ready) return;
+
+    int distance = sensor.read(false);
+    VL53L1X::RangeStatus status = sensor.ranging_data.range_status;
+
+    tofRawDistances[number] = distance;
+    tofRangeStatus[number] = status;
+
+    if (sensor.last_status != 0) {
+        saveReading(number, -1, maxDistance);
+    } else if (status == VL53L1X::RangeValid && distance > 0) {
+        saveReading(number, distance, maxDistance);
+    } else if (status == VL53L1X::RangeValidMinRangeClipped) {
+        saveReading(number, max(distance, 1), maxDistance);
+    } else if (status == VL53L1X::SignalFail) {
+        saveReading(number, 0, maxDistance);
+    } else {
+        saveReading(number, -1, maxDistance);
+    }
+}
+
+void tof_update()
+{
+    static unsigned long lastPollAt = 0;
+
+    if (millis() - lastPollAt < 5) return;
+    lastPollAt = millis();
+
+    updateL0(tof0, 0, NAV_TOF_MAX_MM);
+    updateL1(tof1, 1, WEIGHT_TOF_MAX_MM);
+    updateL1(tof2, 2, WEIGHT_TOF_MAX_MM);
+    updateL1(tof3, 3, WEIGHT_TOF_MAX_MM);
+    updateL1(tof4, 4, WEIGHT_TOF_MAX_MM);
+    updateL0(tof5, 5, NAV_TOF_MAX_MM);
+    updateL0(tof6, 6, NAV_TOF_MAX_MM);
+    updateL0(tof7, 7, NAV_TOF_MAX_MM);
+    updateL0(tof8, 8, NAV_TOF_MAX_MM);
+}
+
+
+
+int tof_get_distance(int number)
+{
+    if (number < 0 || number >= NUM_TOF_SENSORS) return -1;
+
+    if (!tofOnline[number] ||
+        millis() - tofLastReadingAt[number] > TOF_STALE_MS) return -1;
+
+    if (tofNoReturn[number]) return 0;
+    if (!tofReadingValid[number]) return -1;
+
+    bool navigationSensor = number == NAV_OUTER_LEFT || number == NAV_INNER_LEFT ||
+                            number == NAV_INNER_RIGHT || number == NAV_OUTER_RIGHT;
+
+    // React immediately to a closer obstacle; filter increases in clearance.
+    if (navigationSensor) return min(tofRawDistances[number], tofFilteredDistances[number]);
+
+    return tofFilteredDistances[number];
+}
+
+
+int tof_get_raw_distance(int number)
+{
+    return number >= 0 && number < NUM_TOF_SENSORS ? tofRawDistances[number] : -1;
+}
+
+uint32_t tof_get_sample_number(int number)
+{
+    return number >= 0 && number < NUM_TOF_SENSORS ? tofSampleNumber[number] : 0;
+}
 
 int tof_get_nav_outer_left()
 {
@@ -137,363 +434,6 @@ int tof_get_weight_right_bottom()
 }
 
 
-static void shutdownAllToFs()
-{
-    for (int i = 0; i < 16; i++)
-    {
-        tofExpander.digitalWrite(i, LOW);
-    }
-
-    delay(100);
-}
-
-//code needed ot initialise purple tofs
-
-static bool initialiseL0(
-    VL53L0X &sensor,
-    int xshutPin,
-    int address,
-    int number)
-{
-    tofExpander.digitalWrite(xshutPin, HIGH);
-
-    delay(100);
-
-    sensor.setTimeout(500);
-
-    if (!sensor.init())
-    {
-        Serial.print("ERROR: L0 ToF ");
-        Serial.print(number);
-        Serial.println(" failed");
-
-        tofExpander.digitalWrite(xshutPin, LOW);
-
-        return false;
-    }
-
-    sensor.setAddress(address);
-
-    sensor.startContinuous();
-
-    Serial.print("L0 ToF ");
-    Serial.print(number);
-    Serial.print(" ready at 0x");
-    Serial.println(address, HEX);
-
-    return true;
-}
-
-//code needed to initialise black tofs
-
-static bool initialiseL1(
-    VL53L1X &sensor,
-    int xshutPin,
-    int address,
-    int number)
-{
-    tofExpander.digitalWrite(xshutPin, HIGH);
-
-    delay(100);
-
-    sensor.setTimeout(500);
-
-    if (!sensor.init())
-    {
-        Serial.print("ERROR: L1 ToF ");
-        Serial.print(number);
-        Serial.println(" failed");
-
-        tofExpander.digitalWrite(xshutPin, LOW);
-
-        return false;
-    }
-
-    sensor.setAddress(address);
-
-    sensor.setDistanceMode(VL53L1X::Short);
-    sensor.setROISize(8, 8);
-
-    sensor.setMeasurementTimingBudget(50000);
-
-    sensor.startContinuous(50);
-
-    Serial.print("L1 ToF ");
-    Serial.print(number);
-    Serial.print(" ready at 0x");
-    Serial.println(address, HEX);
-
-    return true;
-}
-
-
-
-void tof_init()
-{
-    Wire.begin();
-
-    Serial.println("Starting ToF setup...");
-
-
-    // Initialise expander
-    if (!tofExpander.begin(TOF_EXPANDER_ADDRESS))
-    {
-        Serial.println("ERROR: ToF expander not found");
-
-        return;
-    }
-
-    Serial.println("ToF expander found");
-
-
-    // Configure expander pins
-    for (int i = 0; i < 16; i++)
-    {
-        tofExpander.pinMode(i, OUTPUT);
-    }
-
-
-    shutdownAllToFs();
-
-
-    // Initialise sensors one at a time
-    initialiseL0(tof0, TOF0_XSHUT, 0x30, 0);
-
-    initialiseL1(tof1, TOF1_XSHUT, 0x31, 1);
-    initialiseL1(tof2, TOF2_XSHUT, 0x32, 2);
-    initialiseL1(tof3, TOF3_XSHUT, 0x33, 3);
-    initialiseL1(tof4, TOF4_XSHUT, 0x34, 4);
-
-    initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
-    initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
-    initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
-    initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
-
-    for (int sensor = 0; sensor < NUM_TOF_SENSORS; sensor++)
-    {
-        tofRawDistances[sensor] = -1;
-        tofFilteredDistances[sensor] = -1;
-
-        tofFilterIndex[sensor] = 0;
-        tofFilterCount[sensor] = 0;
-
-        for (int i = 0; i < TOF_FILTER_SIZE; i++)
-        {
-            tofFilterBuffer[sensor][i] = -1;
-        }
-    }
-    for (int sensor = 0; sensor < NUM_TOF_SENSORS; sensor++)
-    {
-        tofReadingValid[sensor] = false;
-    }
-    Serial.println("ToF setup complete");
-}
-
-
-//3 size buffer meidan filter used for ToFs
-
-static int median3(int a,int b,int c)
-{
-    if (a > b)
-    {
-        int temp = a;
-        a = b;
-        b = temp;
-    }
-
-    if (b > c)
-    {
-        int temp = b;
-        b = c;
-        c = temp;
-    }
-
-    if (a > b)
-    {
-        int temp = a;
-        a = b;
-        b = temp;
-    }
-
-    return b;
-}
-
-static void updateMedianFilter(int sensor, int distance, int maxDistance)
-{
-    if (
-        sensor < 0 ||
-        sensor >= NUM_TOF_SENSORS
-    )
-    {
-        return;
-    }
-
-
-    // Invalid / out-of-range reading
-    if (
-        distance <= 0 ||
-        distance > maxDistance
-    )
-    {
-        tofReadingValid[sensor] = false;
-
-        return;
-    }
-
-
-    tofReadingValid[sensor] = true;
-
-
-    tofFilterBuffer[sensor]
-                   [tofFilterIndex[sensor]]
-        = distance;
-
-
-    tofFilterIndex[sensor]++;
-
-
-    if (
-        tofFilterIndex[sensor]
-        >= TOF_FILTER_SIZE
-    )
-    {
-        tofFilterIndex[sensor] = 0;
-    }
-
-
-    if (
-        tofFilterCount[sensor]
-        < TOF_FILTER_SIZE
-    )
-    {
-        tofFilterCount[sensor]++;
-    }
-
-
-    if (tofFilterCount[sensor] == 1)
-    {
-        tofFilteredDistances[sensor] =
-            tofFilterBuffer[sensor][0];
-
-        return;
-    }
-
-
-    if (tofFilterCount[sensor] == 2)
-    {
-        int a =
-            tofFilterBuffer[sensor][0];
-
-        int b =
-            tofFilterBuffer[sensor][1];
-
-        tofFilteredDistances[sensor] =
-            (a + b) / 2;
-
-        return;
-    }
-
-
-    tofFilteredDistances[sensor] =
-        median3(
-            tofFilterBuffer[sensor][0],
-            tofFilterBuffer[sensor][1],
-            tofFilterBuffer[sensor][2]
-        );
-}
-
-
-//the black and purple tofs read in different ways hence why below there are two different commands
-void tof_update()
-{
-    int distance0 =  tof0.readRangeContinuousMillimeters();  
-    tofRawDistances[0] = distance0;
-    updateMedianFilter(0,distance0,NAV_TOF_MAX_MM);
-
-    int distance1 = tof1.read();
-    tofRawDistances[1] = distance1;
-    updateMedianFilter(1,distance1, WEIGHT_TOF_MAX_MM);
-    
-
-    int distance2 = tof2.read();    
-    tofRawDistances[2] = distance2;
-    updateMedianFilter(2,distance2, WEIGHT_TOF_MAX_MM);
-    
-
-    int distance3 = tof3.read();
-    tofRawDistances[3] = distance3;
-    updateMedianFilter(3,distance3, WEIGHT_TOF_MAX_MM);
-    
-
-    int distance4 = tof4.read();
-    tofRawDistances[4] = distance4;
-    updateMedianFilter(4,distance4, WEIGHT_TOF_MAX_MM);
-    
-
-    int distance5 = tof5.readRangeContinuousMillimeters();
-    tofRawDistances[5] = distance5;
-    updateMedianFilter(5,distance5,NAV_TOF_MAX_MM);
-    
-
-    int distance6 = tof6.readRangeContinuousMillimeters();
-    tofRawDistances[6] = distance6;
-    updateMedianFilter(6,distance6,NAV_TOF_MAX_MM);
-
-
-    int distance7 = tof7.readRangeContinuousMillimeters();
-    tofRawDistances[7] = distance7;
-    updateMedianFilter(7,distance7, NAV_TOF_MAX_MM);
-
-    int distance8 = tof8.readRangeContinuousMillimeters();
-    tofRawDistances[8] = distance8;
-    updateMedianFilter(8,distance8, NAV_TOF_MAX_MM);
-}
-
-
-
-int tof_get_distance(
-    int sensorNumber
-)
-{
-    if (
-        sensorNumber < 0 ||
-        sensorNumber >= NUM_TOF_SENSORS
-    )
-    {
-        return 0;
-    }
-
-
-    if (!tofReadingValid[sensorNumber])
-    {
-        return 0;
-    }
-
-
-    return tofFilteredDistances[
-        sensorNumber
-    ];
-}
-
-int tof_get_raw_distance(
-    int sensorNumber
-)
-{
-    if (
-        sensorNumber < 0 ||
-        sensorNumber >= NUM_TOF_SENSORS
-    )
-    {
-        return -1;
-    }
-
-    return tofRawDistances[
-        sensorNumber
-    ];
-}
-
-
-
 
 
 void tof_print_readings(Stream &port)
@@ -530,3 +470,5 @@ void tof_print_readings(Stream &port)
     port.print("  MIDDLE =");
     port.println(tof_get_weight_middle());
 }
+
+

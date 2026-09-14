@@ -16,10 +16,7 @@ void smartservo_torque_on();
 
 void smartservo_torque_off();
 
-void smartservo_set_position(
-    uint16_t position,
-    uint8_t playtime
-);
+void smartservo_set_position(uint16_t position,uint8_t playtime);
 
 uint16_t smartservo_get_position();
 

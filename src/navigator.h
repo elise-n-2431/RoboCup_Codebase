@@ -5,10 +5,10 @@
 #ifndef NAVIGATOR_H
 #define NAVIGATOR_H
 
-
 void navigator_init();
-
 void navigator_exe();
 
+bool navigator_start(bool enablePickup);
+void navigator_stop();
 
 #endif

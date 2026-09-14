@@ -31,6 +31,7 @@ enum CollectState {
 
 struct StateFlags {
     // nav focused
+    bool target_lost = false;
     bool target_identified = false;
     bool reverse_triggered = false;
     bool home_reached = false;

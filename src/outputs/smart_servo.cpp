@@ -60,17 +60,10 @@ bool smartservo_init(
         smartServoId
     );
 
-
-    // Do NOT enable torque automatically.
-    // This avoids unexpected motion at startup.
-
     return true;
 }
 
 
-// ============================================================
-// UPDATE
-// ============================================================
 
 void smartservo_update()
 {
@@ -78,9 +71,6 @@ void smartservo_update()
 }
 
 
-// ============================================================
-// TORQUE
-// ============================================================
 
 void smartservo_torque_on()
 {
@@ -106,9 +96,6 @@ void smartservo_torque_off()
 }
 
 
-// ============================================================
-// POSITION
-// ============================================================
 
 void smartservo_set_position(
     uint16_t position,
@@ -134,10 +121,6 @@ void smartservo_set_position(
 }
 
 
-// ============================================================
-// GET POSITION
-// ============================================================
-
 uint16_t smartservo_get_position()
 {
     if (smartServo == nullptr)
@@ -149,10 +132,6 @@ uint16_t smartservo_get_position()
     return smartServo->getPosition();
 }
 
-
-// ============================================================
-// STATUS
-// ============================================================
 
 void smartservo_print_status()
 {
@@ -223,9 +202,7 @@ void smartservo_print_status()
 }
 
 
-// ============================================================
-// SCAN
-// ============================================================
+
 
 void smartservo_scan()
 {
@@ -352,3 +329,4 @@ void smartservo_gate_close()
 
     Serial.println("Gate closing");
 }
+

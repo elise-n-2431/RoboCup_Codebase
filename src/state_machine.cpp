@@ -2,7 +2,9 @@
 #include "state_machine.h"
 // #include <stdexcept>
 #include <Arduino.h>
-
+#include "logic_engine.h"
+#include "driving_controller.h"
+#include "outputs/smart_servo.h"
 
 // enums and structs moved to h file
 
@@ -50,6 +52,7 @@ unsigned long timeInCollectState()
 //prinout for the gui 
 static const char* stateFlagName(bool* flag)
 {
+    if (flag == &STATE_FLAGS.target_lost) return "target_lost";
     if (flag == &STATE_FLAGS.target_identified) return "target_identified";
     if (flag == &STATE_FLAGS.reverse_triggered) return "reverse_triggered";
     if (flag == &STATE_FLAGS.home_reached) return "home_reached";
@@ -152,18 +155,32 @@ const char* getCollectStateName()
 }
 
 
-void checkChangeNavState(NavState navState, bool* flag) {
-    if (*flag) {
-        prev_nav_state = current_nav_state;
-        current_nav_state = navState;
-        *flag = false;
-        navStateEnteredAt = millis();
+void checkChangeNavState(NavState navState, bool* flag)
+{
+    if (!*flag) return;
 
-        Serial2.print("[NAV] ");
-        Serial2.print(navStateName(prev_nav_state));
-        Serial2.print(" -> ");
-        Serial2.println(navStateName(current_nav_state));
+    motor_control_stop();
+    prev_nav_state = current_nav_state;
+    current_nav_state = navState;
+    *flag = false;
+    navStateEnteredAt = millis();
+
+    bool dropoff = STATE_FLAGS.dropoff_complete;
+    STATE_FLAGS.dropoff_complete = dropoff;
+
+    if (navState == COLLECTING) {
+        current_collect_state = IDLE;
+        pickup_succeeded = false;
+        reset_collection_iterations();
     }
+
+    if (navState == OPENING) smartservo_gate_open();
+    if (navState == CLOSING) smartservo_gate_close();
+
+    Serial2.print("[NAV] ");
+    Serial2.print(navStateName(prev_nav_state));
+    Serial2.print(" -> ");
+    Serial2.println(navStateName(current_nav_state));
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -246,25 +263,27 @@ void updateStateMachine() {
     
     switch (current_nav_state) {
         case STATIONARY:
-            checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
-            checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
+            if (STATE_FLAGS.target_weight_onboard) {
+                checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
+            } else checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
             break;
+
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
             break;
 
         case PURSUIT:
-            checkChangeNavState(SORTING, &STATE_FLAGS.weight_in_entrance);
+            if (STATE_FLAGS.target_lost) {
+                checkChangeNavState(ROAMING, &STATE_FLAGS.target_lost);
+            } else checkChangeNavState(SORTING, &STATE_FLAGS.weight_in_entrance);
             break;
 
         case SORTING:
-            if (STATE_FLAGS.dummy_identified)
-            {
-                reverseReturnState = ROAMING; 
-            }
-            checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
-            checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
+            if (STATE_FLAGS.dummy_identified) {
+                reverseReturnState = ROAMING;
+                checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
+            } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 
         case HOMING:
@@ -276,7 +295,11 @@ void updateStateMachine() {
             break;
 
         case CLOSING:
-            checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
+            if (STATE_FLAGS.closing_complete)
+            {
+                checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
+                setStateFlag(&STATE_FLAGS.dropoff_complete);
+            }
             break;
 
         case REVERSING:
@@ -284,11 +307,17 @@ void updateStateMachine() {
             break;
 
         case COLLECTING:
-            if (STATE_FLAGS.collection_complete || STATE_FLAGS.collection_failed) {
+            if (STATE_FLAGS.collection_complete) {
                 checkChangeNavState(STATIONARY, &STATE_FLAGS.collection_complete);
-                checkChangeNavState(ROAMING, &STATE_FLAGS.collection_failed);
                 break;
             }
+
+            if (STATE_FLAGS.collection_failed) {
+                reverseReturnState = ROAMING;
+                checkChangeNavState(REVERSING, &STATE_FLAGS.collection_failed);
+                break;
+            }
+
 
             switch (current_collect_state) {
                 case IDLE: {
@@ -302,8 +331,9 @@ void updateStateMachine() {
                     break;
 
                 case VERT_REACHED:
-                    checkChangeCollectState(PICKING_UP, &STATE_FLAGS.magnet_hit);
-                    checkChangeCollectState(LOWERING_HORI, &STATE_FLAGS.no_vertical);
+                    if (STATE_FLAGS.magnet_hit) {
+                        checkChangeCollectState(PICKING_UP, &STATE_FLAGS.magnet_hit);
+                    } else checkChangeCollectState(LOWERING_HORI, &STATE_FLAGS.no_vertical);
                     break;
 
                 case LOWERING_HORI:
@@ -311,35 +341,33 @@ void updateStateMachine() {
                     break;
 
                 case HORI_REACHED:
-                    checkChangeCollectState(PICKING_UP, &STATE_FLAGS.magnet_hit);
-                    checkChangeCollectState(DECIDING, &STATE_FLAGS.no_horizontal);
+                    if (STATE_FLAGS.magnet_hit) {
+                        checkChangeCollectState(PICKING_UP, &STATE_FLAGS.magnet_hit);
+                    } else checkChangeCollectState(DECIDING, &STATE_FLAGS.no_horizontal);
                     break;
 
                 case PICKING_UP:
                     if (STATE_FLAGS.pickup_complete) {
                         pickup_succeeded = true;
+                        checkChangeCollectState(RETURNING, &STATE_FLAGS.pickup_complete);
                     }
-                    checkChangeCollectState(RETURNING, &STATE_FLAGS.pickup_complete);
                     break;
 
                 case DECIDING:
-                    checkChangeCollectState(LOWERING_VERT, &STATE_FLAGS.can_iterate);
                     if (STATE_FLAGS.cant_iterate) {
                         pickup_succeeded = false;
-                    }
-                    checkChangeCollectState(RETURNING, &STATE_FLAGS.cant_iterate);
+                        checkChangeCollectState(RETURNING, &STATE_FLAGS.cant_iterate);
+                    } else checkChangeCollectState(LOWERING_VERT, &STATE_FLAGS.can_iterate);
                     break;
 
                 case RETURNING:
                     if (STATE_FLAGS.return_complete) {
+                        checkChangeCollectState(IDLE, &STATE_FLAGS.return_complete);
+
                         if (pickup_succeeded) {
+                            increment_weights();
                             setStateFlag(&STATE_FLAGS.collection_complete);
-                        } else {
-                            setStateFlag(&STATE_FLAGS.collection_failed);
-                        }
-                        resetStateFlag(&STATE_FLAGS.return_complete);
-                        current_collect_state = IDLE;
-                        collectStateEnteredAt = millis();
+                        } else setStateFlag(&STATE_FLAGS.collection_failed);
                     }
                     break;
             }

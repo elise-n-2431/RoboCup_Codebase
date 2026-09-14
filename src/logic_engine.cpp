@@ -4,6 +4,22 @@
 int current_weights = 0;
 int current_iterations = 0;
 
+
+
+void increment_weights() {
+    current_weights ++;
+}
+
+void reset_weights()
+{
+    current_weights = 0;
+}
+
+void reset_collection_iterations()
+{
+    current_iterations = 0;
+}
+
 void choose_action() {
     if (getNavState() != STATIONARY) {
         return;
@@ -15,33 +31,24 @@ void choose_action() {
     }
 }
 
-void increment_weights() {
-    current_weights += 1;
-}
 
-void eval_decide_state() {
-    if (getCollectState() != DECIDING) {
-        return;
+void logic_exe()
+{
+    if (STATE_FLAGS.dropoff_complete) {
+        reset_weights();
+        reset_collection_iterations();
+        resetStateFlag(&STATE_FLAGS.dropoff_complete);
     }
+
+    choose_action();
+
+    if (getNavState() != COLLECTING || getCollectState() != DECIDING) return;
+    if (STATE_FLAGS.can_iterate || STATE_FLAGS.cant_iterate) return;
 
     if (current_iterations >= MAX_ITERATIONS) {
         setStateFlag(&STATE_FLAGS.cant_iterate);
     } else {
-        current_iterations += 1;
+        current_iterations++;
         setStateFlag(&STATE_FLAGS.can_iterate);
     }
-}
-
-void eval_collect_outcome() {
-    if (STATE_FLAGS.collection_complete) {
-        increment_weights();
-    }
-}
-
-
-
-void logic_exe() {
-    choose_action();            
-    eval_decide_state();     
-    eval_collect_outcome();
 }
