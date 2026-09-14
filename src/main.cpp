@@ -89,8 +89,8 @@ void loop()
     smartservo_update();
     
 
-    RobotCommand command = serial_exe();
-    command_router_exe(command);
+    // RobotCommand command = serial_exe();
+    // command_router_exe(command);
 
     // navigator_exe();
     // motor_control_update();

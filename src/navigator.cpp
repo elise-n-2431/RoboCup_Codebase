@@ -7,7 +7,7 @@
 #include "driving_controller.h"
 #include "inputs/tof_expander.h"
 #include "state_machine.h"
-
+#include "map.h"
 
 
 
@@ -378,6 +378,14 @@ static void reversing_exe()
         }
     }
 }
+
+void frontier_targetting(){
+    int frontier_x = get_frontier_x();
+    int frontier_y = get_frontier_y();
+
+    
+}
+
 
 
 

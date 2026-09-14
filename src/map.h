@@ -6,7 +6,11 @@
 #ifndef MAP_H
 #define MAP_H
 
+
+
 void map_init();
 void map_update();
+int get_frontier_x();
+int get_frontier_y();
 
 #endif

@@ -5,11 +5,14 @@
 #include <cstdint>
 #include <cmath>
 #include "inputs/tof_expander.h"
+#include <vector>
+#include <numeric> // for std::accumulate
+
 
 const int CELL_SIZE_MM = 50;
 
-const int MAP_WIDTH = 40;
-const int MAP_HEIGHT = 40;
+const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
+const int MAP_HEIGHT = 49 + 4;
 
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
@@ -24,7 +27,7 @@ const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
 const int WEIGHT_MIDDLE = 8;
 
-int max_iter = 20;
+int max_iter = 100;
 int iteration = 0;
 // --- Fixed-point confidence values ---------------------------------------
 // Both maps store confidence as int16_t / uint16_t scaled by CONF_SCALE,
@@ -40,8 +43,9 @@ const int16_t OBSTACLE_UNKNOWN_BAND = 100;      // |value| below this counts as 
 
 uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
 int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
+bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
 
-int self_x = 0; // define on startup
+int self_x = 0; // define initial position in pose
 int self_y = 0;
 
 float MAP_ORIGIN_X_MM = 0;
@@ -50,8 +54,27 @@ float MAP_ORIGIN_Y_MM = 0;
 int home_x = 0;
 int home_y = 0;
 
+std::vector<std::vector<int>> FRONTIER_GROUPS_X;
+std::vector<std::vector<int>> FRONTIER_GROUPS_Y;
+
+bool FRONTIER_VISITED[MAP_WIDTH][MAP_HEIGHT];
+
+struct FrontierCentre {
+    int x;
+    int y;
+};
+
+struct FrontierTarget {
+    bool valid;
+    int group_index;
+    FrontierCentre centre;
+    float cost;
+};
+
+FrontierTarget target;
+
 const int n = 3; // number of starting weight estimates
-int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {50, 40}};
+int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
 
 // Decay factors as integer "permille" (parts per thousand), e.g. 998 == 0.998.
 // Applied as: new_val = (val * PERMILLE) / 1000, all in integer math.
@@ -59,7 +82,17 @@ const int32_t DECAY_WEIGHT_PERMILLE   = 995;
 const int32_t DECAY_OBSTACLE_PERMILLE = 997; 
 const int32_t DECAY_FREE_PERMILLE     = 997; 
 
-const int32_t ARENA_MIRROR_PERMILLE = 400; 
+const int32_t ARENA_MIRROR_PERMILLE = 200; 
+
+
+int get_frontier_x() {
+    return target.centre.x;
+}
+
+int get_frontier_y() {
+    return target.centre.y;
+}
+
 
 int world_to_cell_x(float x_mm)
 {
@@ -91,9 +124,38 @@ int world_to_cell_y(float y_mm)
     }
 }
 
+void add_obstacle_evidence(int cell_x, int cell_y)
+{
+    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
+        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    {
+        return;
+    }
+
+    OBSTACLE_MAP[cell_x][cell_y] = CONF_SCALE;
+}
+
+
+void add_free_evidence(int cell_x, int cell_y)
+{
+    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
+        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    {
+        return;
+    }
+
+    OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+}
+
 void update_self() {
     self_x = world_to_cell_x(pose_get_x_mm());
     self_y = world_to_cell_y(pose_get_y_mm());
+
+    for (int i =-2; i < 3; i++) { // account for size of robot, assume square shape
+        for (int j =-2; j < 3; j++) {
+            add_free_evidence(self_x + i, self_y + j);
+        }
+    }
 }
 
 void map_init() {
@@ -138,14 +200,14 @@ void arena_mirroring()
     {
         for (int y = 0; y < MAP_HEIGHT; y++)
         {
-            int mirror_x = MAP_WIDTH - 1 - x;
+            int mirror_y = MAP_HEIGHT - 1 - y;
 
             int16_t left  = OBSTACLE_MAP[x][y];
-            int16_t right = OBSTACLE_MAP[mirror_x][y];
+            int16_t right = OBSTACLE_MAP[x][mirror_y];
 
             if (abs(left) > abs(right))
             {
-                OBSTACLE_MAP[mirror_x][y] =
+                OBSTACLE_MAP[x][mirror_y] =
                     (int16_t)(((int32_t)left * ARENA_MIRROR_PERMILLE) / 1000);
             }
             else if (abs(right) > abs(left))
@@ -157,63 +219,162 @@ void arena_mirroring()
     }
 }
 
-void check_surroundings() {
-    // check the 8 surrounding cells for obstacles
-    for (int dx = -1; dx <= 1; dx++) {
-        for (int dy = -1; dy <= 1; dy++) {
-            if (dx == 0 && dy == 0) continue;
+// void check_surroundings() { // check surroundings aren't all walls - problematic
+//     for (int i =-2; i < 3; i+=) { 
+//         for (int j =-2; j < 3; j++) {
+//             add_free_evidence(self_x + i, self_y + j);
+//         }
+//     }
+// }
 
-            int x = self_x + dx;
-            int y = self_y + dy;
+void find_frontier() {
+    for (int x = 1; x < MAP_WIDTH - 1; x++)
+    {
+        for (int y = 1; y < MAP_HEIGHT - 1; y++)
+        {
+            if (OBSTACLE_MAP[x][y] > OBSTACLE_UNKNOWN_BAND || OBSTACLE_MAP[x][y] < -OBSTACLE_UNKNOWN_BAND)
+            {
+                FRONTIER_MAP[x][y] = false;
+            }
+            else if(self_x != x && self_y != y){ // unexplored space
+                FRONTIER_MAP[x][y] = false;
 
-            if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT) {
-                if (OBSTACLE_MAP[x][y] > 0) {
-                    OBSTACLE_MAP[x][y] = CONF_SCALE;
-                } else {
-                    OBSTACLE_MAP[x][y] = -CONF_SCALE;
+                for (int i = -1; i <= 1; i++) {
+                    for (int j = -1; j <= 1; j++) {
+                        if (!(i == 0 && j == 0)) {
+                            if (OBSTACLE_MAP[x + i][y + j] < -OBSTACLE_UNKNOWN_BAND) {
+                                FRONTIER_MAP[x][y] = true;
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-}
 
-void update_map_arrays() {
-    // TODO: needs your sensor-fusion API -- see note below
-}
+    // --------------------------------------------------
+    // Group adjacent frontier cells (8-connectivity)
+    // --------------------------------------------------
 
-void calc_frontier() {
-    // TODO: see note below for a proposed implementation
-}
+    FRONTIER_GROUPS_X.clear();
+    FRONTIER_GROUPS_Y.clear();
+    memset(FRONTIER_VISITED, 0, sizeof(FRONTIER_VISITED));
 
-void add_obstacle_evidence(int cell_x, int cell_y)
-{
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    static int16_t stack_x[MAP_WIDTH * MAP_HEIGHT];
+    static int16_t stack_y[MAP_WIDTH * MAP_HEIGHT];
+
+    for (int x = 1; x < MAP_WIDTH - 1; x++)
     {
-        return;
-    }
+        for (int y = 1; y < MAP_HEIGHT - 1; y++)
+        {
+            if (!FRONTIER_MAP[x][y] || FRONTIER_VISITED[x][y]) continue;
 
-    OBSTACLE_MAP[cell_x][cell_y] = CONF_SCALE;
+            std::vector<int> group_x;
+            std::vector<int> group_y;
+
+            int sp = 0;
+            stack_x[sp] = x;
+            stack_y[sp] = y;
+            sp++;
+            FRONTIER_VISITED[x][y] = true;
+
+            while (sp > 0)
+            {
+                sp--;
+                int cx = stack_x[sp];
+                int cy = stack_y[sp];
+
+                group_x.push_back(cx);
+                group_y.push_back(cy);
+
+                for (int i = -1; i <= 1; i++)
+                {
+                    for (int j = -1; j <= 1; j++)
+                    {
+                        if (i == 0 && j == 0) continue;
+
+                        int nx = cx + i;
+                        int ny = cy + j;
+
+                        if (nx < 1 || nx >= MAP_WIDTH - 1 || ny < 1 || ny >= MAP_HEIGHT - 1) continue;
+
+                        if (FRONTIER_MAP[nx][ny] && !FRONTIER_VISITED[nx][ny])
+                        {
+                            FRONTIER_VISITED[nx][ny] = true;
+                            stack_x[sp] = nx;
+                            stack_y[sp] = ny;
+                            sp++;
+                        }
+                    }
+                }
+            }
+
+            FRONTIER_GROUPS_X.push_back(group_x);
+            FRONTIER_GROUPS_Y.push_back(group_y);
+        }
+    }
 }
 
+float cost(float distance, int size, float orientation) {
+    float c1 = 1.0f;
+    float c2 = 1.0f;
+    float c3 = 1.0f;
+    return c1 * distance - c2 * size + c3 * fabsf(orientation);
+}
 
-void add_free_evidence(int cell_x, int cell_y)
+FrontierCentre get_frontier_centre(int group_index)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
-    {
-        return;
-    }
+    const std::vector<int> &gx = FRONTIER_GROUPS_X[group_index];
+    const std::vector<int> &gy = FRONTIER_GROUPS_Y[group_index];
 
-    OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+    long sum_x = std::accumulate(gx.begin(), gx.end(), 0L);
+    long sum_y = std::accumulate(gy.begin(), gy.end(), 0L);
+
+    FrontierCentre centre;
+    centre.x = (int)sum_x / gx.size();
+    centre.y = (int)sum_y / gy.size();
+
+    return centre;
+}
+
+void calc_frontier_target() {
+    FrontierTarget best;
+    best.valid = false;
+    best.cost = INFINITY;
+
+    for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {
+        int size = FRONTIER_GROUPS_X[i].size();
+        FrontierCentre centre = get_frontier_centre(i);
+
+        float dx = centre.x - self_x;
+        float dy = centre.y - self_y;
+        float sqrd_distance = dx * dx + dy * dy;
+
+        float xy_orientation = atan2f(dy, dx);
+        float heading = pose_get_heading_deg() * PI / 180.0f;
+        float relative_orientation = xy_orientation - heading;
+
+        while (relative_orientation > PI)  relative_orientation -= 2.0f * PI;
+        while (relative_orientation < -PI) relative_orientation += 2.0f * PI;
+
+        float frontier_cost = cost(sqrd_distance, size, relative_orientation);
+
+        if (frontier_cost < best.cost) {
+            best.valid = true;
+            best.group_index = i;
+            best.centre = centre;
+            best.cost = frontier_cost;
+        }
+    }
+    target = best;
 }
 
 void update_obstacle_map(int distance_mm, float angle_deg, float sensor_cone_deg)
 {
     bool hit = true;
-    if (distance_mm <= 0)
+    if (distance_mm == 0)
     {
-        distance_mm = 800; // max range of the sensor
+        distance_mm = 1000; // max range of the sensor
         hit = false;
     }
 
@@ -288,7 +449,6 @@ void update_obstacle_map(int distance_mm, float angle_deg, float sensor_cone_deg
         );
     }
 }
-
 
 void add_weight_evidence(int cell_x, int cell_y)
 {
@@ -420,43 +580,100 @@ void interpret_tof()
 //     update_obstacle_map(ultrasonic_get_distance(1), -90.0, 20.0);
 // }
 
-
-void print_weight_map()
+void print_frontier_map_packed()
 {
-    Serial2.println("WEIGHT_MAP_START");
+    Serial2.println("FRONTIER_MAP_START");
+
+    uint8_t byte = 0;
+    int bit_count = 0;
 
     for (int y = 0; y < MAP_HEIGHT; y++)
     {
         for (int x = 0; x < MAP_WIDTH; x++)
         {
-            Serial2.print(WEIGHT_MAP[x][y]);
+            byte = (byte << 1) | (FRONTIER_MAP[x][y] ? 1 : 0);
+            bit_count++;
 
-            if (x < MAP_WIDTH - 1)
-                Serial2.print(",");
+            if (bit_count == 8)
+            {
+                if (byte < 0x10) Serial2.print('0');
+                Serial2.print(byte, HEX);
+                byte = 0;
+                bit_count = 0;
+            }
         }
-
-        Serial2.println();
     }
 
-    Serial2.println("WEIGHT_MAP_END");
+    if (bit_count > 0) // flush partial final byte
+    {
+        byte <<= (8 - bit_count);
+        if (byte < 0x10) Serial2.print('0');
+        Serial2.print(byte, HEX);
+    }
 
+    Serial2.println();
+    Serial2.println("FRONTIER_MAP_END");
+}
 
+void print_obstacle_map_quantized()
+{
     Serial2.println("OBSTACLE_MAP_START");
 
     for (int y = 0; y < MAP_HEIGHT; y++)
     {
         for (int x = 0; x < MAP_WIDTH; x++)
         {
-            Serial2.print(OBSTACLE_MAP[x][y]);
+            int16_t val = OBSTACLE_MAP[x][y];
+            if (val > CONF_SCALE)  val = CONF_SCALE;
+            if (val < -CONF_SCALE) val = -CONF_SCALE;
 
-            if (x < MAP_WIDTH - 1)
-                Serial2.print(",");
+            // scale to -7..7, rounding to nearest instead of truncating
+            int32_t scaled = (int32_t)val * 7;
+            int8_t q;
+
+            if (scaled >= 0)
+                q = (int8_t)((scaled + CONF_SCALE / 2) / CONF_SCALE);
+            else
+                q = (int8_t)((scaled - CONF_SCALE / 2) / CONF_SCALE);
+
+            if (q > 7)  q = 7;
+            if (q < -7) q = -7;
+
+            // encode as 4-bit two's complement, print as one hex digit
+            uint8_t nibble = (uint8_t)(q & 0x0F);
+            Serial2.print(nibble, HEX);
         }
-
-        Serial2.println();
     }
 
+    Serial2.println();
     Serial2.println("OBSTACLE_MAP_END");
+}
+
+
+void print_weight_map()
+{
+    // Serial2.println("WEIGHT_MAP_START");
+
+    // for (int y = 0; y < MAP_HEIGHT; y++)
+    // {
+    //     for (int x = 0; x < MAP_WIDTH; x++)
+    //     {
+    //         Serial2.print(WEIGHT_MAP[x][y]);
+
+    //         if (x < MAP_WIDTH - 1)
+    //             Serial2.print(",");
+    //     }
+
+    //     Serial2.println();
+    // }
+
+    // Serial2.println("WEIGHT_MAP_END");
+
+
+    print_obstacle_map_quantized();
+       
+    print_frontier_map_packed();
+
     Serial2.println("Current position");
     Serial2.print(self_x); 
     Serial2.print(",");
@@ -486,18 +703,25 @@ void print_weight_map()
     Serial2.println("Heading");
     Serial2.print(pose_get_heading_deg());
     Serial2.println();
-}
 
+    Serial2.println("Target");
+    Serial2.print(target.centre.x); 
+    Serial2.print(",");
+    Serial2.print(target.centre.y);
+    Serial2.println();
+}
 
 void map_update()
 {
     iteration += 1;
+
     apply_decay();
     update_self();
     interpret_tof();
     arena_mirroring();
-    check_surroundings();
-    calc_frontier();
+    find_frontier();
+    calc_frontier_target();
+
     if(max_iter < iteration) {
         print_weight_map();
         iteration = 0;
