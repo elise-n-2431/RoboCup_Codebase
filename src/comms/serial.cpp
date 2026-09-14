@@ -22,6 +22,14 @@ static bool allowManual(Stream &port)
     return true;
 }
 
+static RobotCommand temp_parseline_override(String command) {
+    if (command == "roam" || command == "auto") {
+        navigator_start(command == "auto");
+        return CMD_NONE;
+    }
+}
+
+
 static RobotCommand parseLine(String command, Stream &port)
 {
     command.trim();
@@ -106,7 +114,7 @@ void serial_init()
 
     delay(500);
     Serial.println("Serial interface ready");
-    Serial2.println("Serial interface ready");
+    // Serial2.println("Serial interface ready");
 }
 
 RobotCommand serial_exe()

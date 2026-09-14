@@ -12,8 +12,8 @@
 // POSE
 // ============================================================
 
-static float poseXmm = 150.0;
-static float poseYmm = 150.0;
+static float poseXmm = 300.0;
+static float poseYmm = 300.0;
 
 
 // IMU heading when pose was reset.

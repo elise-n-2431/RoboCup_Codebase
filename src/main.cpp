@@ -53,7 +53,7 @@ void setup()
         GATE_SERVO
     );
 
-    delay(3000);
+    delay(1000);
 
     smartservo_torque_on();
     ultrasound_init();
@@ -72,10 +72,11 @@ void loop()
     imu_update();
     tof_update();
     pose_update();
+    // Serial.println("here!");
     map_update();
 
 
-    ultrasound_exe();
+    //ultrasound_exe();
     limit_switch_exe();
 
     logic_exe();
@@ -90,11 +91,11 @@ void loop()
     colour_sensor_update();
     smartservo_update();
 
-    // RobotCommand command = serial_exe();
-    // command_router_exe(command);
+    RobotCommand command = serial_exe();
+    command_router_exe(command);
 
-    // navigator_exe();
-    // motor_control_update();
+    navigator_exe();
+    motor_control_update();
 
     // pose_telemetry_exe();
 }

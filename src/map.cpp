@@ -54,6 +54,7 @@ float MAP_ORIGIN_Y_MM = 0;
 int home_x = 0;
 int home_y = 0;
 
+
 std::vector<std::vector<int>> FRONTIER_GROUPS_X;
 std::vector<std::vector<int>> FRONTIER_GROUPS_Y;
 
@@ -78,9 +79,9 @@ int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
 
 // Decay factors as integer "permille" (parts per thousand), e.g. 998 == 0.998.
 // Applied as: new_val = (val * PERMILLE) / 1000, all in integer math.
-const int32_t DECAY_WEIGHT_PERMILLE   = 995;
-const int32_t DECAY_OBSTACLE_PERMILLE = 997; 
-const int32_t DECAY_FREE_PERMILLE     = 997; 
+const int32_t DECAY_WEIGHT_PERMILLE   = 997;
+const int32_t DECAY_OBSTACLE_PERMILLE = 999; 
+const int32_t DECAY_FREE_PERMILLE     = 999; 
 
 const int32_t ARENA_MIRROR_PERMILLE = 200; 
 
@@ -143,8 +144,11 @@ void add_free_evidence(int cell_x, int cell_y)
     {
         return;
     }
-
-    OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+    if (OBSTACLE_MAP[cell_x][cell_y] > 200) {
+        OBSTACLE_MAP[cell_x][cell_y] -= 500;
+    } else {
+        OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+    }
 }
 
 void update_self() {
@@ -372,7 +376,7 @@ void calc_frontier_target() {
 void update_obstacle_map(int distance_mm, float angle_deg, float sensor_cone_deg)
 {
     bool hit = true;
-    if (distance_mm == 0)
+    if (distance_mm <= 0)
     {
         distance_mm = 1000; // max range of the sensor
         hit = false;
@@ -710,6 +714,7 @@ void print_weight_map()
     Serial2.print(target.centre.y);
     Serial2.println();
 }
+
 
 void map_update()
 {
