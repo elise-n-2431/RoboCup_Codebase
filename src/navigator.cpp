@@ -17,8 +17,8 @@ static int middleLostCount = 0;
 static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 
 
-static const float LEFT_WEIGHT_TURN_DEG  = -25.0f;
-static const float RIGHT_WEIGHT_TURN_DEG = 25.0f;
+static const float LEFT_WEIGHT_TURN_DEG  = -60.0f;
+static const float RIGHT_WEIGHT_TURN_DEG = 60.0f;
 static const int WEIGHT_DIFFERENCE_MM = 100;
 static const int WEIGHT_STOP_DISTANCE_MM = 55;
 static int DETECTION_COUNT_REQUIRED = 3;
@@ -81,7 +81,7 @@ static RoamingState roamingState = ROAM_START;
 // ROAMING TUNING
 // ============================================================
 
-static int ROAM_POWER = 300;
+static int ROAM_POWER = 380;
 
 // Distance at which normal avoidance begins
 static int ROAM_FRONT_BLOCK_MM = 250;
@@ -104,7 +104,7 @@ static unsigned long reverseStartedAt = 0;
 
 static const int ROAM_SIDE_BLOCK_MM = 180;
 static const int ROAM_SLOW_MM = 500;
-static const int ROAM_SLOW_POWER = 250;
+static const int ROAM_SLOW_POWER = 280;
 
 static const unsigned long NAV_TURN_TIMEOUT_MS = 4000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
@@ -291,16 +291,47 @@ static void roaming_drive(int power)
 
 static void roaming_exe()
 {
+    if (roamingState == ROAM_TURNING)
+    {
+        if (motor_control_is_turning()) return;
+
+        roamCheckStartedAt = millis();
+        roamingState = ROAM_CHECKING;
+        return;
+    }
+
     int outerLeft = tof_get_nav_outer_left();
     int innerLeft = tof_get_nav_inner_left();
     int innerRight = tof_get_nav_inner_right();
     int outerRight = tof_get_nav_outer_right();
 
-    if (outerLeft < 0 || innerLeft < 0 || innerRight < 0 || outerRight < 0) {
-        navigator_stop();
-        Serial2.println("Roaming stopped: unavailable ToF ToF");
+    static unsigned long navTofInvalidStarted = 0;
+
+    /*bool tofUnavailable =
+        outerLeft < 0 ||
+        innerLeft < 0 ||
+        innerRight < 0 ||
+        outerRight < 0;
+
+    if (tofUnavailable)
+    {
+        if (navTofInvalidStarted == 0)
+        {
+            navTofInvalidStarted = millis();
+        }
+
+        motor_control_stop();
+
+        if (millis() - navTofInvalidStarted > 500)
+        {
+            navigator_stop();
+            Serial2.println("Roaming stopped: navigation ToF unavailable");
+        }
+
         return;
     }
+
+    navTofInvalidStarted = 0;*/
 
     bool weakReturn = outerLeft == 0 || innerLeft == 0 || innerRight == 0 || outerRight == 0;
 
@@ -614,9 +645,7 @@ void navigator_exe()
         int left = tof_get_nav_inner_left();
         int right = tof_get_nav_inner_right();
 
-        if (millis() - navigatorStateStarted >= PURSUIT_TIMEOUT_MS ||
-            left < 0 || right < 0 ||
-            min(clearanceValue(left), clearanceValue(right)) < 120)
+        if (millis() - navigatorStateStarted >= PURSUIT_TIMEOUT_MS)
         {
             motor_control_stop();
             setStateFlag(&STATE_FLAGS.target_lost);

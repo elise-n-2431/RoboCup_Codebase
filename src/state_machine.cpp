@@ -166,7 +166,6 @@ void checkChangeNavState(NavState navState, bool* flag)
     navStateEnteredAt = millis();
 
     bool dropoff = STATE_FLAGS.dropoff_complete;
-    STATE_FLAGS = StateFlags{};
     STATE_FLAGS.dropoff_complete = dropoff;
 
     if (navState == COLLECTING) {

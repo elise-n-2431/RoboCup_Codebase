@@ -82,8 +82,8 @@ void loop()
     RobotCommand command = serial_exe();
     command_router_exe(command);
 
-    //navigator_exe();
-    //motor_control_update();
+    navigator_exe();
+    motor_control_update();
 
     //pose_telemetry_exe();
 }
