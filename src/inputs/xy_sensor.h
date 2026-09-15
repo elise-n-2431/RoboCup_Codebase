@@ -8,5 +8,6 @@
 
 void xy_init();
 void xy_exe();
+void print_xy();
 
 #endif

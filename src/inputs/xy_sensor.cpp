@@ -33,7 +33,7 @@ int16_t current_X, current_Y = 0;
 void xy_init()
 {  
     if (!flow.begin()) {
-        Serial2.println("Initialization of the flow sensor failed");
+        Serial.println("Initialization of the flow sensor failed");
         while(1) { }
     }    
     flow.readMotionCount(&og_X, &og_Y);
@@ -55,11 +55,14 @@ void xy_exe()
     // Serial2.print(", dY: ");
     // Serial2.print(deltaY);
 
-    Serial2.print("X: ");
-    Serial2.print(current_X);
-    Serial2.print(", Y: ");
-    Serial2.print(current_Y);
-    Serial2.print("\r\n");
+
 
     delay(1000);
+}
+
+void print_xy() {
+    Serial.print("X: ");
+    Serial.print(current_X);
+    Serial.print(", Y: ");
+    Serial.println(current_Y);
 }

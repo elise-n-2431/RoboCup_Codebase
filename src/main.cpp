@@ -66,6 +66,8 @@ void setup()
     // imu_print_readings();
     navigator_start(false);
 
+    xy_init();
+
 }
 
 
@@ -78,9 +80,13 @@ const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void loop()
 {
-    pose_telemetry_exe();
-    print_state();
-    print_DC_power();
+    // PRINT STATEMENTS
+    // pose_telemetry_exe();
+    // print_state();
+    // print_DC_power();
+
+    xy_exe();
+    print_xy();
 
     imu_update();
 
