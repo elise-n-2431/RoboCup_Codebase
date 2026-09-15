@@ -12,8 +12,8 @@
 // POSE
 // ============================================================
 
-static float poseXmm = 300.0;
-static float poseYmm = 300.0;
+static float poseXmm = 0.0;
+static float poseYmm = 0.0;
 
 
 // IMU heading when pose was reset.
@@ -38,8 +38,8 @@ void pose_init()
 
 void pose_reset()
 {
-    poseXmm = 0.0;
-    poseYmm = 0.0;
+    poseXmm = 300.0;
+    poseYmm = 300.0;
 
 
     startHeadingDeg =

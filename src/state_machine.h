@@ -73,6 +73,8 @@ NavState getNavState();
 const char* getNavStateName();
 const char* getCollectStateName();
 
+void print_state();
+
 extern StateFlags STATE_FLAGS;
 
 #endif

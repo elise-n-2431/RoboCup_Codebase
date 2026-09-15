@@ -345,7 +345,7 @@ static void roaming_exe()
     int rightClearance = min(outerRight, innerRight);
 
     if (front <= ROAM_CRITICAL_MM) {
-        navigator_stop();
+        // navigator_stop();
         // Serial2.println("Roaming stopped: obstacle critically close");
         return;
     }

@@ -32,6 +32,8 @@ const bool RIGHT_INVERTED = true;
 // so reduce that side.
 static float SCALING_FACTOR = 0.85;
 
+int leftMotorPower = 0;
+int rightMotorPower = 0;
 
 
 
@@ -148,13 +150,13 @@ void DC_motors_setPower(
 
 
     // Account for physical mounting direction
-    int leftMotorPower =
+    leftMotorPower =
         LEFT_INVERTED
         ? -leftPower
         : leftPower;
 
 
-    int rightMotorPower =
+    rightMotorPower =
         RIGHT_INVERTED
         ? -rightPower
         : rightPower;
@@ -199,3 +201,8 @@ void DC_motors_init()
     );
 }
 
+void print_DC_power() {
+    Serial.print(leftMotorPower);
+    Serial.print(' ');
+    Serial.println(rightMotorPower);
+}

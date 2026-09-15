@@ -80,8 +80,9 @@ int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
 // Decay factors as integer "permille" (parts per thousand), e.g. 998 == 0.998.
 // Applied as: new_val = (val * PERMILLE) / 1000, all in integer math.
 const int32_t DECAY_WEIGHT_PERMILLE   = 997;
-const int32_t DECAY_OBSTACLE_PERMILLE = 999; 
+const int32_t DECAY_OBSTACLE_PERMILLE = 1000; 
 const int32_t DECAY_FREE_PERMILLE     = 999; 
+const int32_t DECAY_OBSTACLE_IF_FREE  = 100;
 
 const int32_t ARENA_MIRROR_PERMILLE = 200; 
 
@@ -145,7 +146,7 @@ void add_free_evidence(int cell_x, int cell_y)
         return;
     }
     if (OBSTACLE_MAP[cell_x][cell_y] > 200) {
-        OBSTACLE_MAP[cell_x][cell_y] -= 500;
+        OBSTACLE_MAP[cell_x][cell_y] -= DECAY_OBSTACLE_IF_FREE;
     } else {
         OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
     }

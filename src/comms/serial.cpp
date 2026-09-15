@@ -22,12 +22,12 @@ static bool allowManual(Stream &port)
     return true;
 }
 
-static RobotCommand temp_parseline_override(String command) {
-    if (command == "roam" || command == "auto") {
-        navigator_start(command == "auto");
-        return CMD_NONE;
-    }
-}
+// static RobotCommand temp_parseline_override(String command) {
+//     if (command == "roam" || command == "auto") {
+//         navigator_start(command == "auto");
+//         return CMD_NONE;
+//     }
+// }
 
 
 static RobotCommand parseLine(String command, Stream &port)

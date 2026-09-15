@@ -48,7 +48,6 @@ void setup()
     emag_init();
     navigator_init();
     colour_sensor_init();
-    pose_init();
     smartservo_init(
         GATE_SERVO
     );
@@ -57,6 +56,16 @@ void setup()
 
     smartservo_torque_on();
     ultrasound_init();
+
+
+    
+    // imu_print_readings();
+
+    pose_init();
+
+    // imu_print_readings();
+    navigator_start(false);
+
 }
 
 
@@ -69,7 +78,13 @@ const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void loop()
 {
+    pose_telemetry_exe();
+    print_state();
+    print_DC_power();
+
     imu_update();
+
+    // imu_print_readings();
     tof_update();
     pose_update();
     // Serial.println("here!");
@@ -97,7 +112,10 @@ void loop()
     navigator_exe();
     motor_control_update();
 
-    // pose_telemetry_exe();
+    // pose_print(Serial);
+
+    
+
 }
 
 
