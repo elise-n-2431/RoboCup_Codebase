@@ -84,6 +84,7 @@ void loop()
     // pose_telemetry_exe();
     // print_state();
     // print_DC_power();
+    // print_limit();
 
     xy_exe();
     print_xy();
@@ -94,10 +95,10 @@ void loop()
     tof_update();
     pose_update();
     // Serial.println("here!");
-    map_update();
+    // map_update();
 
 
-    //ultrasound_exe();
+    ultrasound_exe();
     limit_switch_exe();
 
     logic_exe();

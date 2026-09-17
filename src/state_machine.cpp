@@ -15,7 +15,7 @@ StateFlags STATE_FLAGS;
 
 
 // Chose to separate navigation and collection state machines
-NavState current_nav_state = STATIONARY; // -- make ROAMING for testing
+NavState current_nav_state = ROAMING; // -- make ROAMING for testing
 NavState prev_nav_state = STATIONARY;
 
 CollectState current_collect_state = IDLE;
@@ -377,5 +377,5 @@ void updateStateMachine() {
 
 void print_state() {
     // Serial.println(current_collect_state);
-    Serial.println(navStateName(current_nav_state));
+    Serial2.println(navStateName(current_nav_state));
 }

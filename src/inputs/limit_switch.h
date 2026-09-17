@@ -7,5 +7,6 @@
 
 void limit_switch_init();
 void limit_switch_exe();
+void print_limit();
 
 #endif
