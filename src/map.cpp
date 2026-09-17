@@ -7,6 +7,7 @@
 #include "inputs/tof_expander.h"
 #include <vector>
 #include <numeric> // for std::accumulate
+#include "inputs/ultrasound.h"
 
 
 const int CELL_SIZE_MM = 50;
@@ -201,21 +202,21 @@ void apply_decay() {
 
 void arena_mirroring()
 {
-    for (int x = 0; x < MAP_WIDTH / 2; x++)
+    for (int x = 0; x < MAP_WIDTH; x++)
     {
-        for (int y = 0; y < MAP_HEIGHT; y++)
+        for (int y = 0; y < MAP_HEIGHT / 2; y++)
         {
             int mirror_y = MAP_HEIGHT - 1 - y;
 
             int16_t left  = OBSTACLE_MAP[x][y];
             int16_t right = OBSTACLE_MAP[x][mirror_y];
 
-            if (abs(left) > abs(right))
+            if (abs(left) > abs(right) + 200)
             {
                 OBSTACLE_MAP[x][mirror_y] =
                     (int16_t)(((int32_t)left * ARENA_MIRROR_PERMILLE) / 1000);
             }
-            else if (abs(right) > abs(left))
+            else if (abs(right) > abs(left) + 200)
             {
                 OBSTACLE_MAP[x][y] =
                     (int16_t)(((int32_t)right * ARENA_MIRROR_PERMILLE) / 1000);
@@ -374,7 +375,7 @@ void calc_frontier_target() {
     target = best;
 }
 
-void update_obstacle_map(int distance_mm, float angle_deg, float sensor_cone_deg)
+void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 125)
 {
     bool hit = true;
     if (distance_mm <= 0)
@@ -386,7 +387,7 @@ void update_obstacle_map(int distance_mm, float angle_deg, float sensor_cone_deg
     float angle = angle_deg * PI / 180.0;
 
     // Sensor position relative to robot ICR
-    float sensor_x = 125.0 + 90.0 * cos(angle);
+    float sensor_x = sensor_x_pos + 90.0 * cos(angle);
     float sensor_y = 90.0 * sin(angle);
 
     // Convert sensor position to world coordinates
@@ -502,7 +503,7 @@ void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm =
 
     float angle = angle_deg * PI / 180.0;
 
-    float sensor_x = 125.0 + 90.0 * cos(angle);
+    float sensor_x = 125 + 90.0 * cos(angle);
     float sensor_y = 90.0 * sin(angle);
 
     float heading = pose_get_heading_deg() * PI / 180.0;
@@ -560,7 +561,6 @@ void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm =
         }
     }
 
-
     add_weight_evidence(
         hit_cell_x,
         hit_cell_y
@@ -570,20 +570,25 @@ void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm =
 
 void interpret_tof()
 {
-    update_obstacle_map(tof_get_distance(NAV_OUTER_LEFT), 40.0, 10.0);
-    update_obstacle_map(tof_get_distance(NAV_INNER_LEFT),  15.0, 10.0);
-    update_obstacle_map(tof_get_distance(NAV_INNER_RIGHT), -15.0, 10.0);
-    update_obstacle_map(tof_get_distance(NAV_OUTER_RIGHT), -40.0, 10.0);
+    for (int i = -3; i < 4; i += 2) {
+        update_obstacle_map(tof_get_distance(NAV_OUTER_LEFT), 40.0 + i);
+        update_obstacle_map(tof_get_distance(NAV_INNER_LEFT),  15.0 + i);
+        update_obstacle_map(tof_get_distance(NAV_INNER_RIGHT), -15.0 + i);
+        update_obstacle_map(tof_get_distance(NAV_OUTER_RIGHT), -40.0 + i);
+    }
 
     update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
     update_weight_map(tof_get_distance(WEIGHT_RIGHT_BOTTOM), 15.0, tof_get_distance(WEIGHT_RIGHT_TOP));
     update_weight_map(tof_get_distance(WEIGHT_MIDDLE), 0.0);
 }
 
-// void interpret_ultrasonic() {
-//     update_obstacle_map(ultrasonic_get_distance(0), 90.0, 20.0);
-//     update_obstacle_map(ultrasonic_get_distance(1), -90.0, 20.0);
-// }
+void interpret_ultrasonic() { // multiple to get wide cone shape
+    for (int i = 80; i < 101; i += 2) {
+        update_obstacle_map(ultrasound_get_left_mm(), i, 0);
+        update_obstacle_map(ultrasound_get_right_mm(), -i, 0);
+    }
+
+}
 
 void print_frontier_map_packed()
 {
@@ -724,12 +729,13 @@ void map_update()
     apply_decay();
     update_self();
     interpret_tof();
+    interpret_ultrasonic();
     arena_mirroring();
     find_frontier();
     calc_frontier_target();
+    print_weight_map();
 
     if(max_iter < iteration) {
-        print_weight_map();
         iteration = 0;
     }
 

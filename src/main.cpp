@@ -87,7 +87,7 @@ void loop()
     // print_limit();
 
     xy_exe();
-    print_xy();
+    // print_xy();
 
     imu_update();
 
@@ -95,7 +95,7 @@ void loop()
     tof_update();
     pose_update();
     // Serial.println("here!");
-    // map_update();
+    map_update();
 
 
     ultrasound_exe();
@@ -117,7 +117,7 @@ void loop()
     command_router_exe(command);
 
     navigator_exe();
-    motor_control_update();
+    // motor_control_update();
 
     // pose_print(Serial);
 
