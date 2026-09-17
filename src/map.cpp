@@ -55,6 +55,7 @@ float MAP_ORIGIN_Y_MM = 0;
 int home_x = 0;
 int home_y = 0;
 
+static float g_cos_heading, g_sin_heading, heading;
 
 std::vector<std::vector<int>> FRONTIER_GROUPS_X;
 std::vector<std::vector<int>> FRONTIER_GROUPS_Y;
@@ -391,17 +392,17 @@ void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 12
     float sensor_y = 90.0 * sin(angle);
 
     // Convert sensor position to world coordinates
-    float heading = pose_get_heading_deg() * PI / 180.0;
+    // float heading = pose_get_heading_deg() * PI / 180.0;
 
     float sensor_world_x =
         pose_get_x_mm()
-        + sensor_x * cos(heading)
-        - sensor_y * sin(heading);
+        + sensor_x * g_cos_heading
+        - sensor_y * g_sin_heading;
 
     float sensor_world_y =
         pose_get_y_mm()
-        + sensor_x * sin(heading)
-        + sensor_y * cos(heading);
+        + sensor_x * g_sin_heading
+        + sensor_y * g_cos_heading;
 
     // Beam direction in world coordinates
     float beam_heading =
@@ -660,7 +661,7 @@ void print_obstacle_map_quantized()
 }
 
 
-void print_weight_map()
+void send_map_data()
 {
     // Serial2.println("WEIGHT_MAP_START");
 
@@ -721,10 +722,20 @@ void print_weight_map()
     Serial2.println();
 }
 
+// temp var to calc period
+static uint32_t dbg_max_us = 0;
+static uint32_t dbg_sum_us = 0;
+static uint32_t dbg_calls  = 0;
 
 void map_update()
 {
-    iteration += 1;
+    uint32_t t0 = micros();
+
+
+
+    heading = pose_get_heading_deg() * PI / 180.0f;
+    g_cos_heading = cosf(heading);
+    g_sin_heading = sinf(heading);
 
     apply_decay();
     update_self();
@@ -733,10 +744,24 @@ void map_update()
     arena_mirroring();
     find_frontier();
     calc_frontier_target();
-    print_weight_map();
+    // print_weight_map();
 
-    if(max_iter < iteration) {
-        iteration = 0;
+
+    // calculate period time for map
+
+    uint32_t dt = micros() - t0;
+    dbg_sum_us += dt;
+    dbg_calls++;
+    if (dt > dbg_max_us) dbg_max_us = dt;
+
+    if (dbg_calls % 20 == 0) {
+        Serial.print(F("map_update avg_us="));
+        Serial.print(dbg_sum_us / dbg_calls);
+        Serial.print(F(" max_us="));
+        Serial.println(dbg_max_us);
     }
-
 }
+
+
+
+// map_period_ms = max(ceil(max_us / 1000) * 3

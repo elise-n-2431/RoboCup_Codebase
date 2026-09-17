@@ -25,10 +25,43 @@ Bitcraze_PMW3901 flow(FLOW_CS);
 // CS -> white -> D10
 // none
 
+
+const float SENSOR_HEIGHT_MM = 80.0; // estimate (UPDATE)
+const float MM_PER_PIXEL = 0.30;
+
 int16_t og_X, og_Y;
-int16_t current_X, current_Y = 0;
+
+static float pendingDeltaXmm = 0.0f;
+static float pendingDeltaYmm = 0.0f;
+
+int16_t deltaX, deltaY;
 
 // Note: mm_moved = counts × (height_mm / focal_constant)
+
+// int get_xy_x_mm() {
+//     return current_X_mm;
+// }
+
+// int get_xy_y_mm() {
+//     return current_Y_mm;
+// }
+
+void get_xy_delta_mm(float &deltaXmm_out, float &deltaYmm_out)
+{
+    deltaXmm_out = pendingDeltaXmm;
+    deltaYmm_out = pendingDeltaYmm;
+
+    pendingDeltaXmm = 0.0f;
+    pendingDeltaYmm = 0.0f;
+}
+
+void print_xy()
+{
+    Serial.print("pending dX_mm: ");
+    Serial.print(pendingDeltaXmm);
+    Serial.print(", dY_mm: ");
+    Serial.println(pendingDeltaYmm);
+}
 
 void xy_init()
 {  
@@ -39,30 +72,10 @@ void xy_init()
     flow.readMotionCount(&og_X, &og_Y);
 }
 
-int16_t deltaX,deltaY;
-
 void xy_exe()
 {
     flow.readMotionCount(&deltaX, &deltaY);
-    current_X += deltaX;
-    current_Y += deltaY;
 
-    // update_self(deltaX, deltaY);
-    
-
-    // Serial2.print("dX: ");
-    // Serial2.print(deltaX);
-    // Serial2.print(", dY: ");
-    // Serial2.print(deltaY);
-
-
-
-    delay(1000);
-}
-
-void print_xy() {
-    Serial.print("X: ");
-    Serial.print(current_X);
-    Serial.print(", Y: ");
-    Serial.println(current_Y);
+    pendingDeltaXmm += deltaX * MM_PER_PIXEL;
+    pendingDeltaYmm += deltaY * MM_PER_PIXEL;
 }

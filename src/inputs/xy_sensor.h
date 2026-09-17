@@ -8,6 +8,7 @@
 
 void xy_init();
 void xy_exe();
+void get_xy_delta_mm(float &deltaXmm_out, float &deltaYmm_out);
 void print_xy();
 
 #endif

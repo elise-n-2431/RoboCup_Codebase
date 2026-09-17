@@ -6,6 +6,7 @@
 #include "inputs/encoders.h"
 #include "inputs/imu.h"
 #include "inputs/tof_expander.h"
+#include "inputs/xy_sensor.h"
 
 
 // ============================================================
@@ -29,6 +30,7 @@ static const unsigned long TELEMETRY_PERIOD_MS = 100;
 static unsigned long lastTelemetryTime = 0;
 static bool telemetryEnabled = true;
 
+static const float XY_FUSION_WEIGHT = 0.3f;
 
 void pose_init()
 {
@@ -66,67 +68,43 @@ void pose_update()
         return;
     }
 
+    long leftCount = encoders_get_left_count();
+    long rightCount = encoders_get_right_count();
 
-    long leftCount =
-        encoders_get_left_count();
-
-    long rightCount =
-        encoders_get_right_count();
-
-
-    long deltaLeftCount =
-        leftCount - previousLeftCount;
-
-    long deltaRightCount =
-        rightCount - previousRightCount;
-
+    long deltaLeftCount = leftCount - previousLeftCount;
+    long deltaRightCount = rightCount - previousRightCount;
 
     previousLeftCount = leftCount;
     previousRightCount = rightCount;
 
+    float leftDistance = deltaLeftCount * encoders_get_left_mm_per_count();
+    float rightDistance = deltaRightCount * encoders_get_right_mm_per_count();
 
-    float leftDistance =
-        deltaLeftCount *
-        encoders_get_left_mm_per_count();
+    float encoderForward = (leftDistance + rightDistance) / 2.0f;
 
-    float rightDistance =
-        deltaRightCount *
-        encoders_get_right_mm_per_count();
+
+    // Body-frame delta since the last pose_update() -- drains the
+    // xy_sensor accumulator.
+    float xyForward, xyLateral;
+    get_xy_delta_mm(xyForward, xyLateral);
 
 
     float forwardDistance =
-        (leftDistance + rightDistance)
-        / 2.0f;
+        (1.0f - XY_FUSION_WEIGHT) * encoderForward
+        + XY_FUSION_WEIGHT * xyForward;
+
+    float lateralDistance = XY_FUSION_WEIGHT * xyLateral;
 
 
-    float headingDeg =
-        imu_get_heading()
-        - startHeadingDeg;
+    float headingDeg = imu_get_heading() - startHeadingDeg;
 
+    while (headingDeg >= 360.0f) headingDeg -= 360.0f;
+    while (headingDeg < 0.0f)    headingDeg += 360.0f;
 
-    while (headingDeg >= 360.0f)
-    {
-        headingDeg -= 360.0f;
-    }
+    float headingRad = headingDeg * PI / 180.0f;
 
-    while (headingDeg < 0.0f)
-    {
-        headingDeg += 360.0f;
-    }
-
-
-    float headingRad =
-        headingDeg * PI / 180.0f;
-
-
-    poseXmm +=
-        forwardDistance *
-        cos(headingRad);
-
-    poseYmm +=
-        forwardDistance *
-        sin(headingRad);
-
+    poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
+    poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);
 }
 
 
