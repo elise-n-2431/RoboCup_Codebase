@@ -36,21 +36,21 @@ void limit_switch_init()
 }
 
 void limit_switch_exe() {
-    /*static unsigned long lastSwitchPrint = 0;
+    static unsigned long lastSwitchPrint = 0;
 
-    if (millis() - lastSwitchPrint >= 250)
+    /*if (millis() - lastSwitchPrint >= 250)
     {
         lastSwitchPrint = millis();
 
-        Serial2.print("LIMIT RAW = ");
-        Serial2.println(io.digitalRead(AIO5_PIN));
-    }*/
+        Serial.print("LIMIT RAW = ");
+        Serial.println(io.digitalRead(AIO5_PIN));
+    }
     if (getCollectState() != VERT_REACHED &&
         getCollectState() != HORI_REACHED) {
         count_switch_on = 0;
         count_switch_off = 0;
         return;
-    }
+    }*/
 
     if (io.digitalRead(AIO5_PIN) == HIGH) {
         count_switch_on++;

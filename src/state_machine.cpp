@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "logic_engine.h"
 #include "driving_controller.h"
-#include "outputs/smart_servo.h"
+#include "outputs/pickup_servo.h"
 
 // enums and structs moved to h file
 
@@ -174,8 +174,8 @@ void checkChangeNavState(NavState navState, bool* flag)
         reset_collection_iterations();
     }
 
-    if (navState == OPENING) smartservo_gate_open();
-    if (navState == CLOSING) smartservo_gate_close();
+    if (navState == OPENING) gateOpen();
+    if (navState == CLOSING) gateClose();
 
     Serial2.print("[NAV] ");
     Serial2.print(navStateName(prev_nav_state));

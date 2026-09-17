@@ -193,6 +193,11 @@ bool imu_init()
     // Attempt to restore previous calibration.
     loadCalibration();
 
+    for (int i = 0; i < 5; i++)
+    {
+        imu_update();
+        delay(20);
+    }
 
     Serial.println("IMU setup complete");
 

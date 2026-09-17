@@ -10,14 +10,20 @@
 #include "state_machine.h"
 
 Servo craneServo;
+Servo gateServo;
 
 const int CRANE_SERVO_PIN = 29;
+const int GATE_SERVO_PIN  = 28;
+
 
 // Start conservative and calibrate these
-const int IDLE_US       = 1500;
-const int VERTICAL_US   = 1050;
-const int HORIZONTAL_US = 950;
-const int DROPOFF_US    = 1950;
+const int IDLE_US       = 1900;
+const int VERTICAL_US   = 1580;
+const int HORIZONTAL_US = 1400;
+const int DROPOFF_US    = 2350;
+
+const int GATE_OPEN_US   = 1300;
+const int GATE_CLOSED_US = 2150;
 
 static int currentPulse = IDLE_US;
 static int targetPulse  = IDLE_US;
@@ -37,7 +43,23 @@ static void moveCraneTo(int target, int speed);
 void pickup_servo_init()
 {
     craneServo.attach(CRANE_SERVO_PIN, 500, 2500);
+    gateServo.attach(GATE_SERVO_PIN, 500, 2500);
     craneIdle();
+    gateClose();
+}
+
+void gateOpen()
+{
+    gateServo.writeMicroseconds(GATE_OPEN_US);
+    Serial.print("Gate opening: ");
+    Serial.println(GATE_OPEN_US);
+}
+
+void gateClose()
+{
+    gateServo.writeMicroseconds(GATE_CLOSED_US);
+    Serial.print("Gate closing: ");
+    Serial.println(GATE_CLOSED_US);
 }
 
 void craneIdle()

@@ -10,6 +10,9 @@ void pickup_servo_exe();
 void pickup_servo_update();
 static void moveCraneTo(int target, int speed);
 
+void gateOpen();
+void gateClose();
+
 void craneVertical();
 void craneHorizontal();
 void craneDrop();

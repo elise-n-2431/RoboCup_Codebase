@@ -1,6 +1,6 @@
 #include "ultrasound.h"
 
-static const int LEFT_TRIG_PIN  = 25;
+static const int LEFT_TRIG_PIN  = 21;
 static const int LEFT_ECHO_PIN  = 14;
 
 static const int RIGHT_TRIG_PIN = 27;
@@ -132,7 +132,7 @@ void ultrasound_init()
 
 void ultrasound_exe()
 {
-    static unsigned long lastUltrasoundPrint = 0;
+    /*static unsigned long lastUltrasoundPrint = 0;
 
     if (millis() - lastUltrasoundPrint >= 250)
     {
@@ -145,7 +145,7 @@ void ultrasound_exe()
         Serial.print(ultrasound_get_right_mm());
 
         Serial.println(" mm");
-    }
+    }*/
     uint32_t now = micros();
 
     switch (ultrasound_state)

@@ -1,7 +1,7 @@
 #include "command_router.h"
 
 #include "navigator.h"
-#include "outputs/smart_servo.h"
+#include "outputs/pickup_servo.h"
 
 
 void command_router_exe(RobotCommand command)
@@ -9,11 +9,11 @@ void command_router_exe(RobotCommand command)
     switch (command)
     {
         case OPEN_GATE:
-            smartservo_gate_open();
+            gateOpen();
             break;
 
         case CLOSE_GATE:
-            smartservo_gate_close();
+            gateClose();
             break;
 
         case CMD_STOP:

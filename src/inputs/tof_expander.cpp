@@ -50,8 +50,8 @@ const int NAV_INNER_RIGHT = 0;
 const int NAV_OUTER_RIGHT = 7;
 
 // Weight detection sensors
-const int WEIGHT_LEFT_TOP     = 4;
-const int WEIGHT_LEFT_BOTTOM  = 3;
+const int WEIGHT_LEFT_TOP     = 3;
+const int WEIGHT_LEFT_BOTTOM  = 4;
 const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
 const int WEIGHT_MIDDLE = 8;

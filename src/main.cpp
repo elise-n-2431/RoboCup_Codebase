@@ -22,9 +22,6 @@
 #include "comms/command_router.h"
 
 
-static int GATE_SERVO = 1;
-
-
 
 void setup()
 {
@@ -47,9 +44,7 @@ void setup()
     navigator_init();
     colour_sensor_init();
     pose_init();
-    smartservo_init(
-        GATE_SERVO
-    );
+    smartservo_init();
 
     delay(1000);
     ultrasound_init();
@@ -61,18 +56,18 @@ void loop()
 {
     imu_update();
     tof_update();
-    pose_update();
+    // pose_update();
 
 
     ultrasound_exe();
-    limit_switch_exe();
+    //limit_switch_exe();
 
     logic_exe();
     updateStateMachine();
 
 
     pickup_servo_exe();
-    emag_exe();
+    // emag_exe();
     proximity_exe();
 
     pickup_servo_update();
