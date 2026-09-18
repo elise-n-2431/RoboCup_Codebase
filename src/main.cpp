@@ -24,9 +24,6 @@
 #include "tasks.h"
 
 
-static int GATE_SERVO = 1;
-
-
 
 
 static bool poseStreamEnabled = true;
@@ -57,9 +54,7 @@ void setup()
     emag_init();
     navigator_init();
     colour_sensor_init();
-    smartservo_init(
-        GATE_SERVO
-    );
+    smartservo_init();
 
     delay(1000);
 

@@ -4,6 +4,7 @@
 #include "navigator.h"
 #include "state_machine.h"
 #include "inputs/tof_expander.h"
+#include "outputs/smart_servo.h"
 
 static String usbBuffer, bluetoothBuffer;
 static bool usbOverflow = false, bluetoothOverflow = false;
@@ -71,7 +72,28 @@ static RobotCommand parseLine(String command, Stream &port)
         port.println(motor_control_get_drive_kp());
         port.print("Drive Power = ");
         port.println(manualPower);
-    } else if (command == "flags") {
+    } else if (command.startsWith("left "))
+{
+    int position = command.substring(5).toInt();
+
+    if (position >= 0 && position <= 1023)
+    {
+        smartservo_test_left(position);
+    }
+}
+else if (command.startsWith("right "))
+{
+    int position = command.substring(6).toInt();
+
+    if (position >= 0 && position <= 1023)
+    {
+        smartservo_test_right(position);
+    }
+}
+else if (command == "arms")
+{
+    smartservo_print_positions();
+}else if (command == "flags") {
         listFlagNames(port);
     } else if (command.startsWith("flag ")) {
         if (!setFlagByName(command.substring(5))) port.println("Unknown flag");
