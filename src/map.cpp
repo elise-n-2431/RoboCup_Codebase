@@ -8,6 +8,10 @@
 #include <vector>
 #include <numeric> // for std::accumulate
 #include "inputs/ultrasound.h"
+#include "state_machine.h"
+#include <iostream>
+#include <queue>
+using namespace std;
 
 
 const int CELL_SIZE_MM = 50;
@@ -466,6 +470,13 @@ void add_weight_evidence(int cell_x, int cell_y)
     }
 
     WEIGHT_MAP[cell_x][cell_y] = 1000;
+    
+    // if (dstar_active) {
+    //     updateNode(cell_x, cell_y);
+    //     std::vector<std::pair<int,int>> nb;
+    //     getNeighbors(cell_x, cell_y, nb);
+    //     for (auto& p : nb) updateNode(p.first, p.second);
+    // }
 }
 
 void remove_weight_evidence(int cell_x, int cell_y)
@@ -477,6 +488,13 @@ void remove_weight_evidence(int cell_x, int cell_y)
     }
 
     WEIGHT_MAP[cell_x][cell_y] = 0;
+
+    // if (dstar_active) {
+    //     updateNode(cell_x, cell_y);
+    //     std::vector<std::pair<int,int>> nb;
+    //     getNeighbors(cell_x, cell_y, nb);
+    //     for (auto& p : nb) updateNode(p.first, p.second);
+    // }
 }
 
 // void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm = -1)
@@ -660,7 +678,6 @@ void print_obstacle_map_quantized()
     Serial2.println("OBSTACLE_MAP_END");
 }
 
-
 void send_map_data()
 {
     // Serial2.println("WEIGHT_MAP_START");
@@ -727,6 +744,8 @@ static uint32_t dbg_max_us = 0;
 static uint32_t dbg_sum_us = 0;
 static uint32_t dbg_calls  = 0;
 
+bool homing_init = false;
+
 void map_update()
 {
     uint32_t t0 = micros();
@@ -744,6 +763,25 @@ void map_update()
     arena_mirroring();
     find_frontier();
     calc_frontier_target();
+
+    // NavState nav = getNavState();
+    // if (nav == HOMING) {
+    //     if (!homing_init) {
+    //         initialize();
+    //         computeShortestPath();
+    //         homing_init = true;
+    //     } else {
+    //         if (self_x != last_self_x || self_y != last_self_y) {
+    //             km += d_heuristic(last_self_x, last_self_y, self_x, self_y);
+    //             last_self_x = self_x;
+    //             last_self_y = self_y;
+    //         }
+    //         computeShortestPath();
+    //     }
+    // }
+
+
+
     // print_weight_map();
 
 
@@ -762,6 +800,172 @@ void map_update()
     }
 }
 
+
+// D Star path finding for homing
+
+
+
+// #include <set>
+// #include <map>
+
+
+// // ---- grid index / node storage --------------------------------------------
+// static inline int d_idx(int x, int y) { return y * MAP_WIDTH + x; }
+
+// struct Node {
+//     float g   = INFINITY;
+//     float rhs = INFINITY;
+// };
+
+// static Node NODES[MAP_WIDTH][MAP_HEIGHT];
+
+// // ---- key type ---------------------------------------------------------------
+// struct Key {
+//     float k1, k2;
+//     bool operator<(const Key& o) const {
+//         if (k1 != o.k1) return k1 < o.k1;
+//         return k2 < o.k2;
+//     }
+// };
+
+// // ---- priority queue: supports insert / remove / contains / pop / top-key ---
+// // (std::priority_queue can't do remove(), which updateNode() needs, so this
+// // is a std::set keyed on (key,x,y) plus a lookup map for contains/remove.)
+// struct QEntry {
+//     Key key; int x, y;
+//     bool operator<(const QEntry& o) const {
+//         if (!(key.k1 == o.key.k1 && key.k2 == o.key.k2)) return key < o.key;
+//         if (x != o.x) return x < o.x;
+//         return y < o.y;
+//     }
+// };
+
+// struct Queue {
+//     std::set<QEntry> entries;
+//     std::map<int, Key> node_key; // node index -> its current key, for contains/remove
+
+//     void insert(int x, int y, Key k) {
+//         entries.insert({k, x, y});
+//         node_key[d_idx(x, y)] = k;
+//     }
+//     void remove(int x, int y) {
+//         int i = d_idx(x, y);
+//         auto it = node_key.find(i);
+//         if (it == node_key.end()) return;
+//         entries.erase({it->second, x, y});
+//         node_key.erase(it);
+//     }
+//     bool contains(int x, int y) {
+//         return node_key.count(d_idx(x, y)) > 0;
+//     }
+//     Key topKey() {
+//         if (entries.empty()) return {INFINITY, INFINITY};
+//         return entries.begin()->key;
+//     }
+//     void pop(int& x, int& y) {
+//         auto it = entries.begin();
+//         x = it->x; y = it->y;
+//         node_key.erase(d_idx(x, y));
+//         entries.erase(it);
+//     }
+//     bool empty() { return entries.empty(); }
+// };
+
+// static Queue pq;
+// static float km = 0.0f;
+// static int last_self_x, last_self_y;
+// static bool dstar_active = false;
+
+// static inline float d_heuristic(int ax, int ay, int bx, int by) {
+//     int dx = abs(ax - bx), dy = abs(ay - by);
+//     int dmin = min(dx, dy), dmax = max(dx, dy);
+//     return dmax + 0.41421356f * dmin; // octile distance, 8-connected grid
+// }
+
+// // Cost of entering cell (x,y), derived from OBSTACLE_MAP you already maintain.
+// static inline float getCostTo(int x, int y) {
+//     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return INFINITY;
+//     int16_t v = OBSTACLE_MAP[x][y];
+//     if (v > OBSTACLE_UNKNOWN_BAND)  return INFINITY; // confirmed obstacle
+//     if (v < -OBSTACLE_UNKNOWN_BAND) return 1.0f; // confirmed free
+//     return 5.0f;                                  // unknown -- passable but discouraged
+// }
+
+// static void getNeighbors(int x, int y, std::vector<std::pair<int,int>>& out) {
+//     out.clear();
+//     for (int i = -1; i <= 1; i++)
+//         for (int j = -1; j <= 1; j++) {
+//             if (i == 0 && j == 0) continue;
+//             int nx = x + i, ny = y + j;
+//             if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT)
+//                 out.push_back({nx, ny});
+//         }
+// }
+
+// // ---- calculateKey ------------------------------------------------------------
+// Key calculateKey(int x, int y) {
+//     float m = min(NODES[x][y].g, NODES[x][y].rhs);
+//     return { m + d_heuristic(x, y, self_x, self_y) + km, m };
+// }
+
+// // ---- updateNode ---------------------------------------------------------------
+// void updateNode(int x, int y) {
+//     if (x == home_x && y == home_y) return; // start.rhs stays 0 forever
+
+//     Node& n = NODES[x][y];
+//     n.rhs = INFINITY;
+
+//     std::vector<std::pair<int,int>> preds;
+//     getNeighbors(x, y, preds);
+//     for (auto& p : preds) {
+//         float cand = NODES[p.first][p.second].g + getCostTo(x, y);
+//         if (cand < n.rhs) n.rhs = cand;
+//     }
+
+//     if (pq.contains(x, y)) pq.remove(x, y);
+//     if (n.g != n.rhs) pq.insert(x, y, calculateKey(x, y));
+// }
+
+// // ---- initialize -----------------------------------------------------------
+// void initialize() {
+//     for (int x = 0; x < MAP_WIDTH; x++)
+//         for (int y = 0; y < MAP_HEIGHT; y++) {
+//             NODES[x][y].g = INFINITY;
+//             NODES[x][y].rhs = INFINITY;
+//         }
+
+//     km = 0.0f;
+//     last_self_x = self_x;
+//     last_self_y = self_y;
+
+//     NODES[home_x][home_y].rhs = 0.0f;
+//     pq.insert(home_x, home_y, calculateKey(home_x, home_y));
+
+//     dstar_active = true;
+// }
+
+// // ---- computeShortestPath -----------------------------------------------------
+// void computeShortestPath() {
+//     while (!pq.empty() &&
+//            ((pq.topKey() < calculateKey(self_x, self_y)) ||
+//             (NODES[self_x][self_y].rhs != NODES[self_x][self_y].g))) {
+
+//         int x, y;
+//         pq.pop(x, y);
+//         Node& n = NODES[x][y];
+
+//         if (n.g > n.rhs) {
+//             n.g = n.rhs;
+//         } else {
+//             n.g = INFINITY;
+//             updateNode(x, y);
+//         }
+
+//         std::vector<std::pair<int,int>> succ;
+//         getNeighbors(x, y, succ);
+//         for (auto& s : succ) updateNode(s.first, s.second);
+//     }
+// }
 
 
 // map_period_ms = max(ceil(max_us / 1000) * 3

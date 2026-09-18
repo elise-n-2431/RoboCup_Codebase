@@ -132,7 +132,7 @@ void ultrasound_init()
 
 void ultrasound_exe()
 {
-    /*static unsigned long lastUltrasoundPrint = 0;
+    static unsigned long lastUltrasoundPrint = 0;
 
     // if (millis() - lastUltrasoundPrint >= 250)
     // {
