@@ -479,95 +479,95 @@ void remove_weight_evidence(int cell_x, int cell_y)
     WEIGHT_MAP[cell_x][cell_y] = 0;
 }
 
-void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm = -1)
-{
-    if (distance_above_mm == -1){
-        if (distance_mm > 200)
-        {
-            return; // beyond middle sensor threshold, ignore
-        }
-    } else if (distance_mm <= 0)
-    {
-        return; // no weight detected
+// void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm = -1)
+// {
+//     if (distance_above_mm == -1){
+//         if (distance_mm > 200)
+//         {
+//             return; // beyond middle sensor threshold, ignore
+//         }
+//     } else if (distance_mm <= 0)
+//     {
+//         return; // no weight detected
 
-    } else if (distance_above_mm <= 0) 
-    {
-        if(distance_mm > 200 || distance_mm <= 0)
-        {
-            return; // beyond middle sensor threshold, ignore
-        }
-    }
-    else if ((distance_mm - distance_above_mm) < 20)
-    {
-        return; // false positive - wall
-    }
+//     } else if (distance_above_mm <= 0) 
+//     {
+//         if(distance_mm > 200 || distance_mm <= 0)
+//         {
+//             return; // beyond middle sensor threshold, ignore
+//         }
+//     }
+//     else if ((distance_mm - distance_above_mm) < 20)
+//     {
+//         return; // false positive - wall
+//     }
 
-    float angle = angle_deg * PI / 180.0;
+//     float angle = angle_deg * PI / 180.0;
 
-    float sensor_x = 125 + 90.0 * cos(angle);
-    float sensor_y = 90.0 * sin(angle);
+//     float sensor_x = 125 + 90.0 * cos(angle);
+//     float sensor_y = 90.0 * sin(angle);
 
-    float heading = pose_get_heading_deg() * PI / 180.0;
+//     float heading = pose_get_heading_deg() * PI / 180.0;
 
-    float sensor_world_x =
-        pose_get_x_mm()
-        + sensor_x * cos(heading)
-        - sensor_y * sin(heading);
+//     float sensor_world_x =
+//         pose_get_x_mm()
+//         + sensor_x * cos(heading)
+//         - sensor_y * sin(heading);
 
-    float sensor_world_y =
-        pose_get_y_mm()
-        + sensor_x * sin(heading)
-        + sensor_y * cos(heading);
+//     float sensor_world_y =
+//         pose_get_y_mm()
+//         + sensor_x * sin(heading)
+//         + sensor_y * cos(heading);
 
-    float beam_heading = heading + angle;
+//     float beam_heading = heading + angle;
 
-    float hit_world_x =
-        sensor_world_x
-        + distance_mm * cos(beam_heading);
+//     float hit_world_x =
+//         sensor_world_x
+//         + distance_mm * cos(beam_heading);
 
-    float hit_world_y =
-        sensor_world_y
-        + distance_mm * sin(beam_heading);
+//     float hit_world_y =
+//         sensor_world_y
+//         + distance_mm * sin(beam_heading);
 
-    int hit_cell_x = world_to_cell_x(hit_world_x);
-    int hit_cell_y = world_to_cell_y(hit_world_y);
+//     int hit_cell_x = world_to_cell_x(hit_world_x);
+//     int hit_cell_y = world_to_cell_y(hit_world_y);
 
-    int number_steps = distance_mm / CELL_SIZE_MM;
+//     int number_steps = distance_mm / CELL_SIZE_MM;
 
-    for (int i = 0; i < number_steps; i++)
-    {
-        float fraction = (float)i / number_steps;
+//     for (int i = 0; i < number_steps; i++)
+//     {
+//         float fraction = (float)i / number_steps;
 
-        float x =
-            sensor_world_x
-            + (hit_world_x - sensor_world_x) * fraction;
+//         float x =
+//             sensor_world_x
+//             + (hit_world_x - sensor_world_x) * fraction;
 
-        float y =
-            sensor_world_y
-            + (hit_world_y - sensor_world_y) * fraction;
+//         float y =
+//             sensor_world_y
+//             + (hit_world_y - sensor_world_y) * fraction;
 
-        int cell_x = world_to_cell_x(x);
-        int cell_y = world_to_cell_y(y);
+//         int cell_x = world_to_cell_x(x);
+//         int cell_y = world_to_cell_y(y);
 
-        if (cell_x == hit_cell_x &&
-            cell_y == hit_cell_y)
-        {
-            break;
-        }
+//         if (cell_x == hit_cell_x &&
+//             cell_y == hit_cell_y)
+//         {
+//             break;
+//         }
 
-        if (cell_x >= 0 && cell_x < MAP_WIDTH &&
-            cell_y >= 0 && cell_y < MAP_HEIGHT)
-        {
-            WEIGHT_MAP[cell_x][cell_y] = 0;
-        }
-    }
+//         if (cell_x >= 0 && cell_x < MAP_WIDTH &&
+//             cell_y >= 0 && cell_y < MAP_HEIGHT)
+//         {
+//             WEIGHT_MAP[cell_x][cell_y] = 0;
+//         }
+//     }
 
-    add_weight_evidence(
-        hit_cell_x,
-        hit_cell_y
-    );
+//     add_weight_evidence(
+//         hit_cell_x,
+//         hit_cell_y
+//     );
 
-}
+// }
 
 void interpret_tof()
 {
@@ -578,9 +578,9 @@ void interpret_tof()
         update_obstacle_map(tof_get_distance(NAV_OUTER_RIGHT), -40.0 + i);
     }
 
-    update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
-    update_weight_map(tof_get_distance(WEIGHT_RIGHT_BOTTOM), 15.0, tof_get_distance(WEIGHT_RIGHT_TOP));
-    update_weight_map(tof_get_distance(WEIGHT_MIDDLE), 0.0);
+    // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
+    // update_weight_map(tof_get_distance(WEIGHT_RIGHT_BOTTOM), 15.0, tof_get_distance(WEIGHT_RIGHT_TOP));
+    // update_weight_map(tof_get_distance(WEIGHT_MIDDLE), 0.0);
 }
 
 void interpret_ultrasonic() { // multiple to get wide cone shape
