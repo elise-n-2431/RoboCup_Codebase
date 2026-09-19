@@ -60,14 +60,14 @@ void loop()
 
 
     ultrasound_exe();
-    //limit_switch_exe();
+    limit_switch_exe();
 
     logic_exe();
     updateStateMachine();
 
 
     pickup_servo_exe();
-    // emag_exe();
+    emag_exe();
     proximity_exe();
 
     pickup_servo_update();
