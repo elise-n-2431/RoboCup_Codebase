@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM26"
+SERIAL_PORT = "COM21"
 BAUD_RATE = 115200
 
 reading_weight = False

@@ -9,7 +9,7 @@ DFRobot_MatrixLidar_I2C tof(0x33, &Wire1);
 
 uint16_t buf[64];
 
-void tof_init() {
+void tof_init8() {
 
     Serial.begin(115200);     // USB debugging
     Serial2.begin(115200);    // Bluetooth
@@ -37,7 +37,7 @@ void tof_init() {
 
 }
 
-void tof_exe() {
+void tof_exe8() {
 
     tof.getAllData(buf);
 

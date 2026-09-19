@@ -26,7 +26,7 @@ Bitcraze_PMW3901 flow(FLOW_CS);
 // none
 
 
-const float SENSOR_HEIGHT_MM = 80.0; // estimate (UPDATE)
+const float SENSOR_HEIGHT_MM =225.0; // estimate (UPDATE)
 const float MM_PER_PIXEL = 0.30;
 
 int16_t og_X, og_Y;

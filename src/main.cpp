@@ -21,7 +21,7 @@
 #include "inputs/ultrasound.h"
 #include "comms/command_router.h"
 #include "map.h"
-#include "tasks.h"
+// #include "tasks.h"
 
 
 
@@ -70,60 +70,68 @@ void setup()
 
     xy_init();
 
-    tasks_init();   // last — starts the timebase from a clean point
+    // tasks_init();   // last — starts the timebase from a clean point
 }
-
-void loop()
-{
-    tasks_exe();
-}
-
-
 
 // void loop()
 // {
-//     // PRINT STATEMENTS
-//     // pose_telemetry_exe();
-//     // print_state();
-//     // print_DC_power();
-//     // print_limit();
+//     tasks_exe();
+// }
 
-//     xy_exe();
-//     // print_xy();
+int i = 0;
+int max_iter = 200;
 
-//     imu_update();
+void loop()
+{
+    // PRINT STATEMENTS
+    // pose_telemetry_exe();
+    // print_state();
+    // print_DC_power();
+    // print_limit();
 
-//     // imu_print_readings();
-//     tof_update();
-//     pose_update();
-//     // Serial.println("here!");
-//     map_update();
+    xy_exe();
+    // print_xy();
+
+    imu_update();
+
+    // imu_print_readings();
+    tof_update();
+    pose_update();
+    // Serial.println("here!");
+    map_update();
 
 
-//     ultrasound_exe();
-//     limit_switch_exe();
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
 
-//     logic_exe();
-//     updateStateMachine();
+
+    ultrasound_exe();
+    limit_switch_exe();
+
+    logic_exe();
+    updateStateMachine();
 
 
-//     pickup_servo_exe();
-//     emag_exe();
-//     proximity_exe();
+    pickup_servo_exe();
+    emag_exe();
+    proximity_exe();
 
-//     pickup_servo_update();
-//     colour_sensor_update();
-//     smartservo_update();
+    pickup_servo_update();
+    colour_sensor_update();
+    smartservo_update();
 
-//     RobotCommand command = serial_exe();
-//     command_router_exe(command);
+    RobotCommand command = serial_exe();
+    command_router_exe(command);
 
-//     navigator_exe();
-//     // motor_control_update();
+    navigator_exe();
+    motor_control_update();
 
-//     // pose_print(Serial);
+    // pose_print(Serial);
 
     
 
-// }
+}
 

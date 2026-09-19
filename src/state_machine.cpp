@@ -15,7 +15,7 @@ StateFlags STATE_FLAGS;
 
 
 // Chose to separate navigation and collection state machines
-NavState current_nav_state = STATIONARY; // -- make ROAMING for testing
+NavState current_nav_state = ROAMING; // -- make ROAMING for testing
 NavState prev_nav_state = STATIONARY;
 
 CollectState current_collect_state = IDLE;

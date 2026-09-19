@@ -30,7 +30,7 @@ static const unsigned long TELEMETRY_PERIOD_MS = 100;
 static unsigned long lastTelemetryTime = 0;
 static bool telemetryEnabled = true;
 
-static const float XY_FUSION_WEIGHT = 0.3f;
+static const float XY_FUSION_WEIGHT = 0.0f;
 
 void pose_init()
 {
@@ -103,8 +103,15 @@ void pose_update()
 
     float headingRad = headingDeg * PI / 180.0f;
 
+    Serial.print("forward: ");
+    Serial.println(forwardDistance);
+    Serial.print(", lateral: ");
+    Serial.println(lateralDistance);
+    pose_print(Serial);
+
     poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
     poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);
+
 }
 
 

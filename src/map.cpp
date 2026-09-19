@@ -32,8 +32,6 @@ const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
 const int WEIGHT_MIDDLE = 8;
 
-int max_iter = 100;
-int iteration = 0;
 // --- Fixed-point confidence values ---------------------------------------
 // Both maps store confidence as int16_t / uint16_t scaled by CONF_SCALE,
 // i.e. "1000" means 1.000, "250" means 0.250, etc. -- 3 decimal places of
@@ -388,6 +386,11 @@ void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 12
         distance_mm = 1000; // max range of the sensor
         hit = false;
     }
+    if (distance_mm > 1000) 
+    {
+        distance_mm = 1000;
+        hit = false;
+    }
 
     float angle = angle_deg * PI / 180.0;
 
@@ -696,7 +699,6 @@ void send_map_data()
     // }
 
     // Serial2.println("WEIGHT_MAP_END");
-
 
     print_obstacle_map_quantized();
        
