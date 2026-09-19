@@ -191,7 +191,7 @@ bool imu_init()
 
 
     // Attempt to restore previous calibration.
-    loadCalibration();
+    // loadCalibration();
 
     for (int i = 0; i < 5; i++)
     {
@@ -199,8 +199,10 @@ bool imu_init()
         delay(20);
     }
 
-    Serial.println("IMU setup complete");
+    // Serial.println("IMU setup complete");
 
+    imu_update();
+    Serial.println("IMU updated");
     return true;
 }
 
@@ -326,6 +328,9 @@ void imu_print_readings()
 
     Serial.print("Heading: ");
     Serial.print(heading, 1);
+
+    Serial.print("Relative Heading: ");
+    Serial.print(filtered_heading, 1);
 
     Serial.print("   Pitch: ");
     Serial.print(pitch, 1);

@@ -7,7 +7,7 @@
 #include "driving_controller.h"
 #include "inputs/tof_expander.h"
 #include "state_machine.h"
-
+#include "map.h"
 
 
 
@@ -109,7 +109,7 @@ static const int ROAM_SLOW_POWER = 280;
 static const unsigned long NAV_TURN_TIMEOUT_MS = 4000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
 
-static bool navigatorEnabled = false;
+static bool navigatorEnabled = true;
 static bool roamingPickupEnabled = false;
 static bool turnWatchActive = false;
 
@@ -203,10 +203,10 @@ static void detect_weights_exe()
 
     if (leftDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_LEFT;
-        Serial2.println("Roaming: weight detected LEFT");
+        // Serial2.println("Roaming: weight detected LEFT");
     } else if (rightDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_RIGHT;
-        Serial2.println("Roaming: weight detected RIGHT");
+        // Serial2.println("Roaming: weight detected RIGHT");
     } else return;
 
     pursuitState = PURSUIT_START;
@@ -242,7 +242,7 @@ bool navigator_start(bool enablePickup)
 {
     if (getCollectState() != IDLE ||
         (getNavState() != ROAMING && getNavState() != STATIONARY)) {
-        Serial2.println("Navigator: start from ROAMING or STATIONARY");
+        // Serial2.println("Navigator: start from ROAMING or STATIONARY");
         return false;
     }
 
@@ -259,7 +259,7 @@ bool navigator_start(bool enablePickup)
     roamCommandedPower = 0;
     weightTargetSide = TARGET_NONE;
 
-    Serial2.println(enablePickup ? "Navigator: roaming + pickup" : "Navigator: roaming only");
+    // // Serial2.println(enablePickup ? "Navigator: roaming + pickup" : "Navigator: roaming only");
     return true;
 }
 
@@ -276,7 +276,7 @@ static void roaming_start_turn(int leftClearance, int rightClearance)
     roamCommandedPower = 0;
     leftDetectionCount = rightDetectionCount = 0;
 
-    Serial2.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
+    // Serial2.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
 }
 
 static void roaming_drive(int power)
@@ -325,7 +325,7 @@ static void roaming_exe()
         if (millis() - navTofInvalidStarted > 500)
         {
             navigator_stop();
-            Serial2.println("Roaming stopped: navigation ToF unavailable");
+            // Serial2.println("Roaming stopped: navigation ToF unavailable");
         }
 
         return;
@@ -345,8 +345,8 @@ static void roaming_exe()
     int rightClearance = min(outerRight, innerRight);
 
     if (front <= ROAM_CRITICAL_MM) {
-        navigator_stop();
-        Serial2.println("Roaming stopped: obstacle critically close");
+        // navigator_stop();
+        // Serial2.println("Roaming stopped: obstacle critically close");
         return;
     }
 
@@ -413,19 +413,19 @@ static void pursuit_exe()
         {
             if (weightTargetSide == TARGET_LEFT)
             {
-                Serial2.println("Pursuit: turning LEFT toward weight");
+                // Serial2.println("Pursuit: turning LEFT toward weight");
                 motor_control_turn_relative(LEFT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                Serial2.println("Pursuit: turning RIGHT toward weight");
+                // Serial2.println("Pursuit: turning RIGHT toward weight");
                 motor_control_turn_relative(RIGHT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else
             {
-                Serial2.println("Pursuit started without target side");
+                // Serial2.println("Pursuit started without target side");
             }
 
             break;
@@ -435,7 +435,7 @@ static void pursuit_exe()
         {
             if (motor_control_is_turning()) return;
 
-            Serial2.println("Pursuit: turn complete");
+            // Serial2.println("Pursuit: turn complete");
             pursuitState = PURSUIT_ACQUIRING;
 
             break;
@@ -447,9 +447,9 @@ static void pursuit_exe()
 
             if (centreDistance > 0 && centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
             {
-                Serial2.print("Pursuit: centre acquired weight at ");
-                Serial2.print(centreDistance);
-                Serial2.println(" mm");
+                // Serial2.print("Pursuit: centre acquired weight at ");
+                // Serial2.print(centreDistance);
+                // Serial2.println(" mm");
 
                 middleLostCount = 0;
                 weightApproachHeading = imu_get_heading();
@@ -475,7 +475,7 @@ static void pursuit_exe()
 
                 if (middleLostCount >= MIDDLE_LOST_COUNT_REQUIRED)
                 {
-                    Serial2.println("Pursuit: centre lost weight");
+                    // Serial2.println("Pursuit: centre lost weight");
                     middleLostCount = 0;
                     pursuitState = PURSUIT_ACQUIRING;
                 }
@@ -490,9 +490,9 @@ static void pursuit_exe()
             {
                 motor_control_stop();
 
-                Serial2.print("Pursuit: weight reached at ");
-                Serial2.print(centreDistance);
-                Serial2.println(" mm");
+                // Serial2.print("Pursuit: weight reached at ");
+                // Serial2.print(centreDistance);
+                // Serial2.println(" mm");
 
                 pursuitState = PURSUIT_FINISHED;
                 setStateFlag(&STATE_FLAGS.weight_in_entrance);
@@ -508,7 +508,7 @@ static void pursuit_exe()
                     motor_control_drive_heading(weightApproachHeading, WEIGHT_SLOW_POWER);
                     weightApproachSlowed = true;
 
-                    Serial2.println("Pursuit: slowing approach");
+                    // Serial2.println("Pursuit: slowing approach");
                 }
 
                 return;
@@ -595,6 +595,14 @@ static void reversing_exe()
     }
 }
 
+void frontier_targetting(){
+    int frontier_x = get_frontier_x();
+    int frontier_y = get_frontier_y();
+
+    
+}
+
+
 
 void navigator_exe()
 {
@@ -629,7 +637,7 @@ void navigator_exe()
 
     if (!imu_is_online() || !isfinite(imu_get_heading())) {
         navigator_stop();
-        Serial2.println("Navigator stopped: IMU unavailable");
+        // Serial2.println("Navigator stopped: IMU unavailable");
         return;
     }
 
@@ -637,7 +645,7 @@ void navigator_exe()
 
     if (turnWatchActive && millis() - turnStartedAt >= NAV_TURN_TIMEOUT_MS) {
         navigator_stop();
-        Serial2.println("Navigator stopped: turn timeout");
+        // Serial2.println("Navigator stopped: turn timeout");
         return;
     }
 
@@ -668,7 +676,7 @@ void navigator_exe()
 
         case HOMING:
             navigator_stop();
-            Serial2.println("Navigator stopped: homing not implemented");
+            // Serial2.println("Navigator stopped: homing not implemented");
             break;
 
         default:

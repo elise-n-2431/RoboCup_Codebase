@@ -132,20 +132,20 @@ void ultrasound_init()
 
 void ultrasound_exe()
 {
-    /*static unsigned long lastUltrasoundPrint = 0;
+    static unsigned long lastUltrasoundPrint = 0;
 
-    if (millis() - lastUltrasoundPrint >= 250)
-    {
-        lastUltrasoundPrint = millis();
+    // if (millis() - lastUltrasoundPrint >= 250)
+    // {
+    //     lastUltrasoundPrint = millis();
 
-        Serial.print("US LEFT = ");
-        Serial.print(ultrasound_get_left_mm());
+    //     Serial.print("US LEFT = ");
+    //     Serial.print(ultrasound_get_left_mm());
 
-        Serial.print(" mm   RIGHT = ");
-        Serial.print(ultrasound_get_right_mm());
+    //     Serial.print(" mm   RIGHT = ");
+    //     Serial.print(ultrasound_get_right_mm());
 
-        Serial.println(" mm");
-    }*/
+    //     Serial.println(" mm");
+    // }
     uint32_t now = micros();
 
     switch (ultrasound_state)
@@ -290,3 +290,4 @@ float ultrasound_get_right_mm()
 {
     return right_distance_mm;
 }
+

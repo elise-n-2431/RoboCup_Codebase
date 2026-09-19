@@ -142,14 +142,14 @@ void motor_control_turn_relative(float angle)
     Serial.print("Target heading: ");
     Serial.println(targetHeading);
 
-    Serial2.print("Current heading: ");
-    Serial2.println(currentHeading);
+    // Serial2.print("Current heading: ");
+    // Serial2.println(currentHeading);
 
-    Serial2.print("Relative turn: ");
-    Serial2.println(angle);
+    // Serial2.print("Relative turn: ");
+    // Serial2.println(angle);
 
-    Serial2.print("Target heading: ");
-    Serial2.println(targetHeading);
+    // Serial2.print("Target heading: ");
+    // Serial2.println(targetHeading);
 }
 
 
@@ -192,11 +192,11 @@ void motor_control_drive_current_heading(int basePower)
     Serial.print("Base power: ");
     Serial.println(driveBasePower);
 
-    Serial2.print("Driving at heading: ");
-    Serial2.println(targetHeading);
+    // Serial2.print("Driving at heading: ");
+    // Serial2.println(targetHeading);
 
-    Serial2.print("Base power: ");
-    Serial2.println(driveBasePower);
+    // Serial2.print("Base power: ");
+    // Serial2.println(driveBasePower);
 }
 
 void motor_control_drive_heading(float heading, int basePower)
@@ -400,7 +400,7 @@ void motor_control_stop()
 
     DC_motors_setPower(0, 0);
     Serial.println("Motor control stopped");
-    Serial2.println("Motor control stopped");
+    // Serial2.println("Motor control stopped");
 }
 
 

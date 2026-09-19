@@ -13,4 +13,6 @@ void DC_motors_setPower(int leftPower, int rightPower);
 
 int getDrivePower();
 
+void print_DC_power();
+
 #endif

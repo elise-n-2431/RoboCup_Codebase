@@ -6,8 +6,7 @@
 #define TOF_H
 
 
-void tof_init();
-void tof_exe();
-void tof_visualize();
+void tof_init8();
+void tof_exe8();
 
 #endif

@@ -6,7 +6,13 @@
 #ifndef MAP_H
 #define MAP_H
 
-void display_map();
-void update_self(int, int);
+
+
+void map_init();
+void map_update();
+int get_frontier_x();
+int get_frontier_y();
+void change_print_it();
+void send_map_data();
 
 #endif

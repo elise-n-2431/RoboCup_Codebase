@@ -11,7 +11,7 @@ from matplotlib.widgets import TextBox, Button
 # SETTINGS
 # ============================================================
 
-PORT = "COM26"
+PORT = "COM12"
 BAUD = 115200
 
 

@@ -20,7 +20,17 @@
 #include "inputs/imu.h"
 #include "inputs/ultrasound.h"
 #include "comms/command_router.h"
+#include "map.h"
+// #include "tasks.h"
 
+
+
+
+static bool poseStreamEnabled = true;
+
+static unsigned long lastPosePrintTime = 0;
+
+const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 
 void setup()
@@ -38,25 +48,64 @@ void setup()
     limit_switch_init();
     proximity_init();
     // Control
+    map_init();
     motor_control_init();
     pickup_servo_init();
     emag_init();
     navigator_init();
     colour_sensor_init();
-    pose_init();
     smartservo_init();
 
     delay(1000);
-    ultrasound_init();
+
     smartservo_torque_on();
+    ultrasound_init();
+
+    // imu_print_readings();
+
+    pose_init();
+
+    // imu_print_readings();
+    navigator_start(false);
+
+    xy_init();
+
+    // tasks_init();   // last — starts the timebase from a clean point
 }
 
+// void loop()
+// {
+//     tasks_exe();
+// }
+
+int i = 0;
+int max_iter = 200;
 
 void loop()
 {
+    // PRINT STATEMENTS
+    // pose_telemetry_exe();
+    // print_state();
+    // print_DC_power();
+    // print_limit();
+
+    xy_exe();
+    // print_xy();
+
     imu_update();
+
+    // imu_print_readings();
     tof_update();
-    // pose_update();
+    pose_update();
+    // Serial.println("here!");
+    map_update();
+
+
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
 
 
     ultrasound_exe();
@@ -80,7 +129,9 @@ void loop()
     navigator_exe();
     motor_control_update();
 
-    //pose_telemetry_exe();
-}
+    // pose_print(Serial);
 
+    
+
+}
 
