@@ -32,9 +32,14 @@ static unsigned long lastPosePrintTime = 0;
 
 const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
+const byte GO_PIN = 26;
 
 void setup()
 {
+    // GO BUTTON
+    pinMode(GO_PIN, INPUT);
+
+
     // Communications
     serial_init();
     encoders_init();
@@ -83,6 +88,9 @@ int max_iter = 20;
 
 void loop()
 {
+    Serial.println(digitalRead(GO_PIN));
+    if (digitalRead(GO_PIN) == HIGH)  {
+
     // PRINT STATEMENTS
     // pose_telemetry_exe();
     // print_state();
@@ -113,7 +121,7 @@ void loop()
 
     logic_exe();
     updateStateMachine();
-    print_state();
+    // print_state();
 
 
     pickup_servo_exe();
@@ -122,6 +130,8 @@ void loop()
 
     pickup_servo_update();
     colour_sensor_update();
+    // print_colour();
+
     smartservo_update();
 
     RobotCommand command = serial_exe();
@@ -133,6 +143,6 @@ void loop()
     // pose_print(Serial);
 
     
-
+    }
 }
 

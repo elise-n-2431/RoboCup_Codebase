@@ -6,5 +6,6 @@ bool colour_sensor_init();
 
 void colour_sensor_update();
 
+void print_colour();
 
 #endif

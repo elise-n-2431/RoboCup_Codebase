@@ -46,6 +46,8 @@ const int TOF8_XSHUT = 9;
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
 const int NAV_INNER_LEFT  = 5;
+
+
 const int NAV_INNER_RIGHT = 0;
 const int NAV_OUTER_RIGHT = 7;
 
