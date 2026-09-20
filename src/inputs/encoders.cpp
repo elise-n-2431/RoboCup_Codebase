@@ -24,8 +24,8 @@ const int RIGHT_ENCODER_B_PIN = 5;
 
 // If forward motion produces a negative count on one side,
 // change that side from +1 to -1.
-const int LEFT_ENCODER_SIGN  = -1;
-const int RIGHT_ENCODER_SIGN = 1;
+const int LEFT_ENCODER_SIGN  = 1;
+const int RIGHT_ENCODER_SIGN = -1;
 
 
 

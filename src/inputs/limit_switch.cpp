@@ -34,42 +34,51 @@ void limit_switch_init()
         "Limit switch ready"
     );
 }
-
-void limit_switch_exe() {
-    static unsigned long lastSwitchPrint = 0;
-
-    /*if (millis() - lastSwitchPrint >= 250)
-    {
-        lastSwitchPrint = millis();
-
-        Serial.print("LIMIT RAW = ");
-        Serial.println(io.digitalRead(AIO5_PIN));
-    }
+void limit_switch_exe()
+{
+    // Only evaluate the limit switch when the crane
+    // is stationary at one of the two pickup test positions.
     if (getCollectState() != VERT_REACHED &&
-        getCollectState() != HORI_REACHED) {
+        getCollectState() != HORI_REACHED)
+    {
         count_switch_on = 0;
         count_switch_off = 0;
-        return;
-    }*/
 
-    if (io.digitalRead(AIO5_PIN) == LOW) {
+        // Prevent an old contact from carrying into
+        // the next pickup check.
+        resetStateFlag(&STATE_FLAGS.magnet_hit);
+
+        return;
+    }
+
+
+    if (io.digitalRead(AIO5_PIN) == LOW)
+    {
         count_switch_on++;
         count_switch_off = 0;
-    } else {
+    }
+    else
+    {
         count_switch_on = 0;
         count_switch_off++;
     }
 
-    if (count_switch_on >= CONSECUTIVE_HITS) {
+
+    if (count_switch_on >= CONSECUTIVE_HITS)
+    {
         setStateFlag(&STATE_FLAGS.magnet_hit);
+
         count_switch_on = 0;
         count_switch_off = 0;
     }
-    else if (count_switch_off >= CONSECUTIVE_HITS) {
-        if (getCollectState() == VERT_REACHED) {
+    else if (count_switch_off >= CONSECUTIVE_HITS)
+    {
+        if (getCollectState() == VERT_REACHED)
+        {
             setStateFlag(&STATE_FLAGS.no_vertical);
         }
-        else if (getCollectState() == HORI_REACHED) {
+        else if (getCollectState() == HORI_REACHED)
+        {
             setStateFlag(&STATE_FLAGS.no_horizontal);
         }
 

@@ -57,6 +57,7 @@ static const char* stateFlagName(bool* flag)
     if (flag == &STATE_FLAGS.target_identified) return "target_identified";
     if (flag == &STATE_FLAGS.reverse_triggered) return "reverse_triggered";
     if (flag == &STATE_FLAGS.home_reached) return "home_reached";
+    if (flag == &STATE_FLAGS.home_docked) return "home_docked";
     if (flag == &STATE_FLAGS.collection_complete) return "collection_complete";
     if (flag == &STATE_FLAGS.collection_failed) return "collection_failed";
     if (flag == &STATE_FLAGS.dropoff_complete) return "dropoff_complete";
@@ -94,8 +95,8 @@ void setStateFlag(bool* flag)
     Serial.print("FLAG,");
     Serial.println(name);
 
-    // // Serial2.print("FLAG,");
-    // // Serial2.println(name);
+    Serial2.print("FLAG,");
+    Serial2.println(name);
 }
 
 void resetStateFlag(bool* flag) {
@@ -178,10 +179,10 @@ void checkChangeNavState(NavState navState, bool* flag)
     if (navState == OPENING) gateOpen();
     if (navState == CLOSING) gateClose();
 
-    // Serial2.print("[NAV] ");
-    // Serial2.print(navStateName(prev_nav_state));
-    // Serial2.print(" -> ");
-    // Serial2.println(navStateName(current_nav_state));
+    Serial2.print("[NAV] ");
+    Serial2.print(navStateName(prev_nav_state));
+    Serial2.print(" -> ");
+    Serial2.println(navStateName(current_nav_state));
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -196,10 +197,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         *flag = false;
         collectStateEnteredAt = millis();
 
-        // Serial2.print("[COLLECT] ");
-        // Serial2.print(collectStateName(prev_collect_state));
-        // Serial2.print(" -> ");
-        // Serial2.println(collectStateName(current_collect_state));
+        Serial2.print("[COLLECT] ");
+        Serial2.print(collectStateName(prev_collect_state));
+        Serial2.print(" -> ");
+        Serial2.println(collectStateName(current_collect_state));
     }
 }
 
@@ -289,7 +290,8 @@ void updateStateMachine() {
             break;
 
         case HOMING:
-            checkChangeNavState(OPENING, &STATE_FLAGS.home_reached);
+        resetStateFlag(&STATE_FLAGS.home_reached);
+            checkChangeNavState(OPENING, &STATE_FLAGS.home_docked);
             break;
 
         case OPENING:

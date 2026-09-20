@@ -62,7 +62,19 @@ bool colour_sensor_init()
         "TCS34725 colour sensor detected"
     );
 
-    colour_sensor_update();
+    delay(200);
+
+    for (int i = 0; i < 5; i++)
+    {
+        colourSensor.getRawData(
+            &Current.red,
+            &Current.green,
+            &Current.blue,
+            &Current.clear
+        );
+
+        delay(60);
+    }
 
     Home = Current;
 
@@ -131,6 +143,30 @@ void colour_sensor_update()
             setStateFlag(&STATE_FLAGS.home_reached);
         }
     } 
+
+    if (getNavState() == HOMING)
+    {
+        static unsigned long lastColourDebug = 0;
+
+        if (millis() - lastColourDebug >= 250)
+        {
+            lastColourDebug = millis();
+
+            Serial2.print("HOME STORED: G=");
+            Serial2.print(Home.green);
+            Serial2.print(" B=");
+            Serial2.print(Home.blue);
+            Serial2.print(" C=");
+            Serial2.println(Home.clear);
+
+            Serial2.print("HOME CURRENT: G=");
+            Serial2.print(Current.green);
+            Serial2.print(" B=");
+            Serial2.print(Current.blue);
+            Serial2.print(" C=");
+            Serial2.println(Current.clear);
+        }
+    }
 }
 
 

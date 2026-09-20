@@ -98,7 +98,7 @@ void loop()
 
     colour_sensor_update();
 
-    print_limit();
+    //print_limit();
     // print_xy();
     // tof_print_readings(Serial);
 
@@ -129,7 +129,7 @@ void loop()
 
 
     // Optional
-    // pose_update();
+    pose_update();
     // map_update();
 
     /*

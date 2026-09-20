@@ -35,6 +35,7 @@ struct StateFlags {
     bool target_identified = false;
     bool reverse_triggered = false;
     bool home_reached = false;
+    bool home_docked = false;
     bool collection_complete = false;
     bool collection_failed = false;
     bool dropoff_complete = false;

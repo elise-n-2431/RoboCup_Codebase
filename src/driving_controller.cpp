@@ -29,7 +29,7 @@ const int MAX_DRIVE_CORRECTION = 100;
 static int driveBasePower = 300;
 
 // Minimum power for robot to actually rotate
-const int MIN_TURN_POWER = 300;
+const int MIN_TURN_POWER = 280;
 
 const int MAX_TURN_POWER = 450;
 
