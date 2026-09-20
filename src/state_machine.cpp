@@ -290,7 +290,6 @@ void updateStateMachine() {
             break;
 
         case HOMING:
-        resetStateFlag(&STATE_FLAGS.home_reached);
             checkChangeNavState(OPENING, &STATE_FLAGS.home_docked);
             break;
 

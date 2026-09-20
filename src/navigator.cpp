@@ -113,7 +113,7 @@ static const int ROAM_SIDE_BLOCK_MM = 180;
 static const int ROAM_SLOW_MM = 500;
 static const int ROAM_SLOW_POWER = 340;
 
-static const unsigned long NAV_TURN_TIMEOUT_MS = 4000;
+static const unsigned long NAV_TURN_TIMEOUT_MS = 8000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
 
 static bool navigatorEnabled = true;
@@ -137,7 +137,8 @@ enum HomingState
     HOMING_TURNING,
     HOMING_DRIVING,
     HOMING_AVOIDING,
-    HOMING_DOCKING
+    HOMING_DOCKING,
+    HOMING_DOCK_TURNING
 };
 
 static HomingState homingState = HOMING_START;
@@ -160,8 +161,8 @@ static const unsigned long HOME_HEADING_UPDATE_MS = 250;
 
 static unsigned long homeDockStart = 0;
 
-static const int HOME_DOCK_POWER = 250;
-static const unsigned long HOME_DOCK_TIME_MS = 600;
+static const int HOME_DOCK_POWER = 280;
+static const unsigned long HOME_DOCK_TIME_MS = 1800;
 
 
 static float wrap180(float angle)
@@ -232,6 +233,7 @@ static bool weightPairDetected(int top, int bottom, int navDistance, int &differ
         {
             return false;
         }
+        return true;
     }
     difference = top - bottom;
     return difference >= WEIGHT_DIFFERENCE_MM;
@@ -802,33 +804,42 @@ void frontier_targetting(){
     
 }
 
-
+static int homeDockHeading = 0;
 
 static void homing_exe()
 {
     // Colour sensor has final authority.
-    if (STATE_FLAGS.home_reached && homingState != HOMING_DOCKING)
+    if (STATE_FLAGS.home_reached && homingState != HOMING_DOCKING && homingState != HOMING_DOCK_TURNING)
     {
         motor_control_stop();
+
         homeDockStart = millis();
+        homeDockHeading = imu_get_heading();
+
         homingState = HOMING_DOCKING;
 
+        motor_control_drive_heading(
+            homeDockHeading,
+            HOME_DOCK_POWER
+        );
+
         Serial2.println("Home detected - docking");
+
         return;
     }
      float distanceHome = homeDistance();
 
     // We are close enough that steering toward the exact (300,300)
     // coordinate is no longer useful.
-    if (distanceHome <= 50)
+    if (distanceHome <= 50 && homingState != HOMING_DOCKING && homingState != HOMING_DOCK_TURNING)
     {
         motor_control_stop();
 
-        Serial2.print("HOMING: inside home arrival zone, distance = ");
+        Serial2.print(
+            "HOMING: inside home arrival zone, distance = "
+        );
         Serial2.println(distanceHome);
 
-        // Stay here and let colour_sensor_update()
-        // provide the final home confirmation.
         return;
     }
 
@@ -1031,18 +1042,37 @@ static void homing_exe()
 
         case HOMING_DOCKING:
         {
-            motor_control_drive_heading(
-                imu_get_heading(),
-                HOME_DOCK_POWER
-            );
-
-            if (millis() - homeDockStart >=
-                HOME_DOCK_TIME_MS)
+            if (millis() - homeDockStart >= HOME_DOCK_TIME_MS)
             {
                 motor_control_stop();
-                resetStateFlag(&STATE_FLAGS.home_reached);
-                setStateFlag(&STATE_FLAGS.home_docked);
+                Serial2.println("Docking complete - turning 180");
+
+                motor_control_turn_relative(180.0f);
+
+                homingState = HOMING_DOCK_TURNING;
             }
+
+            break;
+        }
+
+        case HOMING_DOCK_TURNING:
+        {
+            if (motor_control_is_turning())
+            {
+                return;
+            }
+
+            Serial2.println(
+                "Home 180 turn complete"
+            );
+
+            resetStateFlag(
+                &STATE_FLAGS.home_reached
+            );
+
+            setStateFlag(
+                &STATE_FLAGS.home_docked
+            );
 
             break;
         }
