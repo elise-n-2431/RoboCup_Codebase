@@ -13,8 +13,8 @@ static HerkulexServoBus herkulexBus(
     Serial1
 );
 
-static const uint8_t LEFT_ARM_ID  = 1;
-static const uint8_t RIGHT_ARM_ID = 2;
+static const uint8_t LEFT_ARM_ID  = 4;
+static const uint8_t RIGHT_ARM_ID = 1;
 
 // Servo object is created once we know which ID to use
 static HerkulexServo* leftArmServo  = nullptr;
@@ -23,11 +23,11 @@ static HerkulexServo* rightArmServo = nullptr;
 static uint8_t smartServoId = 0;
 
 
-static const uint16_t LEFT_ARM_OPEN_POSITION   = 500;
-static const uint16_t LEFT_ARM_CLOSED_POSITION = 500;
+static const uint16_t LEFT_ARM_OPEN_POSITION   = 360;
+static const uint16_t LEFT_ARM_CLOSED_POSITION = 614;
 
-static const uint16_t RIGHT_ARM_OPEN_POSITION   = 500;
-static const uint16_t RIGHT_ARM_CLOSED_POSITION = 500;
+static const uint16_t RIGHT_ARM_OPEN_POSITION   = 600;
+static const uint16_t RIGHT_ARM_CLOSED_POSITION = 335;
 
 static const uint8_t ARM_PLAYTIME = 80;
 
@@ -379,13 +379,13 @@ void smartservo_print_positions()
 {
     if (leftArmServo != nullptr)
     {
-        Serial.print("Left position: ");
-        Serial.println(leftArmServo->getPosition());
+        Serial2.print("Left position: ");
+        Serial2.println(leftArmServo->getPosition());
     }
 
     if (rightArmServo != nullptr)
     {
-        Serial.print("Right position: ");
-        Serial.println(rightArmServo->getPosition());
+        Serial2.print("Right position: ");
+        Serial2.println(rightArmServo->getPosition());
     }
 }

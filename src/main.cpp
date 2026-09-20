@@ -96,16 +96,16 @@ void loop()
 
     // imu_print_readings();
     tof_update();
-    pose_update();
+    //pose_update();
     // Serial.println("here!");
-    map_update();
+    //map_update();
 
 
-    if (i >= max_iter) {
+    /*if (i >= max_iter) {
         send_map_data();
         i = 0;
     }
-    i ++;
+    i ++;*/
 
 
     ultrasound_exe();
@@ -126,8 +126,8 @@ void loop()
     RobotCommand command = serial_exe();
     command_router_exe(command);
 
-    navigator_exe();
-    motor_control_update();
+    //navigator_exe();
+    //motor_control_update();
 
     // pose_print(Serial);
 
