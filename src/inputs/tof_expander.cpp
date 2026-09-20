@@ -100,7 +100,7 @@ static bool initialiseL0(VL53L0X &sensor, int xshutPin, int address, int number)
 {
     tofExpander.digitalWrite(xshutPin, HIGH);
     delay(100);
-    sensor.setTimeout(500);
+    sensor.setTimeout(1000);
 
     if (!sensor.init()) {
         Serial.print("ERROR: L0 ToF ");

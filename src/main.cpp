@@ -66,7 +66,7 @@ void setup()
     pose_init();
 
     // imu_print_readings();
-    navigator_start(false);
+    navigator_start(true);
 
     xy_init();
 
@@ -79,7 +79,7 @@ void setup()
 // }
 
 int i = 0;
-int max_iter = 200;
+int max_iter = 20;
 
 void loop()
 {
@@ -98,14 +98,14 @@ void loop()
     tof_update();
     pose_update();
     // Serial.println("here!");
-    map_update();
+    // map_update();
 
 
-    if (i >= max_iter) {
-        send_map_data();
-        i = 0;
-    }
-    i ++;
+    // if (i >= max_iter) {
+    //     send_map_data();
+    //     i = 0;
+    // }
+    // i ++;
 
 
     ultrasound_exe();
@@ -113,6 +113,7 @@ void loop()
 
     logic_exe();
     updateStateMachine();
+    print_state();
 
 
     pickup_servo_exe();

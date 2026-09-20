@@ -103,11 +103,11 @@ void pose_update()
 
     float headingRad = headingDeg * PI / 180.0f;
 
-    Serial.print("forward: ");
-    Serial.println(forwardDistance);
-    Serial.print(", lateral: ");
-    Serial.println(lateralDistance);
-    pose_print(Serial);
+    // Serial.print("forward: ");
+    // Serial.println(forwardDistance);
+    // Serial.print(", lateral: ");
+    // Serial.println(lateralDistance);
+    // pose_print(Serial);
 
     poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
     poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);

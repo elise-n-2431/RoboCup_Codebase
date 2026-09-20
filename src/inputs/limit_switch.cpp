@@ -52,7 +52,7 @@ void limit_switch_exe() {
         return;
     }*/
 
-    if (io.digitalRead(AIO5_PIN) == HIGH) {
+    if (io.digitalRead(AIO5_PIN) == LOW) {
         count_switch_on++;
         count_switch_off = 0;
     } else {
@@ -79,7 +79,7 @@ void limit_switch_exe() {
 }
 
 bool getLimitSwitch() {
-    return io.digitalRead(AIO5_PIN) == HIGH;
+    return io.digitalRead(AIO5_PIN) == LOW;
 }
 
 void print_limit() {
