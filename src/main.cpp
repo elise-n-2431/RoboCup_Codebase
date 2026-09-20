@@ -85,11 +85,15 @@ void setup()
 
 int i = 0;
 int max_iter = 20;
+bool run = false;
 
 void loop()
 {
-    Serial.println(digitalRead(GO_PIN));
     if (digitalRead(GO_PIN) == HIGH)  {
+        run = true;
+    }
+
+    if (run) {
 
     // PRINT STATEMENTS
     // pose_telemetry_exe();
@@ -106,14 +110,14 @@ void loop()
     tof_update();
     pose_update();
     // Serial.println("here!");
-    // map_update();
+    map_update();
 
 
-    // if (i >= max_iter) {
-    //     send_map_data();
-    //     i = 0;
-    // }
-    // i ++;
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
 
 
     ultrasound_exe();
@@ -143,6 +147,20 @@ void loop()
     // pose_print(Serial);
 
     
+    }
+
+    else {
+    imu_update();
+
+    tof_update();
+    pose_update();
+    map_update();
+
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
     }
 }
 

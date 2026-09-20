@@ -32,6 +32,11 @@ const int WEIGHT_RIGHT_TOP    = 2;
 const int WEIGHT_RIGHT_BOTTOM = 1;
 const int WEIGHT_MIDDLE = 8;
 
+int dist_o_l = 0;
+int dist_o_r = 0;
+int dist_i_l = 0;
+int dist_i_r = 0;
+
 // --- Fixed-point confidence values ---------------------------------------
 // Both maps store confidence as int16_t / uint16_t scaled by CONF_SCALE,
 // i.e. "1000" means 1.000, "250" means 0.250, etc. -- 3 decimal places of
@@ -593,10 +598,14 @@ void remove_weight_evidence(int cell_x, int cell_y)
 void interpret_tof()
 {
     for (int i = -3; i < 4; i += 2) {
-        update_obstacle_map(tof_get_distance(NAV_OUTER_LEFT), 40.0 + i);
-        update_obstacle_map(tof_get_distance(NAV_INNER_LEFT),  15.0 + i);
-        update_obstacle_map(tof_get_distance(NAV_INNER_RIGHT), -15.0 + i);
-        update_obstacle_map(tof_get_distance(NAV_OUTER_RIGHT), -40.0 + i);
+        dist_o_l = tof_get_distance(NAV_OUTER_LEFT);
+        update_obstacle_map(dist_o_l, 40.0 + i);
+        dist_i_l = tof_get_distance(NAV_INNER_LEFT);
+        update_obstacle_map(dist_i_l,  15.0 + i);
+        dist_i_r = tof_get_distance(NAV_INNER_RIGHT);
+        update_obstacle_map(dist_i_r, -15.0 + i);
+        dist_o_r = tof_get_distance(NAV_OUTER_RIGHT);
+        update_obstacle_map(dist_o_r, -40.0 + i);
     }
 
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
@@ -711,23 +720,23 @@ void send_map_data()
     Serial2.println();
 
     Serial2.println("TOF readings");
-    Serial2.print(tof_get_distance(NAV_OUTER_LEFT));
+    Serial2.print(dist_o_l);
     Serial2.print(",");
-    Serial2.print(tof_get_distance(NAV_INNER_LEFT));
+    Serial2.print(dist_i_l);
     Serial2.print(",");
-    Serial2.print(tof_get_distance(NAV_INNER_RIGHT));
+    Serial2.print(dist_i_r);
     Serial2.print(",");
-    Serial2.print(tof_get_distance(NAV_OUTER_RIGHT));
+    Serial2.print(dist_o_r);
     Serial2.print(",");
-    Serial2.print(tof_get_distance(WEIGHT_LEFT_TOP));
+    Serial2.print(tof_get_weight_left_top());
     Serial2.print(",");
-    Serial2.print(tof_get_distance(WEIGHT_RIGHT_TOP));
+    Serial2.print(tof_get_weight_right_top());
     Serial2.print(",");
-    Serial2.print(tof_get_distance(WEIGHT_LEFT_BOTTOM));
+    Serial2.print(tof_get_weight_left_bottom());
     Serial2.print(",");
-    Serial2.print(tof_get_distance(WEIGHT_RIGHT_BOTTOM));
+    Serial2.print(tof_get_weight_right_bottom());
     Serial2.print(",");
-    Serial2.print(tof_get_distance(WEIGHT_MIDDLE));
+    Serial2.print(tof_get_weight_middle());
     Serial2.println();
 
     Serial2.println("Heading");
