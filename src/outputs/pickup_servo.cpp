@@ -17,10 +17,10 @@ const int GATE_SERVO_PIN  = 28;
 
 
 // Start conservative and calibrate these
-const int IDLE_US       = 2200;
-const int VERTICAL_US   = 1580;
-const int HORIZONTAL_US = 1400;
-const int DROPOFF_US    = 2350;
+const int IDLE_US       = 1500;
+const int VERTICAL_US   = 1050;
+const int HORIZONTAL_US = 950;
+const int DROPOFF_US    = 1950;
 
 const int GATE_OPEN_US   = 1300;
 const int GATE_CLOSED_US = 2150;
@@ -42,10 +42,16 @@ static void moveCraneTo(int target, int speed);
 
 void pickup_servo_init()
 {
+    currentPulse = IDLE_US;
+    targetPulse  = IDLE_US;
+
+    craneServo.writeMicroseconds(IDLE_US);
     craneServo.attach(CRANE_SERVO_PIN, 500, 2500);
+    craneServo.writeMicroseconds(IDLE_US);
+
+    gateServo.writeMicroseconds(GATE_CLOSED_US);
     gateServo.attach(GATE_SERVO_PIN, 500, 2500);
-    craneIdle();
-    gateClose();
+    gateServo.writeMicroseconds(GATE_CLOSED_US);
 }
 
 void gateOpen()

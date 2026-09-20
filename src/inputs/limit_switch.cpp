@@ -83,6 +83,6 @@ bool getLimitSwitch() {
 }
 
 void print_limit() {
-    Serial.print("Limit ");
-    Serial.println(getLimitSwitch());
+    Serial2.print("Limit ");
+    Serial2.println(getLimitSwitch());
 }

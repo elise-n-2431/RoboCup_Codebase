@@ -7,7 +7,9 @@
 #include "driving_controller.h"
 #include "inputs/tof_expander.h"
 #include "state_machine.h"
+#include "outputs/smart_servo.h"
 #include "map.h"
+#include "pose.h"
 
 
 
@@ -17,16 +19,16 @@ static int middleLostCount = 0;
 static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 
 
-static const float LEFT_WEIGHT_TURN_DEG  = -60.0f;
-static const float RIGHT_WEIGHT_TURN_DEG = 60.0f;
+static const float LEFT_WEIGHT_TURN_DEG  = -36.0f;
+static const float RIGHT_WEIGHT_TURN_DEG = 36.0f;
 static const int WEIGHT_DIFFERENCE_MM = 100;
-static const int WEIGHT_STOP_DISTANCE_MM = 55;
+static const int WEIGHT_STOP_DISTANCE_MM = 75;
 static int DETECTION_COUNT_REQUIRED = 3;
 
-static const int WEIGHT_SLOW_DISTANCE_MM = 150;
+static const int WEIGHT_SLOW_DISTANCE_MM = 200;
 
 static const int WEIGHT_APPROACH_POWER = 320;
-static const int WEIGHT_SLOW_POWER = 260;
+static const int WEIGHT_SLOW_POWER = 320;
 
 
 static int leftDetectionCount = 0;
@@ -52,6 +54,7 @@ enum PursuitState
     PURSUIT_TURNING,
     PURSUIT_ACQUIRING,
     PURSUIT_APPROACHING,
+    PURSUIT_SECURING,
     PURSUIT_FINISHED
 };
 
@@ -64,6 +67,10 @@ enum ReversingState
     REVERSE_TURNING,
     REVERSE_FINISHED
 };
+
+static unsigned long pursuitSecureStartedAt = 0;
+
+static const unsigned long ARM_SECURE_WAIT_MS = 1000;
 
 static ReversingState reversingState = REVERSE_START;
 
@@ -81,7 +88,7 @@ static RoamingState roamingState = ROAM_START;
 // ROAMING TUNING
 // ============================================================
 
-static int ROAM_POWER = 380;
+static int ROAM_POWER = 430;
 
 // Distance at which normal avoidance begins
 static int ROAM_FRONT_BLOCK_MM = 250;
@@ -104,7 +111,7 @@ static unsigned long reverseStartedAt = 0;
 
 static const int ROAM_SIDE_BLOCK_MM = 180;
 static const int ROAM_SLOW_MM = 500;
-static const int ROAM_SLOW_POWER = 280;
+static const int ROAM_SLOW_POWER = 340;
 
 static const unsigned long NAV_TURN_TIMEOUT_MS = 4000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
@@ -124,10 +131,83 @@ static float roamHeading = 0.0f;
 static int roamCommandedPower = 0;
 static int roamTurnDirection = 1;
 
+enum HomingState
+{
+    HOMING_START,
+    HOMING_TURNING,
+    HOMING_DRIVING,
+    HOMING_AVOIDING
+};
+
+static HomingState homingState = HOMING_START;
+
+static const float HOME_X_MM = 300.0f;
+static const float HOME_Y_MM = 300.0f;
+
+static const int HOME_POWER = 430;
+static const int HOME_SLOW_POWER = 340;
+
+static const float HOME_SLOW_DISTANCE_MM = 700.0f;
+
+static const int HOME_FRONT_BLOCK_MM = 250;
+
+static const float HOME_AVOID_TURN_DEG = 45.0f;
+
+static unsigned long lastHomeHeadingUpdate = 0;
+
+static const unsigned long HOME_HEADING_UPDATE_MS = 250;
 
 
+static float wrap180(float angle)
+{
+    while (angle > 180.0f)
+    {
+        angle -= 360.0f;
+    }
 
+    while (angle < -180.0f)
+    {
+        angle += 360.0f;
+    }
 
+    return angle;
+}
+
+static float homeDistance()
+{
+    float dx =
+        HOME_X_MM - pose_get_x_mm();
+
+    float dy =
+        HOME_Y_MM - pose_get_y_mm();
+
+    return sqrtf(
+        dx * dx +
+        dy * dy
+    );
+}
+
+static float homeHeadingError()
+{
+    float dx =
+        HOME_X_MM - pose_get_x_mm();
+
+    float dy =
+        HOME_Y_MM - pose_get_y_mm();
+
+    // Heading in the pose coordinate system
+    float desiredPoseHeading =
+        atan2f(dy, dx)
+        * 180.0f / PI;
+
+    float currentPoseHeading =
+        pose_get_heading_deg();
+
+    return wrap180(
+        desiredPoseHeading -
+        currentPoseHeading
+    );
+}
 
 static bool weightPairDetected(int top, int bottom, int &difference)
 {
@@ -404,54 +484,61 @@ static void roaming_exe()
 }
 
 
-
 static void pursuit_exe()
 {
     switch (pursuitState)
     {
         case PURSUIT_START:
         {
+            // Make sure funnel is open before approaching the weight
+            smartservo_arms_open();
+
             if (weightTargetSide == TARGET_LEFT)
             {
-                // Serial2.println("Pursuit: turning LEFT toward weight");
+                Serial.println("Pursuit: opening arms and turning LEFT");
                 motor_control_turn_relative(LEFT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                // Serial2.println("Pursuit: turning RIGHT toward weight");
+                Serial.println("Pursuit: opening arms and turning RIGHT");
                 motor_control_turn_relative(RIGHT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else
             {
-                // Serial2.println("Pursuit started without target side");
+                Serial.println("Pursuit started without target side");
             }
 
             break;
         }
 
+
         case PURSUIT_TURNING:
         {
             if (motor_control_is_turning()) return;
 
-            // Serial2.println("Pursuit: turn complete");
+            Serial.println("Pursuit: turn complete");
+
             pursuitState = PURSUIT_ACQUIRING;
 
             break;
         }
 
+
         case PURSUIT_ACQUIRING:
         {
             int centreDistance = tof_get_weight_middle();
 
-            if (centreDistance > 0 && centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
+            if (centreDistance > 0 &&
+                centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
             {
-                // Serial2.print("Pursuit: centre acquired weight at ");
-                // Serial2.print(centreDistance);
-                // Serial2.println(" mm");
+                Serial.print("Pursuit: centre acquired weight at ");
+                Serial.print(centreDistance);
+                Serial.println(" mm");
 
                 middleLostCount = 0;
+
                 weightApproachHeading = imu_get_heading();
                 weightApproachSlowed = false;
 
@@ -462,20 +549,26 @@ static void pursuit_exe()
             break;
         }
 
+
         case PURSUIT_APPROACHING:
         {
             int centreDistance = tof_get_weight_middle();
 
+            // -------------------------------
             // Lost target
-            if (centreDistance <= 0 || centreDistance > WEIGHT_DETECT_DISTANCE_MM)
+            // -------------------------------
+            if (centreDistance <= 0 ||
+                centreDistance > WEIGHT_DETECT_DISTANCE_MM)
             {
                 motor_control_stop();
+
                 weightApproachSlowed = false;
                 middleLostCount++;
 
                 if (middleLostCount >= MIDDLE_LOST_COUNT_REQUIRED)
                 {
-                    // Serial2.println("Pursuit: centre lost weight");
+                    Serial.println("Pursuit: centre lost weight");
+
                     middleLostCount = 0;
                     pursuitState = PURSUIT_ACQUIRING;
                 }
@@ -483,49 +576,98 @@ static void pursuit_exe()
                 return;
             }
 
+
             middleLostCount = 0;
 
-            // Weight has reached the entrance
+
+            // -------------------------------
+            // Weight has reached funnel
+            // -------------------------------
             if (centreDistance <= WEIGHT_STOP_DISTANCE_MM)
             {
                 motor_control_stop();
 
-                // Serial2.print("Pursuit: weight reached at ");
-                // Serial2.print(centreDistance);
-                // Serial2.println(" mm");
+                Serial.print("Pursuit: weight reached entrance at ");
+                Serial.print(centreDistance);
+                Serial.println(" mm");
 
-                pursuitState = PURSUIT_FINISHED;
-                setStateFlag(&STATE_FLAGS.weight_in_entrance);
+                // Secure the weight before handing over to SORTING
+                smartservo_arms_close();
+
+                pursuitSecureStartedAt = millis();
+                pursuitState = PURSUIT_SECURING;
 
                 return;
             }
 
-            // Slow down near the weight
+
+            // -------------------------------
+            // Slow approach
+            // -------------------------------
             if (centreDistance <= WEIGHT_SLOW_DISTANCE_MM)
             {
-                if (!weightApproachSlowed || !motor_control_is_driving())
+                if (!weightApproachSlowed ||
+                    !motor_control_is_driving())
                 {
-                    motor_control_drive_heading(weightApproachHeading, WEIGHT_SLOW_POWER);
+                    motor_control_drive_heading(
+                        weightApproachHeading,
+                        WEIGHT_SLOW_POWER
+                    );
+
                     weightApproachSlowed = true;
 
-                    // Serial2.println("Pursuit: slowing approach");
+                    Serial.println("Pursuit: slowing approach");
                 }
 
                 return;
             }
 
-            // Start normal approach
+
+            // -------------------------------
+            // Normal approach
+            // -------------------------------
             if (!motor_control_is_driving())
             {
-                motor_control_drive_heading(weightApproachHeading, WEIGHT_APPROACH_POWER);
+                motor_control_drive_heading(
+                    weightApproachHeading,
+                    WEIGHT_APPROACH_POWER
+                );
             }
 
             break;
         }
 
+
+        case PURSUIT_SECURING:
+        {
+            // Robot must remain stationary while arms close
+            motor_control_stop();
+
+            if (millis() - pursuitSecureStartedAt < ARM_SECURE_WAIT_MS)
+            {
+                return;
+            }
+
+            Serial.println("Pursuit: weight secured");
+
+            pursuitState = PURSUIT_FINISHED;
+
+            setStateFlag(
+                &STATE_FLAGS.weight_in_entrance
+            );
+
+            break;
+        }
+
+
         case PURSUIT_FINISHED:
         {
-            // Wait for top-level state machine to move PURSUIT -> SORTING
+            // Wait for:
+            //
+            // PURSUIT -> SORTING
+            //
+            // in the main state machine.
+
             break;
         }
     }
@@ -604,6 +746,185 @@ void frontier_targetting(){
 
 
 
+static void homing_exe()
+{
+    // Colour sensor has final authority.
+    if (STATE_FLAGS.home_reached)
+    {
+        motor_control_stop();
+        return;
+    }
+
+    int outerLeft =
+        clearanceValue(
+            tof_get_nav_outer_left()
+        );
+
+    int innerLeft =
+        clearanceValue(
+            tof_get_nav_inner_left()
+        );
+
+    int innerRight =
+        clearanceValue(
+            tof_get_nav_inner_right()
+        );
+
+    int outerRight =
+        clearanceValue(
+            tof_get_nav_outer_right()
+        );
+
+    int front =
+        min(innerLeft, innerRight);
+
+    int leftClearance =
+        min(outerLeft, innerLeft);
+
+    int rightClearance =
+        min(outerRight, innerRight);
+
+
+    switch (homingState)
+    {
+        case HOMING_START:
+        {
+            motor_control_stop();
+
+            float turn =
+                homeHeadingError();
+
+            Serial.print(
+                "Homing turn toward base: "
+            );
+            Serial.println(turn);
+
+            if (fabs(turn) > 5.0f)
+            {
+                motor_control_turn_relative(
+                    turn
+                );
+
+                homingState =
+                    HOMING_TURNING;
+            }
+            else
+            {
+                homingState =
+                    HOMING_DRIVING;
+            }
+
+            break;
+        }
+
+
+        case HOMING_TURNING:
+        {
+            if (motor_control_is_turning())
+            {
+                return;
+            }
+
+            lastHomeHeadingUpdate = 0;
+
+            homingState =
+                HOMING_DRIVING;
+
+            break;
+        }
+
+
+        case HOMING_DRIVING:
+        {
+            // Basic obstacle avoidance until D* is ready.
+            if (front < HOME_FRONT_BLOCK_MM)
+            {
+                motor_control_stop();
+
+                float turnDirection;
+
+                if (leftClearance >
+                    rightClearance)
+                {
+                    turnDirection =
+                        -HOME_AVOID_TURN_DEG;
+                }
+                else
+                {
+                    turnDirection =
+                        HOME_AVOID_TURN_DEG;
+                }
+
+                Serial.println(
+                    "Homing: obstacle avoidance"
+                );
+
+                motor_control_turn_relative(
+                    turnDirection
+                );
+
+                homingState =
+                    HOMING_AVOIDING;
+
+                return;
+            }
+
+
+            // Continually correct heading toward the
+            // estimated starting location.
+            if (
+                millis() -
+                lastHomeHeadingUpdate
+                >= HOME_HEADING_UPDATE_MS
+            )
+            {
+                lastHomeHeadingUpdate =
+                    millis();
+
+                float relativeError =
+                    homeHeadingError();
+
+                // Convert our relative correction back
+                // into an absolute IMU target.
+                float targetHeading =
+                    imu_get_heading()
+                    + relativeError;
+
+                int power =
+                    homeDistance()
+                        < HOME_SLOW_DISTANCE_MM
+                    ? HOME_SLOW_POWER
+                    : HOME_POWER;
+
+                motor_control_drive_heading(
+                    targetHeading,
+                    power
+                );
+            }
+
+            break;
+        }
+
+
+        case HOMING_AVOIDING:
+        {
+            if (motor_control_is_turning())
+            {
+                return;
+            }
+
+            // After avoiding obstacle, recalculate
+            // direction toward home.
+            homingState =
+                HOMING_START;
+
+            break;
+        }
+    }
+}
+
+
+
 void navigator_exe()
 {
     if (!navigatorEnabled) return;
@@ -644,20 +965,54 @@ void navigator_exe()
     if (!motor_control_is_turning()) turnWatchActive = false;
 
     if (turnWatchActive && millis() - turnStartedAt >= NAV_TURN_TIMEOUT_MS) {
-        navigator_stop();
-        // Serial2.println("Navigator stopped: turn timeout");
+        motor_control_stop();
+
+        turnWatchActive = false;
+
+        Serial2.println(
+            "Navigation turn timeout - recovering"
+        );
+
+        if (nav == PURSUIT)
+        {
+            setStateFlag(
+                &STATE_FLAGS.target_lost
+            );
+        }
+        else if (nav == ROAMING)
+        {
+            roamingState =
+                ROAM_START;
+        }
+        else if (nav == HOMING)
+        {
+            homingState =
+                HOMING_START;
+        }
         return;
     }
 
-    if (nav == PURSUIT) {
-        int left = tof_get_nav_inner_left();
-        int right = tof_get_nav_inner_right();
-
+    if (nav == PURSUIT &&
+    pursuitState != PURSUIT_SECURING &&
+    pursuitState != PURSUIT_FINISHED)
+    {
         if (millis() - navigatorStateStarted >= PURSUIT_TIMEOUT_MS)
         {
             motor_control_stop();
+
+            Serial.println("Pursuit: timeout");
+
             setStateFlag(&STATE_FLAGS.target_lost);
+
             return;
+        }
+
+        if (nav == HOMING)
+        {
+            homingState = HOMING_START;
+            lastHomeHeadingUpdate = 0;
+
+            Serial.println("Navigator: HOMING started");
         }
     }
 
@@ -675,7 +1030,7 @@ void navigator_exe()
             break;
 
         case HOMING:
-            navigator_stop();
+            homing_exe();
             // Serial2.println("Navigator stopped: homing not implemented");
             break;
 

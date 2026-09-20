@@ -5,6 +5,7 @@
 #include "logic_engine.h"
 #include "driving_controller.h"
 #include "outputs/pickup_servo.h"
+#include "outputs/smart_servo.h"
 
 // enums and structs moved to h file
 
@@ -281,6 +282,7 @@ void updateStateMachine() {
 
         case SORTING:
             if (STATE_FLAGS.dummy_identified) {
+                smartservo_arms_open();
                 reverseReturnState = ROAMING;
                 checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
             } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
@@ -366,8 +368,12 @@ void updateStateMachine() {
 
                         if (pickup_succeeded) {
                             increment_weights();
+                            smartservo_arms_open();
+
                             setStateFlag(&STATE_FLAGS.collection_complete);
-                        } else setStateFlag(&STATE_FLAGS.collection_failed);
+                        } else {
+                            setStateFlag(&STATE_FLAGS.collection_failed);
+                        }
                     }
                     break;
             }

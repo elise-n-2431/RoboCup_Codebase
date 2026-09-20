@@ -21,13 +21,14 @@
 #include "inputs/ultrasound.h"
 #include "comms/command_router.h"
 #include "map.h"
-// #include "tasks.h"
 
 
+const byte GO_PIN = 26;
+
+bool run = false;
 
 
 static bool poseStreamEnabled = true;
-
 static unsigned long lastPosePrintTime = 0;
 
 const unsigned long POSE_PRINT_PERIOD_MS = 100;
@@ -35,6 +36,9 @@ const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
 void setup()
 {
+    // GO button
+    pinMode(GO_PIN, INPUT);
+
     // Communications
     serial_init();
     encoders_init();
@@ -47,6 +51,7 @@ void setup()
     tof_init();
     limit_switch_init();
     proximity_init();
+
     // Control
     map_init();
     motor_control_init();
@@ -61,77 +66,79 @@ void setup()
     smartservo_torque_on();
     ultrasound_init();
 
-    // imu_print_readings();
-
     pose_init();
 
-    // imu_print_readings();
-    navigator_start(false);
+    // Start in roaming-only mode.
+    // Type "auto" to enable weight pickup.
+    navigator_start(true);
 
     xy_init();
-
-    // tasks_init();   // last — starts the timebase from a clean point
 }
 
-// void loop()
-// {
-//     tasks_exe();
-// }
 
 int i = 0;
 int max_iter = 200;
 
+
 void loop()
 {
-    // PRINT STATEMENTS
-    // pose_telemetry_exe();
-    // print_state();
-    // print_DC_power();
-    // print_limit();
+
+    if (digitalRead(GO_PIN) == HIGH)
+    {
+        run = true;
+    }
 
     xy_exe();
-    // print_xy();
 
     imu_update();
-
-    // imu_print_readings();
     tof_update();
-    //pose_update();
-    // Serial.println("here!");
-    //map_update();
-
-
-    /*if (i >= max_iter) {
-        send_map_data();
-        i = 0;
-    }
-    i ++;*/
-
 
     ultrasound_exe();
     limit_switch_exe();
+
+    colour_sensor_update();
+
+    print_limit();
+    // print_xy();
+    // tof_print_readings(Serial);
+
+
+    RobotCommand command = serial_exe();
+    command_router_exe(command);
+
+
+    if (!run)
+    {
+        return;
+    }
+
 
     logic_exe();
     updateStateMachine();
 
 
+   
     pickup_servo_exe();
     emag_exe();
     proximity_exe();
 
     pickup_servo_update();
-    colour_sensor_update();
     smartservo_update();
+    navigator_exe();
+    motor_control_update();
 
-    RobotCommand command = serial_exe();
-    command_router_exe(command);
 
-    //navigator_exe();
-    //motor_control_update();
+    // Optional
+    // pose_update();
+    // map_update();
 
-    // pose_print(Serial);
+    /*
+    if (i >= max_iter)
+    {
+        send_map_data();
+        i = 0;
+    }
 
-    
-
+    i++;
+    */
 }
-
