@@ -304,48 +304,48 @@ static void detect_weights_exe()
 
     if (leftDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_LEFT;
-        Serial2.println("WEIGHT CANDIDATE LEFT");
+        // Serial2.println("WEIGHT CANDIDATE LEFT");
 
-        Serial2.print("LT=");
-        Serial2.print(leftTop);
-        Serial2.print(" LB=");
-        Serial2.print(leftBottom);
+        // Serial2.print("LT=");
+        // Serial2.print(leftTop);
+        // Serial2.print(" LB=");
+        // Serial2.print(leftBottom);
 
-        Serial2.print(" RT=");
-        Serial2.print(rightTop);
-        Serial2.print(" RB=");
-        Serial2.println(rightBottom);
+        // Serial2.print(" RT=");
+        // Serial2.print(rightTop);
+        // Serial2.print(" RB=");
+        // Serial2.println(rightBottom);
 
-        Serial2.print("NAV OL=");
-        Serial2.print(tof_get_nav_outer_left());
-        Serial2.print(" IL=");
-        Serial2.print(tof_get_nav_inner_left());
-        Serial2.print(" IR=");
-        Serial2.print(tof_get_nav_inner_right());
-        Serial2.print(" OR=");
-        Serial2.println(tof_get_nav_outer_right());
+        // Serial2.print("NAV OL=");
+        // Serial2.print(tof_get_nav_outer_left());
+        // Serial2.print(" IL=");
+        // Serial2.print(tof_get_nav_inner_left());
+        // Serial2.print(" IR=");
+        // Serial2.print(tof_get_nav_inner_right());
+        // Serial2.print(" OR=");
+        // Serial2.println(tof_get_nav_outer_right());
     } else if (rightDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_RIGHT;
-        Serial2.println("WEIGHT CANDIDATE RIGHT");
+        // Serial2.println("WEIGHT CANDIDATE RIGHT");
 
-        Serial2.print("LT=");
-        Serial2.print(leftTop);
-        Serial2.print(" LB=");
-        Serial2.print(leftBottom);
+        // Serial2.print("LT=");
+        // Serial2.print(leftTop);
+        // Serial2.print(" LB=");
+        // Serial2.print(leftBottom);
 
-        Serial2.print(" RT=");
-        Serial2.print(rightTop);
-        Serial2.print(" RB=");
-        Serial2.println(rightBottom);
+        // Serial2.print(" RT=");
+        // Serial2.print(rightTop);
+        // Serial2.print(" RB=");
+        // Serial2.println(rightBottom);
 
-        Serial2.print("NAV OL=");
-        Serial2.print(tof_get_nav_outer_left());
-        Serial2.print(" IL=");
-        Serial2.print(tof_get_nav_inner_left());
-        Serial2.print(" IR=");
-        Serial2.print(tof_get_nav_inner_right());
-        Serial2.print(" OR=");
-        Serial2.println(tof_get_nav_outer_right());
+        // Serial2.print("NAV OL=");
+        // Serial2.print(tof_get_nav_outer_left());
+        // Serial2.print(" IL=");
+        // Serial2.print(tof_get_nav_inner_left());
+        // Serial2.print(" IR=");
+        // Serial2.print(tof_get_nav_inner_right());
+        // Serial2.print(" OR=");
+        // Serial2.println(tof_get_nav_outer_right());
     } else return;
 
     pursuitState = PURSUIT_START;
@@ -415,7 +415,7 @@ static void roaming_start_turn(int leftClearance, int rightClearance)
     roamCommandedPower = 0;
     leftDetectionCount = rightDetectionCount = 0;
 
-    Serial2.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
+    // Serial2.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
 }
 
 static void roaming_drive(int power)
@@ -486,7 +486,7 @@ static void roaming_exe()
     if (front <= ROAM_CRITICAL_MM) {
         // navigator_stop();
         motor_control_stop();
-        Serial2.println("Roaming stopped: obstacle critically close");
+        // Serial2.println("Roaming stopped: obstacle critically close");
         return;
     }
 
@@ -823,7 +823,7 @@ static void homing_exe()
             HOME_DOCK_POWER
         );
 
-        Serial2.println("Home detected - docking");
+        // Serial2.println("Home detected - docking");
 
         return;
     }
@@ -835,10 +835,10 @@ static void homing_exe()
     {
         motor_control_stop();
 
-        Serial2.print(
-            "HOMING: inside home arrival zone, distance = "
-        );
-        Serial2.println(distanceHome);
+        // Serial2.print(
+        //     "HOMING: inside home arrival zone, distance = "
+        // );
+        // Serial2.println(distanceHome);
 
         return;
     }
@@ -878,39 +878,39 @@ static void homing_exe()
         case HOMING_START:
         {
             motor_control_stop();
-            Serial2.println("----- HOMING START -----");
+            // Serial2.println("----- HOMING START -----");
 
-            Serial2.print("Pose X = ");
-            Serial2.println(pose_get_x_mm());
+            // Serial2.print("Pose X = ");
+            // Serial2.println(pose_get_x_mm());
 
-            Serial2.print("Pose Y = ");
-            Serial2.println(pose_get_y_mm());
+            // Serial2.print("Pose Y = ");
+            // Serial2.println(pose_get_y_mm());
 
-            Serial2.print("Pose heading = ");
-            Serial2.println(pose_get_heading_deg());
+            // Serial2.print("Pose heading = ");
+            // Serial2.println(pose_get_heading_deg());
 
-            Serial2.print("IMU heading = ");
-            Serial2.println(imu_get_heading());
+            // Serial2.print("IMU heading = ");
+            // Serial2.println(imu_get_heading());
 
             float dx = HOME_X_MM - pose_get_x_mm();
             float dy = HOME_Y_MM - pose_get_y_mm();
 
-            Serial2.print("dx home = ");
-            Serial2.println(dx);
+            // Serial2.print("dx home = ");
+            // Serial2.println(dx);
 
-            Serial2.print("dy home = ");
-            Serial2.println(dy);
+            // Serial2.print("dy home = ");
+            // Serial2.println(dy);
 
             float desiredPoseHeading =
                 atan2f(dy, dx) * 180.0f / PI;
 
-            Serial2.print("Desired pose heading = ");
-            Serial2.println(desiredPoseHeading);
+            // Serial2.print("Desired pose heading = ");
+            // Serial2.println(desiredPoseHeading);
 
             float turn = homeHeadingError();
 
-            Serial2.print("Homing relative turn = ");
-            Serial2.println(turn);
+            // Serial2.print("Homing relative turn = ");
+            // Serial2.println(turn);
             Serial.print(
                 "Homing turn toward base: "
             );
@@ -918,8 +918,8 @@ static void homing_exe()
 
             if (fabs(turn) > 5.0f)
             {   
-                Serial2.print("Commanding home turn = ");
-                Serial2.println(turn);
+                // Serial2.print("Commanding home turn = ");
+                // Serial2.println(turn);
                 motor_control_turn_relative(
                     turn
                 );
@@ -1045,7 +1045,7 @@ static void homing_exe()
             if (millis() - homeDockStart >= HOME_DOCK_TIME_MS)
             {
                 motor_control_stop();
-                Serial2.println("Docking complete - turning 180");
+                // Serial2.println("Docking complete - turning 180");
 
                 motor_control_turn_relative(180.0f);
 
@@ -1062,9 +1062,9 @@ static void homing_exe()
                 return;
             }
 
-            Serial2.println(
-                "Home 180 turn complete"
-            );
+            // Serial2.println(
+            //     "Home 180 turn complete"
+            // );
 
             resetStateFlag(
                 &STATE_FLAGS.home_reached
@@ -1115,13 +1115,13 @@ void navigator_exe()
             homingState = HOMING_START;
             lastHomeHeadingUpdate = 0;
 
-            Serial2.println("Navigator: HOMING started");
+            // Serial2.println("Navigator: HOMING started");
         }
     }
 
     if (!imu_is_online() || !isfinite(imu_get_heading())) {
         navigator_stop();
-        // Serial2.println("Navigator stopped: IMU unavailable");
+        // // Serial2.println("Navigator stopped: IMU unavailable");
         return;
     }
 
@@ -1132,9 +1132,9 @@ void navigator_exe()
 
         turnWatchActive = false;
 
-        Serial2.println(
-            "Navigation turn timeout - recovering"
-        );
+        // Serial2.println(
+        //     "Navigation turn timeout - recovering"
+        // );
 
         if (nav == PURSUIT)
         {
@@ -1186,7 +1186,7 @@ void navigator_exe()
 
         case HOMING:
             homing_exe();
-            // Serial2.println("Navigator stopped: homing not implemented");
+            // // Serial2.println("Navigator stopped: homing not implemented");
             break;
 
         default:

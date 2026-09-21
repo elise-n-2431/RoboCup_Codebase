@@ -95,8 +95,8 @@ void setStateFlag(bool* flag)
     Serial.print("FLAG,");
     Serial.println(name);
 
-    Serial2.print("FLAG,");
-    Serial2.println(name);
+    // Serial2.print("FLAG,");
+    // Serial2.println(name);
 }
 
 void resetStateFlag(bool* flag) {
@@ -179,10 +179,10 @@ void checkChangeNavState(NavState navState, bool* flag)
     if (navState == OPENING) gateOpen();
     if (navState == CLOSING) gateClose();
 
-    Serial2.print("[NAV] ");
-    Serial2.print(navStateName(prev_nav_state));
-    Serial2.print(" -> ");
-    Serial2.println(navStateName(current_nav_state));
+    // Serial2.print("[NAV] ");
+    // Serial2.print(navStateName(prev_nav_state));
+    // Serial2.print(" -> ");
+    // Serial2.println(navStateName(current_nav_state));
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -197,10 +197,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         *flag = false;
         collectStateEnteredAt = millis();
 
-        Serial2.print("[COLLECT] ");
-        Serial2.print(collectStateName(prev_collect_state));
-        Serial2.print(" -> ");
-        Serial2.println(collectStateName(current_collect_state));
+        // Serial2.print("[COLLECT] ");
+        // Serial2.print(collectStateName(prev_collect_state));
+        // Serial2.print(" -> ");
+        // Serial2.println(collectStateName(current_collect_state));
     }
 }
 
@@ -384,5 +384,5 @@ void updateStateMachine() {
 
 void print_state() {
     // Serial.println(current_collect_state);
-    Serial2.println(navStateName(current_nav_state));
+    // Serial2.println(navStateName(current_nav_state));
 }

@@ -85,6 +85,21 @@ void loop()
         run = true;
     }
 
+    imu_update();
+
+    tof_update();
+    pose_update();
+    map_update();
+
+    ultrasound_exe();
+
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
+
+
     if (run) {
 
     // PRINT STATEMENTS
@@ -95,18 +110,7 @@ void loop()
 
     xy_exe();
 
-    imu_update();
-    tof_update();
-    pose_update();
-    map_update();
 
-    if (i >= max_iter) {
-        send_map_data();
-        i = 0;
-    }
-    i ++;
-
-    ultrasound_exe();
     limit_switch_exe();
 
     colour_sensor_update();
@@ -122,34 +126,15 @@ void loop()
     logic_exe();
     updateStateMachine();
 
-
     pickup_servo_exe();
     emag_exe();
     proximity_exe();
 
     pickup_servo_update();
-    colour_sensor_update();
     smartservo_update();
     navigator_exe();
     motor_control_update();
 
-    // pose_print(Serial);
-
-    
-    }
-
-    else {
-    imu_update();
-
-    tof_update();
-    pose_update();
-    map_update();
-
-    if (i >= max_iter) {
-        send_map_data();
-        i = 0;
-    }
-    i ++;
     }
 }
 

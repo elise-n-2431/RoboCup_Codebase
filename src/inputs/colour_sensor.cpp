@@ -152,19 +152,19 @@ void colour_sensor_update()
         {
             lastColourDebug = millis();
 
-            Serial2.print("HOME STORED: G=");
-            Serial2.print(Home.green);
-            Serial2.print(" B=");
-            Serial2.print(Home.blue);
-            Serial2.print(" C=");
-            Serial2.println(Home.clear);
+            // Serial2.print("HOME STORED: G=");
+            // Serial2.print(Home.green);
+            // Serial2.print(" B=");
+            // Serial2.print(Home.blue);
+            // Serial2.print(" C=");
+            // Serial2.println(Home.clear);
 
-            Serial2.print("HOME CURRENT: G=");
-            Serial2.print(Current.green);
-            Serial2.print(" B=");
-            Serial2.print(Current.blue);
-            Serial2.print(" C=");
-            Serial2.println(Current.clear);
+            // Serial2.print("HOME CURRENT: G=");
+            // Serial2.print(Current.green);
+            // Serial2.print(" B=");
+            // Serial2.print(Current.blue);
+            // Serial2.print(" C=");
+            // Serial2.println(Current.clear);
         }
     }
 }
