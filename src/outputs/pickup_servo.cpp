@@ -17,10 +17,10 @@ const int GATE_SERVO_PIN  = 28;
 
 
 // Start conservative and calibrate these
-const int IDLE_US       = 1500;
-const int VERTICAL_US   = 1050;
-const int HORIZONTAL_US = 950;
-const int DROPOFF_US    = 1950;
+const int IDLE_US       = 2100;
+const int VERTICAL_US   = 1780;
+const int HORIZONTAL_US = 1600;
+const int DROPOFF_US    = 2450;
 
 const int GATE_OPEN_US   = 1300;
 const int GATE_CLOSED_US = 2150;

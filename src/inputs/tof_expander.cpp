@@ -46,6 +46,8 @@ const int TOF8_XSHUT = 9;
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
 const int NAV_INNER_LEFT  = 5;
+
+
 const int NAV_INNER_RIGHT = 0;
 const int NAV_OUTER_RIGHT = 7;
 
@@ -100,7 +102,7 @@ static bool initialiseL0(VL53L0X &sensor, int xshutPin, int address, int number)
 {
     tofExpander.digitalWrite(xshutPin, HIGH);
     delay(100);
-    sensor.setTimeout(500);
+    sensor.setTimeout(1000);
 
     if (!sensor.init()) {
         Serial.print("ERROR: L0 ToF ");

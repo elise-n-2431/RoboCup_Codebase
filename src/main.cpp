@@ -33,9 +33,14 @@ static unsigned long lastPosePrintTime = 0;
 
 const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
+const byte GO_PIN = 26;
 
 void setup()
 {
+    // GO BUTTON
+    pinMode(GO_PIN, INPUT);
+
+
     // GO button
     pinMode(GO_PIN, INPUT);
 
@@ -77,16 +82,23 @@ void setup()
 
 
 int i = 0;
-int max_iter = 200;
+int max_iter = 20;
+bool run = false;
 
 
 void loop()
 {
-
-    if (digitalRead(GO_PIN) == HIGH)
-    {
+    if (digitalRead(GO_PIN) == HIGH)  {
         run = true;
     }
+
+    if (run) {
+
+    // PRINT STATEMENTS
+    // pose_telemetry_exe();
+    // print_state();
+    // print_DC_power();
+    // print_limit();
 
     xy_exe();
 
@@ -117,28 +129,33 @@ void loop()
     updateStateMachine();
 
 
-   
     pickup_servo_exe();
     emag_exe();
     proximity_exe();
 
     pickup_servo_update();
+    colour_sensor_update();
     smartservo_update();
     navigator_exe();
     motor_control_update();
 
+    // pose_print(Serial);
 
-    // Optional
+    
+    }
+
+    else {
+    imu_update();
+
+    tof_update();
     pose_update();
-    // map_update();
+    map_update();
 
-    /*
-    if (i >= max_iter)
-    {
+    if (i >= max_iter) {
         send_map_data();
         i = 0;
     }
-
-    i++;
-    */
+    i ++;
+    }
 }
+
