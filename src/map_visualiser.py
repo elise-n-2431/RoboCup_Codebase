@@ -1,12 +1,15 @@
 import serial
 import numpy as np
+import matplotlib
+matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
+# print(plt.get_backend())
 
 # --------------------------------------------------
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM28"
+SERIAL_PORT = "COM8"
 BAUD_RATE = 115200
 
 reading_weight = False
