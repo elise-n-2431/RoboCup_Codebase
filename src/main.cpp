@@ -33,15 +33,10 @@ static unsigned long lastPosePrintTime = 0;
 
 const unsigned long POSE_PRINT_PERIOD_MS = 100;
 
-const byte GO_PIN = 26;
 
 void setup()
 {
     // GO BUTTON
-    pinMode(GO_PIN, INPUT);
-
-
-    // GO button
     pinMode(GO_PIN, INPUT);
 
     // Communications
@@ -83,8 +78,6 @@ void setup()
 
 int i = 0;
 int max_iter = 20;
-bool run = false;
-
 
 void loop()
 {
@@ -104,6 +97,14 @@ void loop()
 
     imu_update();
     tof_update();
+    pose_update();
+    map_update();
+
+    if (i >= max_iter) {
+        send_map_data();
+        i = 0;
+    }
+    i ++;
 
     ultrasound_exe();
     limit_switch_exe();
@@ -117,13 +118,6 @@ void loop()
 
     RobotCommand command = serial_exe();
     command_router_exe(command);
-
-
-    if (!run)
-    {
-        return;
-    }
-
 
     logic_exe();
     updateStateMachine();

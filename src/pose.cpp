@@ -118,20 +118,20 @@ void pose_update()
     {
         lastPoseDebug = millis();
 
-        Serial2.print("POSE ENC: dL=");
-        Serial2.print(deltaLeftCount);
+        // Serial2.print("POSE ENC: dL=");
+        // Serial2.print(deltaLeftCount);
 
-        Serial2.print(" dR=");
-        Serial2.print(deltaRightCount);
+        // Serial2.print(" dR=");
+        // Serial2.print(deltaRightCount);
 
-        Serial2.print(" leftMM=");
-        Serial2.print(leftDistance);
+        // Serial2.print(" leftMM=");
+        // Serial2.print(leftDistance);
 
-        Serial2.print(" rightMM=");
-        Serial2.print(rightDistance);
+        // Serial2.print(" rightMM=");
+        // Serial2.print(rightDistance);
 
-        Serial2.print(" forward=");
-        Serial2.println(encoderForward);
+        // Serial2.print(" forward=");
+        // Serial2.println(encoderForward);
     }
 
 }

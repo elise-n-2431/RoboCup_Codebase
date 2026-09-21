@@ -15,18 +15,6 @@ struct Colour {
 
 Colour Home = {0, 0, 0, 0};
 Colour Current = {0, 0, 0, 0};
-#include "state_machine.h"
-#include <iostream>
-
-struct Colour {
-    uint16_t red;
-    uint16_t green;
-    uint16_t blue;
-    uint16_t clear; 
-};
-
-Colour Home = {0, 0, 0, 0};
-Colour Current = {0, 0, 0, 0};
 
 static Adafruit_TCS34725 colourSensor(
     TCS34725_INTEGRATIONTIME_50MS,
@@ -40,7 +28,6 @@ static unsigned long lastPrintTime = 0;
 
 const unsigned long COLOUR_PRINT_PERIOD_MS = 250;
 
-int consecutive_hits = 0;
 int consecutive_hits = 0;
 
 bool colour_sensor_init()
@@ -105,10 +92,6 @@ void colour_sensor_update()
 
 
     colourSensor.getRawData(
-        &Current.red,
-        &Current.green,
-        &Current.blue,
-        &Current.clear
         &Current.red,
         &Current.green,
         &Current.blue,

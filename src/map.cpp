@@ -599,13 +599,13 @@ void interpret_tof()
 {
     for (int i = -3; i < 4; i += 2) {
         dist_o_l = tof_get_distance(NAV_OUTER_LEFT);
-        update_obstacle_map(dist_o_l, 40.0 + i);
+        update_obstacle_map(dist_o_l, -40.0 + i);
         dist_i_l = tof_get_distance(NAV_INNER_LEFT);
-        update_obstacle_map(dist_i_l,  15.0 + i);
+        update_obstacle_map(dist_i_l,  -15.0 + i);
         dist_i_r = tof_get_distance(NAV_INNER_RIGHT);
-        update_obstacle_map(dist_i_r, -15.0 + i);
+        update_obstacle_map(dist_i_r, 15.0 + i);
         dist_o_r = tof_get_distance(NAV_OUTER_RIGHT);
-        update_obstacle_map(dist_o_r, -40.0 + i);
+        update_obstacle_map(dist_o_r, 40.0 + i);
     }
 
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
@@ -770,7 +770,7 @@ void map_update()
     apply_decay();
     update_self();
     interpret_tof();
-    interpret_ultrasonic();
+    // interpret_ultrasonic();
     arena_mirroring();
     find_frontier();
     calc_frontier_target();
