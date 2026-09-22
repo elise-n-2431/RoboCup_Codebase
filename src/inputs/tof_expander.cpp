@@ -3,7 +3,7 @@
 #include <SparkFunSX1509.h>
 #include <VL53L0X.h>
 #include <VL53L1X.h>
-
+#include "debug_print.h"
 #include "tof_expander.h"
 
 
@@ -350,6 +350,41 @@ void tof_update()
     updateL0(tof6, 6, NAV_TOF_MAX_MM);
     updateL0(tof7, 7, NAV_TOF_MAX_MM);
     updateL0(tof8, 8, NAV_TOF_MAX_MM);
+    static unsigned long lastTofDebugAt = 0;
+
+    if (millis() - lastTofDebugAt >= 200)
+    {
+        lastTofDebugAt = millis();
+
+        debugTof.print("TOF NAV: OL=");
+        debugTof.print(tof_get_nav_outer_left());
+
+        debugTof.print(" IL=");
+        debugTof.print(tof_get_nav_inner_left());
+
+        debugTof.print(" IR=");
+        debugTof.print(tof_get_nav_inner_right());
+
+        debugTof.print(" OR=");
+        debugTof.println(tof_get_nav_outer_right());
+
+
+        debugTof.print("TOF WEIGHT: LT=");
+        debugTof.print(tof_get_weight_left_top());
+
+        debugTof.print(" LB=");
+        debugTof.print(tof_get_weight_left_bottom());
+
+        debugTof.print(" RT=");
+        debugTof.print(tof_get_weight_right_top());
+
+        debugTof.print(" RB=");
+        debugTof.print(tof_get_weight_right_bottom());
+
+        debugTof.print(" MID=");
+        debugTof.println(tof_get_weight_middle());
+    }
+
 }
 
 

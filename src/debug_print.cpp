@@ -69,3 +69,4 @@ bool debug_command(
     port.println(found ? "OK,debug" : "ERR,debug,unknown_module");
     return true;
 }
+

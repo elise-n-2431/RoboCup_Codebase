@@ -10,6 +10,8 @@ constexpr float ARENA_X_MM = 4900.0f;
 constexpr float ARENA_Y_MM = 2400.0f;
 constexpr float BASE_SIZE_MM = 600.0f;
 
+void arena_sync_start_to_home();
+
 struct ArenaConfig {
     HomeColour colour;
     float homeX, homeY;

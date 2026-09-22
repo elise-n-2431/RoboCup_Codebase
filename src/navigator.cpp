@@ -30,19 +30,34 @@ static const float PURSUIT_SCAN_MAX_DEG  = 48.0f;
 
 static const int WEIGHT_DIFFERENCE_MM = 100;
 
-static const int WEIGHT_STOP_DISTANCE_MM = 75;
-static int DETECTION_COUNT_REQUIRED = 3;
+static const int WEIGHT_STOP_DISTANCE_MM = 100;
 
 static const int WEIGHT_SLOW_DISTANCE_MM = 200;
 
-static const int WEIGHT_APPROACH_POWER = 320;
-static const int WEIGHT_SLOW_POWER = 320;
+static const int WEIGHT_APPROACH_POWER = 360;
+static const int WEIGHT_SLOW_POWER = 300;
+
+
+static const int WEIGHT_LEFT_TOP_SENSOR     = 3;
+static const int WEIGHT_LEFT_BOTTOM_SENSOR  = 4;
+static const int WEIGHT_RIGHT_TOP_SENSOR    = 2;
+static const int WEIGHT_RIGHT_BOTTOM_SENSOR = 1;
+static const unsigned long WEIGHT_EVIDENCE_TIMEOUT_MS = 450;
 
 
 static int leftDetectionCount = 0;
 static int rightDetectionCount = 0;
 static float weightApproachHeading = 0.0f;
 static bool weightApproachSlowed = false;
+
+static int middleDetectionCount = 0;
+static uint32_t lastMiddleDetectionSample = 0;
+
+static const int SIDE_DETECTION_COUNT_REQUIRED = 2;
+static const int MIDDLE_DETECTION_COUNT_REQUIRED = 2;
+static const unsigned long WEIGHT_RETRIGGER_BLOCK_MS = 1500;
+static unsigned long weightDetectionBlockedUntil = 0;
+
 
 // Heading before the robot diverted from roaming toward this weight.
 // Used later if REVERSING needs to restore the original direction.
@@ -71,7 +86,8 @@ enum WeightTargetSide
 {
     TARGET_NONE,
     TARGET_LEFT,
-    TARGET_RIGHT
+    TARGET_RIGHT,
+    TARGET_CENTRE
 };
 
 static WeightTargetSide weightTargetSide = TARGET_NONE;
@@ -111,6 +127,30 @@ enum RoamingState
     ROAM_CHECKING
 };
 static RoamingState roamingState = ROAM_START;
+
+static const float REVERSE_ESCAPE_TURN_DEG = 60.0f;
+
+static float flatPitchReference = 0.0f;
+
+static unsigned long pitchExceededAt = 0;
+static unsigned long rampDetectionBlockedUntil = 0;
+
+static bool reverseTriggeredByPitch = false;
+
+static const float RAMP_TRIGGER_DEG = 10.0f;
+
+// Consider ourselves back on level ground around here.
+static const float RAMP_RELEASE_DEG = 5.0f;
+
+// Pitch must remain abnormal for this long before triggering.
+static const unsigned long RAMP_CONFIRM_MS = 200;
+
+// Ramp reverse is different from dummy reverse:
+// reverse at least this long...
+static const unsigned long RAMP_MIN_REVERSE_MS = 600;
+
+// ...but never sit reversing forever.
+static const unsigned long RAMP_MAX_REVERSE_MS = 2500;
 
 
 // ============================================================
@@ -293,93 +333,344 @@ static bool obstacleCloserThan(int distance,int threshold)
 //for now it just has the ability to  look for weights and riase flags
 static void detect_weights_exe()
 {
-    static uint32_t lastLeftTop = 0, lastLeftBottom = 0;
-    static uint32_t lastRightTop = 0, lastRightBottom = 0;
+    unsigned long now = millis();
 
-    int leftTop = tof_get_weight_left_top();
-    int leftBottom = tof_get_weight_left_bottom();
-    int rightTop = tof_get_weight_right_top();
-    int rightBottom = tof_get_weight_right_bottom();
-    int leftNav = tof_get_nav_outer_left();
-    int rightNav = tof_get_nav_outer_right();
 
-    uint32_t leftTopSample = tof_get_sample_number(4);
-    uint32_t leftBottomSample = tof_get_sample_number(3);
-    uint32_t rightTopSample = tof_get_sample_number(2);
-    uint32_t rightBottomSample = tof_get_sample_number(1);
-
-    if (leftTop < 0 || leftBottom < 0) leftDetectionCount = 0;
-    if (rightTop < 0 || rightBottom < 0) rightDetectionCount = 0;
-
-    int difference = 0;
-
-    if (leftTopSample != lastLeftTop && leftBottomSample != lastLeftBottom) {
-        lastLeftTop = leftTopSample;
-        lastLeftBottom = leftBottomSample;
-
-        if (weightPairDetected(leftTop, leftBottom, leftNav, difference)) leftDetectionCount++;
-        else leftDetectionCount = 0;
+    // --------------------------------------------------------
+    // Temporary lockout after rejecting a dummy / reversing.
+    // --------------------------------------------------------
+    if ((int32_t)(now - weightDetectionBlockedUntil) < 0)
+    {
+        return;
     }
 
-    if (rightTopSample != lastRightTop && rightBottomSample != lastRightBottom) {
-        lastRightTop = rightTopSample;
-        lastRightBottom = rightBottomSample;
 
-        if (weightPairDetected(rightTop, rightBottom, rightNav, difference)) rightDetectionCount++;
-        else rightDetectionCount = 0;
+    // Track which actual ToF samples have already been used.
+    static uint32_t lastLeftTopSample = 0;
+    static uint32_t lastLeftBottomSample = 0;
+
+    static uint32_t lastRightTopSample = 0;
+    static uint32_t lastRightBottomSample = 0;
+
+    static uint32_t lastMiddleDetectionSample = 0;
+
+
+    // Time of last positive piece of evidence.
+    static unsigned long leftEvidenceAt = 0;
+    static unsigned long rightEvidenceAt = 0;
+    static unsigned long middleEvidenceAt = 0;
+
+
+    // --------------------------------------------------------
+    // Read current distances
+    // --------------------------------------------------------
+
+    int leftTop =
+        tof_get_weight_left_top();
+
+    int leftBottom =
+        tof_get_weight_left_bottom();
+
+    int rightTop =
+        tof_get_weight_right_top();
+
+    int rightBottom =
+        tof_get_weight_right_bottom();
+
+    int middle =
+        tof_get_weight_middle();
+
+
+    int leftNav =
+        tof_get_nav_outer_left();
+
+    int rightNav =
+        tof_get_nav_outer_right();
+
+    int innerLeft =
+        tof_get_nav_inner_left();
+
+    int innerRight =
+        tof_get_nav_inner_right();
+
+
+    // --------------------------------------------------------
+    // Read sample numbers
+    // --------------------------------------------------------
+
+    uint32_t leftTopSample =
+        tof_get_sample_number(
+            WEIGHT_LEFT_TOP_SENSOR
+        );
+
+    uint32_t leftBottomSample =
+        tof_get_sample_number(
+            WEIGHT_LEFT_BOTTOM_SENSOR
+        );
+
+    uint32_t rightTopSample =
+        tof_get_sample_number(
+            WEIGHT_RIGHT_TOP_SENSOR
+        );
+
+    uint32_t rightBottomSample =
+        tof_get_sample_number(
+            WEIGHT_RIGHT_BOTTOM_SENSOR
+        );
+
+    uint32_t middleSample =
+        tof_get_sample_number(
+            WEIGHT_MIDDLE_SENSOR
+        );
+
+
+    // --------------------------------------------------------
+    // Expire OLD evidence.
+    //
+    // Important:
+    // -1 means unusable measurement.
+    // It should not instantly erase a good previous reading,
+    // but neither should one old hit survive forever.
+    // --------------------------------------------------------
+
+    if (leftDetectionCount > 0 &&
+        now - leftEvidenceAt >
+            WEIGHT_EVIDENCE_TIMEOUT_MS)
+    {
+        leftDetectionCount = 0;
     }
 
-    if (leftDetectionCount >= DETECTION_COUNT_REQUIRED) {
-        weightTargetSide = TARGET_LEFT;
-        debugNav.println("WEIGHT CANDIDATE LEFT");
+    if (rightDetectionCount > 0 &&
+        now - rightEvidenceAt >
+            WEIGHT_EVIDENCE_TIMEOUT_MS)
+    {
+        rightDetectionCount = 0;
+    }
+
+    if (middleDetectionCount > 0 &&
+        now - middleEvidenceAt >
+            WEIGHT_EVIDENCE_TIMEOUT_MS)
+    {
+        middleDetectionCount = 0;
+    }
+
+
+    // --------------------------------------------------------
+    // LEFT PAIR
+    // --------------------------------------------------------
+
+    if (leftTopSample != lastLeftTopSample &&
+        leftBottomSample != lastLeftBottomSample)
+    {
+        lastLeftTopSample =
+            leftTopSample;
+
+        lastLeftBottomSample =
+            leftBottomSample;
+
+
+        // -1 means this sample is unusable.
+        // Do NOT destroy previous evidence because of it.
+        if (leftTop < 0 ||
+            leftBottom < 0)
+        {
+            // No decision this sample.
+        }
+        else
+        {
+            int difference = 0;
+
+            if (weightPairDetected(
+                    leftTop,
+                    leftBottom,
+                    leftNav,
+                    difference))
+            {
+                leftDetectionCount++;
+                leftEvidenceAt = now;
+            }
+            else
+            {
+                // This was a usable measurement which
+                // actively failed the weight test.
+                leftDetectionCount = 0;
+            }
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // RIGHT PAIR
+    // --------------------------------------------------------
+
+    if (rightTopSample != lastRightTopSample &&
+        rightBottomSample != lastRightBottomSample)
+    {
+        lastRightTopSample =
+            rightTopSample;
+
+        lastRightBottomSample =
+            rightBottomSample;
+
+
+        if (rightTop < 0 ||
+            rightBottom < 0)
+        {
+            // Unusable sample: no decision.
+        }
+        else
+        {
+            int difference = 0;
+
+            if (weightPairDetected(
+                    rightTop,
+                    rightBottom,
+                    rightNav,
+                    difference))
+            {
+                rightDetectionCount++;
+                rightEvidenceAt = now;
+            }
+            else
+            {
+                rightDetectionCount = 0;
+            }
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // CENTRE SENSOR
+    // --------------------------------------------------------
+
+    if (middleSample !=
+        lastMiddleDetectionSample)
+    {
+        lastMiddleDetectionSample =
+            middleSample;
+
+
+        if (middle < 0)
+        {
+            // Invalid measurement.
+            // Don't immediately erase evidence.
+        }
+        else
+        {
+            // A broad wall should normally appear at about
+            // the same range on BOTH inner navigation sensors.
+            bool middleLooksLikeWall =
+                middle > 0 &&
+                innerLeft > 0 &&
+                innerRight > 0 &&
+                abs(innerLeft - middle) < 120 &&
+                abs(innerRight - middle) < 120;
+
+
+            if (middle > 0 &&
+                middle <=
+                    WEIGHT_DETECT_DISTANCE_MM &&
+                !middleLooksLikeWall)
+            {
+                middleDetectionCount++;
+                middleEvidenceAt = now;
+            }
+            else
+            {
+                middleDetectionCount = 0;
+            }
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // Decide which source has actually identified a target.
+    //
+    // Centre gets priority because if it can see the object
+    // directly ahead, no initial side-direction assumption
+    // is necessary.
+    // --------------------------------------------------------
+
+    if (middleDetectionCount >=
+        MIDDLE_DETECTION_COUNT_REQUIRED)
+    {
+        weightTargetSide =
+            TARGET_CENTRE;
+
+        debugNav.print(
+            "WEIGHT CANDIDATE CENTRE MID="
+        );
+        debugNav.println(middle);
+    }
+
+    else if (leftDetectionCount >=
+             SIDE_DETECTION_COUNT_REQUIRED)
+    {
+        weightTargetSide =
+            TARGET_LEFT;
+
+        debugNav.println(
+            "WEIGHT CANDIDATE LEFT"
+        );
 
         debugNav.print("LT=");
         debugNav.print(leftTop);
+
         debugNav.print(" LB=");
         debugNav.print(leftBottom);
 
         debugNav.print(" RT=");
         debugNav.print(rightTop);
+
         debugNav.print(" RB=");
         debugNav.println(rightBottom);
+    }
 
-        debugNav.print("NAV OL=");
-        debugNav.print(tof_get_nav_outer_left());
-        debugNav.print(" IL=");
-        debugNav.print(tof_get_nav_inner_left());
-        debugNav.print(" IR=");
-        debugNav.print(tof_get_nav_inner_right());
-        debugNav.print(" OR=");
-        debugNav.println(tof_get_nav_outer_right());
-    } else if (rightDetectionCount >= DETECTION_COUNT_REQUIRED) {
-        weightTargetSide = TARGET_RIGHT;
-        debugNav.println("WEIGHT CANDIDATE RIGHT");
+    else if (rightDetectionCount >=
+             SIDE_DETECTION_COUNT_REQUIRED)
+    {
+        weightTargetSide =
+            TARGET_RIGHT;
+
+        debugNav.println(
+            "WEIGHT CANDIDATE RIGHT"
+        );
 
         debugNav.print("LT=");
         debugNav.print(leftTop);
+
         debugNav.print(" LB=");
         debugNav.print(leftBottom);
 
         debugNav.print(" RT=");
         debugNav.print(rightTop);
+
         debugNav.print(" RB=");
         debugNav.println(rightBottom);
+    }
 
-        debugNav.print("NAV OL=");
-        debugNav.print(tof_get_nav_outer_left());
-        debugNav.print(" IL=");
-        debugNav.print(tof_get_nav_inner_left());
-        debugNav.print(" IR=");
-        debugNav.print(tof_get_nav_inner_right());
-        debugNav.print(" OR=");
-        debugNav.println(tof_get_nav_outer_right());
-    } else return;
+    else
+    {
+        return;
+    }
 
-    pursuitState = PURSUIT_START;
-    leftDetectionCount = rightDetectionCount = 0;
+
+    // --------------------------------------------------------
+    // Confirm target and hand over to pursuit
+    // --------------------------------------------------------
+
+    pursuitState =
+        PURSUIT_START;
+
+    leftDetectionCount = 0;
+    rightDetectionCount = 0;
+    middleDetectionCount = 0;
 
     motor_control_stop();
-    setStateFlag(&STATE_FLAGS.target_identified);
+
+    setStateFlag(
+        &STATE_FLAGS.target_identified
+    );
 }
 
 void navigator_stop()
@@ -389,8 +680,9 @@ void navigator_stop()
 
     turnWatchActive = false;
     roamingState = ROAM_START;
-    leftDetectionCount = rightDetectionCount = 0;
-
+    leftDetectionCount = 0;
+    rightDetectionCount = 0;
+    middleDetectionCount = 0;
     if (getNavState() == ROAMING) {
         resetStateFlag(&STATE_FLAGS.target_identified);
     }
@@ -413,7 +705,22 @@ bool navigator_start(bool enablePickup)
     }
 
     if (!imu_is_online() || !isfinite(imu_get_heading())) return false;
+    flatPitchReference =
+    imu_get_pitch();
 
+    pitchExceededAt = 0;
+
+    reverseTriggeredByPitch = false;
+
+    rampDetectionBlockedUntil = 0;
+
+
+    debugNav.print(
+        "Navigator: flat pitch reference = "
+    );
+    debugNav.println(
+        flatPitchReference
+    );
     navigator_stop();
 
     navigatorEnabled = true;
@@ -457,6 +764,30 @@ static void roaming_drive(int power)
 
 static void roaming_exe()
 {
+     if (roamingPickupEnabled &&
+        millis() - navigatorStateStarted >= 1000 &&
+        millis() - lastWeightCheckAt >= 100)
+    {
+        lastWeightCheckAt = millis();
+
+        detect_weights_exe();
+
+        if (STATE_FLAGS.target_identified)
+        {
+            return;
+        }
+    }
+
+
+    if (roamingState == ROAM_TURNING)
+    {
+        if (motor_control_is_turning()) return;
+
+        roamCheckStartedAt = millis();
+        roamingState = ROAM_CHECKING;
+        return;
+    }
+
     if (roamingState == ROAM_TURNING)
     {
         if (motor_control_is_turning()) return;
@@ -555,16 +886,6 @@ static void roaming_exe()
                 roaming_start_turn(leftClearance, rightClearance);
                 return;
             }
-
-            if (roamingPickupEnabled &&
-                millis() - navigatorStateStarted >= 1000 &&
-                millis() - lastWeightCheckAt >= 100) {
-                lastWeightCheckAt = millis();
-                detect_weights_exe();
-
-                if (STATE_FLAGS.target_identified) return;
-            }
-
             roaming_drive(front < ROAM_SLOW_MM ? ROAM_SLOW_POWER : ROAM_POWER);
             break;
     }
@@ -671,6 +992,12 @@ static void pursuit_exe()
                     "Pursuit: target came from RIGHT"
                 );
             }
+            else if (weightTargetSide == TARGET_CENTRE)
+            {
+                debugNav.println(
+                    "Pursuit: target detected directly ahead"
+                );
+            }
             else
             {
                 debugNav.println(
@@ -709,11 +1036,31 @@ static void pursuit_exe()
 
         case PURSUIT_TURNING:
         {
+            int centreDistance;
+
+            if (readFreshMiddleDistance(centreDistance))
+            {
+                if (centreDistance > 0 &&
+                    centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
+                {
+                    debugNav.print(
+                        "Pursuit: centre found during scan at "
+                    );
+                    debugNav.print(centreDistance);
+                    debugNav.println(" mm");
+
+                    motor_control_stop();
+
+                    // Check again once stationary before committing.
+                    pursuitState = PURSUIT_ACQUIRING;
+                    return;
+                }
+            }
+
             if (motor_control_is_turning())
             {
                 return;
             }
-
 
             motor_control_stop();
 
@@ -721,18 +1068,12 @@ static void pursuit_exe()
                 "Pursuit: scan turn complete"
             );
 
-
-            // Samples taken while physically turning are not useful for
-            // deciding whether the now-stationary robot is aligned.
             lastMiddleSample =
                 tof_get_sample_number(
                     WEIGHT_MIDDLE_SENSOR
                 );
 
-
-            pursuitState =
-                PURSUIT_ACQUIRING;
-
+            pursuitState = PURSUIT_ACQUIRING;
             break;
         }
 
@@ -830,51 +1171,28 @@ static void pursuit_exe()
             // -------------------------------
             // Lost target
             // -------------------------------
-            if (centreDistance <= 0 ||
-                centreDistance >
-                    WEIGHT_DETECT_DISTANCE_MM)
+            if (centreDistance <= 0 || centreDistance > WEIGHT_DETECT_DISTANCE_MM)
             {
-                // Keep the current conservative behaviour:
-                // stop as soon as centre vision is uncertain.
-                motor_control_stop();
-
-                weightApproachSlowed =
-                    false;
-
                 middleLostCount++;
 
+                debugNav.print("Pursuit: centre miss ");
+                debugNav.print(middleLostCount);
+                debugNav.print("/");
+                debugNav.println(MIDDLE_LOST_COUNT_REQUIRED);
 
-                debugNav.print(
-                    "Pursuit: centre miss "
-                );
-                debugNav.print(
-                    middleLostCount
-                );
-                debugNav.print(
-                    "/"
-                );
-                debugNav.println(
-                    MIDDLE_LOST_COUNT_REQUIRED
-                );
-
-
-                if (middleLostCount >=
-                    MIDDLE_LOST_COUNT_REQUIRED)
+                if (middleLostCount >= MIDDLE_LOST_COUNT_REQUIRED)
                 {
+                    motor_control_stop();
+
+                    weightApproachSlowed = false;
+                    middleLostCount = 0;
+
                     debugNav.println(
                         "Pursuit: centre lost weight - reacquiring"
                     );
 
-
-                    middleLostCount = 0;
-
-                    // Search around the heading where it was lost,
-                    // rather than jumping all the way back to the
-                    // original roaming heading.
                     resetPursuitScan();
-
-                    pursuitState =
-                        PURSUIT_ACQUIRING;
+                    pursuitState = PURSUIT_ACQUIRING;
                 }
 
                 return;
@@ -1001,6 +1319,47 @@ static void pursuit_exe()
         }
     }
 }
+static int reverseSideClearance(
+    int outer,
+    int inner)
+{
+    // -1 = unusable reading.
+    // If both are unusable, tell caller we don't know.
+    if (outer < 0 && inner < 0)
+    {
+        return -1;
+    }
+
+
+    // 0 means no obstacle return -> lots of clearance.
+    int outerClear =
+        outer < 0
+            ? -1
+            : clearanceValue(outer);
+
+    int innerClear =
+        inner < 0
+            ? -1
+            : clearanceValue(inner);
+
+
+    if (outerClear < 0)
+    {
+        return innerClear;
+    }
+
+    if (innerClear < 0)
+    {
+        return outerClear;
+    }
+
+
+    return min(
+        outerClear,
+        innerClear
+    );
+}
+
 
 static void reversing_exe()
 {
@@ -1008,76 +1367,264 @@ static void reversing_exe()
     {
         case REVERSE_START:
         {
-            debugNav.println("Reverse: backing away");
-
-            motor_control_reverse(REVERSE_POWER);
-            reverseStartedAt = millis();
-
-            reversingState = REVERSE_BACKING;
-            break;
-        }
-
-        case REVERSE_BACKING:
-        {
-            if (millis() - reverseStartedAt < REVERSE_TIME_MS) return;
-
             motor_control_stop();
 
-            if (weightTargetSide != TARGET_NONE)
+            if (reverseTriggeredByPitch)
             {
-                debugNav.print(
-                    "Reverse: returning to pre-pursuit heading "
-                );
                 debugNav.println(
-                    pursuitEntryHeading
+                    "Reverse: ramp/wall escape - backing away"
                 );
-
-
-                motor_control_turn_to(
-                    pursuitEntryHeading
-                );
-
-
-                reversingState =
-                    REVERSE_TURNING;
             }
             else
             {
                 debugNav.println(
-                    "Reverse: no pursuit heading to restore"
+                    "Reverse: backing away"
                 );
-
-                reversingState =
-                    REVERSE_FINISHED;
-
-                return;
             }
 
-            reversingState = REVERSE_TURNING;
+
+            motor_control_reverse(
+                REVERSE_POWER
+            );
+
+            reverseStartedAt =
+                millis();
+
+            reversingState =
+                REVERSE_BACKING;
+
             break;
         }
+
+
+        case REVERSE_BACKING:
+        {
+            unsigned long elapsed =
+                millis() -
+                reverseStartedAt;
+
+
+            // ------------------------------------------------
+            // Ramp/wall escape:
+            // keep reversing until reasonably flat again,
+            // with minimum and maximum limits.
+            // ------------------------------------------------
+            if (reverseTriggeredByPitch)
+            {
+                float pitchError =
+                    fabsf(
+                        imu_get_pitch()
+                        - flatPitchReference
+                    );
+
+
+                if (elapsed <
+                    RAMP_MIN_REVERSE_MS)
+                {
+                    return;
+                }
+
+
+                if (pitchError >
+                        RAMP_RELEASE_DEG &&
+                    elapsed <
+                        RAMP_MAX_REVERSE_MS)
+                {
+                    return;
+                }
+            }
+
+            // ------------------------------------------------
+            // Normal dummy/failed collection reverse:
+            // retain existing fixed reverse time.
+            // ------------------------------------------------
+            else
+            {
+                if (elapsed <
+                    REVERSE_TIME_MS)
+                {
+                    return;
+                }
+            }
+
+
+            motor_control_stop();
+
+
+            // ------------------------------------------------
+            // Find which side appears clearer AFTER backing up.
+            // ------------------------------------------------
+
+            int leftClearance =
+                reverseSideClearance(
+                    tof_get_nav_outer_left(),
+                    tof_get_nav_inner_left()
+                );
+
+            int rightClearance =
+                reverseSideClearance(
+                    tof_get_nav_outer_right(),
+                    tof_get_nav_inner_right()
+                );
+
+
+            int turnDirection = 0;
+
+
+            // Existing robot sign convention:
+            // -1 = left turn
+            // +1 = right turn
+            if (leftClearance >= 0 &&
+                rightClearance >= 0)
+            {
+                if (leftClearance >
+                    rightClearance)
+                {
+                    turnDirection = -1;
+
+                    debugNav.println(
+                        "Reverse: escape turn LEFT"
+                    );
+                }
+                else
+                {
+                    turnDirection = 1;
+
+                    debugNav.println(
+                        "Reverse: escape turn RIGHT"
+                    );
+                }
+            }
+
+            else if (leftClearance >= 0)
+            {
+                turnDirection = -1;
+
+                debugNav.println(
+                    "Reverse: only LEFT clearance known"
+                );
+            }
+
+            else if (rightClearance >= 0)
+            {
+                turnDirection = 1;
+
+                debugNav.println(
+                    "Reverse: only RIGHT clearance known"
+                );
+            }
+
+            else
+            {
+                // Neither side gave useful data.
+                // Alternate fallback direction so repeated
+                // escapes cannot always choose the same side.
+                static int fallbackDirection = 1;
+
+                turnDirection =
+                    fallbackDirection;
+
+                fallbackDirection *= -1;
+
+                debugNav.println(
+                    "Reverse: clearance unknown - fallback turn"
+                );
+            }
+
+
+            debugNav.print(
+                "Reverse: left clearance="
+            );
+            debugNav.print(
+                leftClearance
+            );
+
+            debugNav.print(
+                " right clearance="
+            );
+            debugNav.println(
+                rightClearance
+            );
+
+
+            motor_control_turn_relative(
+                turnDirection *
+                REVERSE_ESCAPE_TURN_DEG
+            );
+
+
+            reversingState =
+                REVERSE_TURNING;
+
+            break;
+        }
+
 
         case REVERSE_TURNING:
         {
-            if (motor_control_is_turning()) return;
+            if (motor_control_is_turning())
+            {
+                return;
+            }
 
-            debugNav.println("Reverse: turn complete");
-            reversingState = REVERSE_FINISHED;
+
+            motor_control_stop();
+
+            debugNav.println(
+                "Reverse: escape turn complete"
+            );
+
+
+            reversingState =
+                REVERSE_FINISHED;
+
             break;
         }
 
+
         case REVERSE_FINISHED:
         {
-            debugNav.println("Reverse: manoeuvre complete");
+            debugNav.println(
+                "Reverse: manoeuvre complete"
+            );
 
-            weightTargetSide = TARGET_NONE;
-            reversingState = REVERSE_START;
 
-            setStateFlag(&STATE_FLAGS.reverse_complete);
+            // Don't immediately detect the exact same rejected
+            // dummy again while leaving it.
+            weightDetectionBlockedUntil =
+                millis() +
+                WEIGHT_RETRIGGER_BLOCK_MS;
+
+
+            // Don't immediately retrigger pitch either.
+            rampDetectionBlockedUntil =
+                millis() + 1500;
+
+
+            leftDetectionCount = 0;
+            rightDetectionCount = 0;
+            middleDetectionCount = 0;
+
+            weightTargetSide =
+                TARGET_NONE;
+
+            reverseTriggeredByPitch =
+                false;
+
+            reversingState =
+                REVERSE_START;
+
+
+            setStateFlag(
+                &STATE_FLAGS.reverse_complete
+            );
+
             break;
         }
     }
 }
+
+
 
 void frontier_targetting(){
     int frontier_x = get_frontier_x();
@@ -1361,6 +1908,134 @@ static void homing_exe()
     }
 }
 
+static bool checkForPitchEscape(
+    NavState nav)
+{
+    unsigned long now =
+        millis();
+
+
+    // Only relevant while actually navigating.
+    if (nav != ROAMING &&
+        nav != PURSUIT &&
+        nav != HOMING)
+    {
+        pitchExceededAt = 0;
+        return false;
+    }
+
+
+    // Don't let the little home-base rim interfere with
+    // final docking / 180 degree dropoff manoeuvre.
+    if (nav == HOMING &&
+        (homingState == HOMING_DOCKING ||
+         homingState == HOMING_DOCK_TURNING))
+    {
+        pitchExceededAt = 0;
+        return false;
+    }
+
+
+    if ((int32_t)(
+            now -
+            rampDetectionBlockedUntil
+        ) < 0)
+    {
+        pitchExceededAt = 0;
+        return false;
+    }
+
+
+    float pitch =
+        imu_get_pitch();
+
+    float pitchDifference =
+        fabsf(
+            pitch -
+            flatPitchReference
+        );
+
+
+    // Robot looks reasonably flat.
+    if (pitchDifference <
+        RAMP_TRIGGER_DEG)
+    {
+        pitchExceededAt = 0;
+        return false;
+    }
+
+
+    // First abnormal pitch reading.
+    if (pitchExceededAt == 0)
+    {
+        pitchExceededAt = now;
+        return false;
+    }
+
+
+    // Require sustained tilt rather than one bump/glitch.
+    if (now - pitchExceededAt <
+        RAMP_CONFIRM_MS)
+    {
+        return false;
+    }
+
+
+    // --------------------------------------------------------
+    // Genuine ramp / wall-climb event
+    // --------------------------------------------------------
+
+    motor_control_stop();
+
+    debugNav.print(
+        "PITCH ESCAPE: pitch="
+    );
+    debugNav.print(pitch);
+
+    debugNav.print(
+        " reference="
+    );
+    debugNav.print(
+        flatPitchReference
+    );
+
+    debugNav.print(
+        " difference="
+    );
+    debugNav.println(
+        pitchDifference
+    );
+
+
+    reverseTriggeredByPitch =
+        true;
+
+    pitchExceededAt = 0;
+
+
+    // Prevent another pitch trigger while we're already
+    // transitioning into reverse.
+    rampDetectionBlockedUntil =
+        now + 3000;
+
+
+    // If pursuit drove us onto something, abandon that target
+    // once the reverse manoeuvre is over.
+    if (nav == PURSUIT)
+    {
+        setStateFlag(
+            &STATE_FLAGS.target_lost
+        );
+    }
+
+
+    setStateFlag(
+        &STATE_FLAGS.reverse_triggered
+    );
+
+
+    return true;
+}
 
 
 void navigator_exe()
@@ -1404,6 +2079,11 @@ void navigator_exe()
     if (!imu_is_online() || !isfinite(imu_get_heading())) {
         navigator_stop();
         // debugNav.println("Navigator stopped: IMU unavailable");
+        return;
+    }
+
+    if (checkForPitchEscape(nav))
+    {
         return;
     }
 

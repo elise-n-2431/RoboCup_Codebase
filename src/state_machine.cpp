@@ -35,7 +35,7 @@ static unsigned long collectStateEnteredAt = 0;
 
 const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 2000;  
 const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000; 
-const unsigned long PICKUP_TIMEOUT_MS = 2000;           
+const unsigned long PICKUP_TIMEOUT_MS = 2500;           
 const unsigned long RETURN_TIMEOUT_MS = 2000;
 
 const unsigned long OPENING_TIMEOUT_MS = 2000;

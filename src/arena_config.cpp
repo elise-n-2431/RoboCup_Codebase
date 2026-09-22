@@ -87,3 +87,9 @@ bool arena_set_pickup_enabled(bool enabled)
     config.pickupEnabled = enabled;
     return true;
 }
+
+void arena_sync_start_to_home()
+{
+    config.startX = config.homeX;
+    config.startY = config.homeY;
+}

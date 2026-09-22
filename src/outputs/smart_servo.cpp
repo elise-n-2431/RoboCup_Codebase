@@ -26,8 +26,8 @@ static uint8_t smartServoId = 0;
 static const uint16_t LEFT_ARM_OPEN_POSITION   = 360;
 static const uint16_t LEFT_ARM_CLOSED_POSITION = 614;
 
-static const uint16_t RIGHT_ARM_OPEN_POSITION   = 600;
-static const uint16_t RIGHT_ARM_CLOSED_POSITION = 335;
+static const uint16_t RIGHT_ARM_OPEN_POSITION   = 800;
+static const uint16_t RIGHT_ARM_CLOSED_POSITION = 500;
 
 static const uint8_t ARM_PLAYTIME = 80;
 

@@ -20,7 +20,7 @@ enum MotorControlMode
 static MotorControlMode controlMode = CONTROL_IDLE;
 
 // To be tuned
-static float TURN_KP = 22.0;
+static float TURN_KP = 12.0;
 
 static float DRIVE_KP = 10.0;
 
@@ -29,13 +29,21 @@ const int MAX_DRIVE_CORRECTION = 100;
 static int driveBasePower = 300;
 
 // Minimum power for robot to actually rotate
-const int MIN_TURN_POWER = 280;
+const int MIN_TURN_POWER = 270;
 
 const int MAX_TURN_POWER = 450;
 
 
 // Consider target reached inside this angle
-const float ANGLE_TOLERANCE = 2.5;
+const float ANGLE_TOLERANCE = 3.0;
+
+const float FINE_TURN_ZONE_DEG = 15.0f;
+
+const unsigned long FINE_TURN_ON_MS = 50;
+const unsigned long FINE_TURN_OFF_MS = 70;
+
+static unsigned long fineTurnPhaseStarted = 0;
+static bool fineTurnPowerOn = true;
 
 
 // Must stay in tolerance this long before finishing
@@ -217,7 +225,10 @@ void motor_control_drive_heading(float heading, int basePower)
 
 
 
-static void updateTurnControl(float currentHeading, unsigned long currentTime)
+static void updateTurnControl(
+    float currentHeading,
+    unsigned long currentTime
+)
 {
     currentError =
         headingError(
@@ -225,29 +236,42 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
             currentHeading
         );
 
-    //we have reached the imu heading wanted
-    if (fabs(currentError) <= ANGLE_TOLERANCE)
+    float absError =
+        fabs(currentError);
+
+
+    // ========================================================
+    // TARGET REACHED
+    // ========================================================
+
+    if (absError <= ANGLE_TOLERANCE)
     {
         DC_motors_setPower(0, 0);
 
+        fineTurnPhaseStarted = 0;
+        fineTurnPowerOn = true;
 
         if (toleranceStart == 0)
         {
-            toleranceStart = currentTime;
+            toleranceStart =
+                currentTime;
         }
 
-
-        if (
-            currentTime - toleranceStart
-            >= SETTLE_TIME_MS
-        )
+        if (currentTime -
+                toleranceStart >=
+            SETTLE_TIME_MS)
         {
-            controlMode = CONTROL_IDLE;
+            controlMode =
+                CONTROL_IDLE;
 
-            debugMotor.print("Turn complete. Heading: ");
-            debugMotor.println(currentHeading);
+            debugMotor.print(
+                "Turn complete. Heading: "
+            );
+
+            debugMotor.println(
+                currentHeading
+            );
         }
-
 
         return;
     }
@@ -256,44 +280,131 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
     toleranceStart = 0;
 
 
-    
+    // ========================================================
+    // CALCULATE TURN DIRECTION
+    // ========================================================
 
     float output =
-        TURN_KP * currentError;
+        TURN_KP *
+        currentError;
+
+    int direction =
+        output > 0
+            ? 1
+            : -1;
+
+
+    // ========================================================
+    // FINE TURNING
+    //
+    // Close to the target we still need ~280 power to overcome
+    // static friction, but continuous 280 causes overshoot.
+    //
+    // Therefore use short 280-power pulses separated by pauses.
+    // ========================================================
+
+    if (absError <=
+        FINE_TURN_ZONE_DEG)
+    {
+        if (fineTurnPhaseStarted == 0)
+        {
+            fineTurnPhaseStarted =
+                currentTime;
+
+            fineTurnPowerOn =
+                true;
+        }
+
+
+        unsigned long phaseTime =
+            currentTime -
+            fineTurnPhaseStarted;
+
+
+        if (fineTurnPowerOn)
+        {
+            if (phaseTime >=
+                FINE_TURN_ON_MS)
+            {
+                fineTurnPowerOn =
+                    false;
+
+                fineTurnPhaseStarted =
+                    currentTime;
+            }
+        }
+        else
+        {
+            if (phaseTime >=
+                FINE_TURN_OFF_MS)
+            {
+                fineTurnPowerOn =
+                    true;
+
+                fineTurnPhaseStarted =
+                    currentTime;
+            }
+        }
+
+
+        if (!fineTurnPowerOn)
+        {
+            DC_motors_setPower(
+                0,
+                0
+            );
+
+            return;
+        }
+
+
+        int turnPower =
+            MIN_TURN_POWER *
+            direction *
+            TURN_SIGN;
+
+
+        DC_motors_setPower(
+            turnPower,
+            -turnPower
+        );
+
+        return;
+    }
+
+
+    // ========================================================
+    // NORMAL / LARGE TURN
+    // ========================================================
+
+    fineTurnPhaseStarted = 0;
+    fineTurnPowerOn = true;
 
 
     int turnPower =
         abs((int)output);
 
 
-    if (turnPower < MIN_TURN_POWER)
+    if (turnPower <
+        MIN_TURN_POWER)
     {
-        turnPower = MIN_TURN_POWER;
+        turnPower =
+            MIN_TURN_POWER;
     }
 
 
-    if (turnPower > MAX_TURN_POWER)
+    if (turnPower >
+        MAX_TURN_POWER)
     {
-        turnPower = MAX_TURN_POWER;
-    }
-
-
-    int direction;
-
-    if (output > 0)
-    {
-        direction = 1;
-    }
-    else
-    {
-        direction = -1;
+        turnPower =
+            MAX_TURN_POWER;
     }
 
 
     turnPower =
-        turnPower
-        * direction
-        * TURN_SIGN;
+        turnPower *
+        direction *
+        TURN_SIGN;
 
 
     DC_motors_setPower(
