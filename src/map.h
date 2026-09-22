@@ -17,5 +17,6 @@ float get_frontier_world_y_mm();
 void change_print_it();
 void send_map_data();
 void print_target();
+bool cell_too_close_to_obstacle(int, int);
 
 #endif

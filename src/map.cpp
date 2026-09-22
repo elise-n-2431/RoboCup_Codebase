@@ -263,6 +263,32 @@ void arena_mirroring()
 //     }
 // }
 
+// Robot footprint is stamped as a 5x5 block in update_self() (-2..2),
+// so use the same radius here: a frontier cell isn't valid as a
+// target if any cell within OBSTACLE_CLEARANCE_CELLS of it is a
+// confirmed obstacle -- the robot's body wouldn't fit there anyway.
+const int OBSTACLE_CLEARANCE_CELLS = 2;
+
+bool cell_too_close_to_obstacle(int x, int y)
+{
+    for (int i = -OBSTACLE_CLEARANCE_CELLS; i <= OBSTACLE_CLEARANCE_CELLS; i++)
+    {
+        for (int j = -OBSTACLE_CLEARANCE_CELLS; j <= OBSTACLE_CLEARANCE_CELLS; j++)
+        {
+            int nx = x + i;
+            int ny = y + j;
+
+            if (nx < 0 || nx >= MAP_WIDTH || ny < 0 || ny >= MAP_HEIGHT) continue;
+
+            if (OBSTACLE_MAP[nx][ny] > OBSTACLE_UNKNOWN_BAND)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void find_frontier() {
     for (int x = 6; x < MAP_WIDTH - 1; x++)
     {
@@ -275,22 +301,24 @@ void find_frontier() {
             else if(self_x != x && self_y != y){ // unexplored space
                 FRONTIER_MAP[x][y] = false;
 
+                bool hasFreeNeighbor = false;
                 for (int i = -1; i <= 1; i++) {
                     for (int j = -1; j <= 1; j++) {
                         if (!(i == 0 && j == 0)) {
                             if (OBSTACLE_MAP[x + i][y + j] < -OBSTACLE_UNKNOWN_BAND) {
-                                FRONTIER_MAP[x][y] = true;
+                                hasFreeNeighbor = true;
                             }
                         }
                     }
                 }
+
+                if (hasFreeNeighbor && !cell_too_close_to_obstacle(x, y))
+                {
+                    FRONTIER_MAP[x][y] = true;
+                }
             }
         }
     }
-
-    // --------------------------------------------------
-    // Group adjacent frontier cells (8-connectivity)
-    // --------------------------------------------------
 
     FRONTIER_GROUPS_X.clear();
     FRONTIER_GROUPS_Y.clear();
@@ -353,7 +381,7 @@ void find_frontier() {
 
 float cost(float distance, int size, float orientation) {
     float c1 = 0.5f;
-    float c2 = 2.0f;
+    float c2 = 3.0f;
     float c3 = 1.0f;
     return c1 * distance - c2 * size + c3 * fabsf(orientation);
 }
@@ -372,6 +400,7 @@ FrontierCentre get_frontier_centre(int group_index)
 
     return centre;
 }
+
 
 void calc_frontier_target() {
     FrontierTarget best;

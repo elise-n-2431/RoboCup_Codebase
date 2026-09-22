@@ -339,12 +339,12 @@ static void updateDriveToPointControl(
     // through a near-90 deg required turn).
     int power = driveBasePower;
 
-    if (distance < SLOWDOWN_RADIUS_MM)
-    {
-        float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
-        power = MIN_DRIVE_TO_POINT_POWER +
-                (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
-    }
+    // if (distance < SLOWDOWN_RADIUS_MM)
+    // {
+    //     float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
+    //     power = MIN_DRIVE_TO_POINT_POWER +
+    //             (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
+    // }
 
     float errorFactor = 1.0f - (fabsf(currentError) / 90.0f);
     if (errorFactor < 0.5f) errorFactor = 0.5f; // never drop below 30% power
