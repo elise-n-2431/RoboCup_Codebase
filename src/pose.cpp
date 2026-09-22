@@ -31,7 +31,7 @@ static const unsigned long TELEMETRY_PERIOD_MS = 100;
 static unsigned long lastTelemetryTime = 0;
 static bool telemetryEnabled = true;
 
-static const float XY_FUSION_WEIGHT = 0.0f;
+static const float XY_FUSION_WEIGHT = 0.00f;
 
 void pose_init()
 {
@@ -108,26 +108,61 @@ void pose_update()
     poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
     poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);
 
-    static unsigned long lastPoseDebug = 0;
+    static float debugEncoderForward = 0.0f;
+static float debugXYForward = 0.0f;
+static float debugXYLateral = 0.0f;
+static float debugFusedForward = 0.0f;
+static float debugFusedLateral = 0.0f;
+
+static unsigned long lastPoseDebug = 0;
+
+
+debugEncoderForward += encoderForward;
+debugXYForward += xyForward;
+debugXYLateral += xyLateral;
+
+debugFusedForward += forwardDistance;
+debugFusedLateral += lateralDistance;
+
 
     if (millis() - lastPoseDebug >= 250)
     {
         lastPoseDebug = millis();
 
-        debugPose.print("POSE ENC: dL=");
-        debugPose.print(deltaLeftCount);
 
-        debugPose.print(" dR=");
-        debugPose.print(deltaRightCount);
+        debugPose.print("POSE MOTION: ENC_F=");
+        debugPose.print(debugEncoderForward);
 
-        debugPose.print(" leftMM=");
-        debugPose.print(leftDistance);
+        debugPose.print(" XY_F=");
+        debugPose.print(debugXYForward);
 
-        debugPose.print(" rightMM=");
-        debugPose.print(rightDistance);
+        debugPose.print(" XY_L=");
+        debugPose.print(debugXYLateral);
 
-        debugPose.print(" forward=");
-        debugPose.println(encoderForward);
+        debugPose.print(" FUSED_F=");
+        debugPose.print(debugFusedForward);
+
+        debugPose.print(" FUSED_L=");
+        debugPose.print(debugFusedLateral);
+
+        debugPose.print(" W=");
+        debugPose.print(XY_FUSION_WEIGHT);
+
+        debugPose.print(" POS=(");
+        debugPose.print(poseXmm);
+        debugPose.print(",");
+        debugPose.print(poseYmm);
+
+        debugPose.print(") H=");
+        debugPose.println(pose_get_heading_deg());
+
+
+        // Reset comparison window.
+        debugEncoderForward = 0.0f;
+        debugXYForward = 0.0f;
+        debugXYLateral = 0.0f;
+        debugFusedForward = 0.0f;
+        debugFusedLateral = 0.0f;
     }
 
 }

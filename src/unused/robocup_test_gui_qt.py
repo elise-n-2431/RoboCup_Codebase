@@ -133,7 +133,7 @@ class SerialReader(QThread):
 
 class ArenaWidget(QWidget):
     start_clicked = pyqtSignal(float, float)
-
+    weight_clicked = pyqtSignal(float, float)
     def __init__(self):
         super().__init__()
         self.setMinimumHeight(360)
@@ -150,6 +150,8 @@ class ArenaWidget(QWidget):
         self.confirmed_home = None
         self.robot = None
         self.path_points = []
+        self.place_weight_mode = False
+        self.planned_weights = []
 
     def set_draft(self, colour, blue_corner, green_corner, x, y, heading):
         self.base_colour = colour
@@ -158,6 +160,15 @@ class ArenaWidget(QWidget):
         self.start_x = x
         self.start_y = y
         self.start_heading = heading
+        self.update()
+        
+    def set_planned_weights(self, weights):
+        self.planned_weights = list(weights)
+        self.update()
+
+
+    def begin_weight_placement(self):
+        self.place_weight_mode = True
         self.update()
 
     def set_confirmed_home(self, x, y):
@@ -198,7 +209,11 @@ class ArenaWidget(QWidget):
         y = (oy - event.position().y()) / scale
 
         if 0 <= x <= 4900 and 0 <= y <= 2400:
-            self.start_clicked.emit(x, y)
+            if self.place_weight_mode:
+                self.place_weight_mode = False
+                self.weight_clicked.emit(x, y)
+            else:
+                self.start_clicked.emit(x, y)
 
     def _draw_arrow(self, painter, x, y, heading, colour, radius=16):
         p = self._xy(x, y)
@@ -287,6 +302,46 @@ class ArenaWidget(QWidget):
                 painter.drawLine(last, current)
                 last = current
 
+        # ----------------------------------------------------------
+        # Planned / known starting weight positions
+        # ----------------------------------------------------------
+
+        for i, (x, y) in enumerate(
+            self.planned_weights
+        ):
+            point = self._xy(x, y)
+
+            painter.setPen(
+                QPen(
+                    QColor("#7c3aed"),
+                    2
+                )
+            )
+
+            painter.setBrush(
+                QBrush(
+                    QColor("#c4b5fd")
+                )
+            )
+
+            painter.drawEllipse(
+                point,
+                8,
+                8
+            )
+
+            painter.setPen(
+                QPen(
+                    QColor("#5b21b6"),
+                    1
+                )
+            )
+
+            painter.drawText(
+                int(point.x() + 11),
+                int(point.y() - 8),
+                f"W{i + 1}"
+            )
         self._draw_arrow(
             painter,
             self.start_x,
@@ -333,7 +388,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("RoboCup Control & Test")
         self.resize(1500, 900)
         self.setMinimumSize(1150, 720)
-
+        self.planned_weights = []
         self._build_ui()
         self._apply_style()
         self.refresh_ports()
@@ -348,6 +403,8 @@ class MainWindow(QMainWindow):
         self.telemetry_timer = QTimer(self)
         self.telemetry_timer.timeout.connect(self.update_telemetry_age)
         self.telemetry_timer.start(250)
+        
+        
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -366,7 +423,14 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.arena = ArenaWidget()
-        self.arena.start_clicked.connect(self.on_arena_click)
+
+        self.arena.start_clicked.connect(
+            self.on_arena_click
+        )
+
+        self.arena.weight_clicked.connect(
+            self.on_weight_click
+        )
         left_layout.addWidget(self.arena, 3)
         left_layout.addWidget(self._build_robot_summary(), 0)
 
@@ -465,6 +529,77 @@ class MainWindow(QMainWindow):
         form.addRow("Heading (°)", self.heading_spin)
         form.addRow("Run mode", self.pickup_check)
         layout.addWidget(form_box)
+        targets_box = QGroupBox("Priority weight positions")
+
+        targets_layout = QVBoxLayout(
+            targets_box
+        )
+
+
+        self.target_summary = QLabel(
+            "No priority weights placed."
+        )
+
+        self.target_summary.setWordWrap(
+            True
+        )
+
+        targets_layout.addWidget(
+            self.target_summary
+        )
+
+
+        target_buttons = QHBoxLayout()
+
+
+        self.add_target_btn = QPushButton(
+            "+ Weight"
+        )
+
+        self.add_target_btn.clicked.connect(
+            self.begin_weight_placement
+        )
+
+
+        self.remove_target_btn = QPushButton(
+            "Remove last"
+        )
+
+        self.remove_target_btn.clicked.connect(
+            self.remove_last_weight
+        )
+
+
+        self.clear_targets_btn = QPushButton(
+            "Clear weights"
+        )
+
+        self.clear_targets_btn.clicked.connect(
+            self.clear_weights
+        )
+
+
+        target_buttons.addWidget(
+            self.add_target_btn
+        )
+
+        target_buttons.addWidget(
+            self.remove_target_btn
+        )
+
+        target_buttons.addWidget(
+            self.clear_targets_btn
+        )
+
+
+        targets_layout.addLayout(
+            target_buttons
+        )
+
+        layout.addWidget(
+            targets_box
+        )
+        
 
         self.setup_widgets = [
             self.base_combo,
@@ -494,7 +629,14 @@ class MainWindow(QMainWindow):
         read_btn = QPushButton("Read / load firmware configuration")
         read_btn.clicked.connect(self.load_config)
 
-        self.setup_action_widgets = [use_centre, self.apply_btn, self.lock_btn]
+        self.setup_action_widgets = [
+            use_centre,
+            self.apply_btn,
+            self.lock_btn,
+            self.add_target_btn,
+            self.remove_target_btn,
+            self.clear_targets_btn,
+        ]
         for button in self.setup_action_widgets:
             layout.addWidget(button)
         layout.addWidget(read_btn)
@@ -1075,6 +1217,22 @@ class MainWindow(QMainWindow):
             )
 
         self.update_arena_draft()
+        self.refresh_planned_weights()
+
+        self.add_target_btn.setEnabled(
+            enabled and
+            len(self.planned_weights) < 12
+        )
+
+        self.remove_target_btn.setEnabled(
+            enabled and
+            bool(self.planned_weights)
+        )
+
+        self.clear_targets_btn.setEnabled(
+            enabled and
+            bool(self.planned_weights)
+        )
 
     def draft_changed(self, *args):
         if self.editable():
@@ -1090,6 +1248,91 @@ class MainWindow(QMainWindow):
             self.x_spin.value(),
             self.y_spin.value(),
             self.heading_spin.value(),
+        )
+    def begin_weight_placement(self):
+        if not self.editable():
+            return
+
+        if len(self.planned_weights) >= 12:
+            QMessageBox.warning(
+                self,
+                "Priority weights",
+                "Maximum of 12 priority weights."
+            )
+            return
+
+        self.arena.begin_weight_placement()
+
+        self.setup_status.setText(
+            "Click the arena to place a priority weight."
+        )
+
+
+    def on_weight_click(self, x, y):
+        if not self.editable():
+            return
+
+        if len(self.planned_weights) >= 12:
+            return
+
+        self.planned_weights.append(
+            (
+                round(x),
+                round(y)
+            )
+        )
+
+        self.refresh_planned_weights()
+
+        self.setup_status.setText(
+            "Priority weight added — Apply to Teensy when ready."
+        )
+
+
+    def remove_last_weight(self):
+        if not self.editable():
+            return
+
+        if self.planned_weights:
+            self.planned_weights.pop()
+
+        self.refresh_planned_weights()
+
+
+    def clear_weights(self):
+        if not self.editable():
+            return
+
+        self.planned_weights.clear()
+
+        self.refresh_planned_weights()
+
+
+    def refresh_planned_weights(self):
+        self.arena.set_planned_weights(
+            self.planned_weights
+        )
+
+        if not self.planned_weights:
+            self.target_summary.setText(
+                "No priority weights placed."
+            )
+
+            return
+
+
+        lines = []
+
+        for i, (x, y) in enumerate(
+            self.planned_weights
+        ):
+            lines.append(
+                f"W{i + 1}: ({x:.0f}, {y:.0f}) mm"
+            )
+
+
+        self.target_summary.setText(
+            "   ".join(lines)
         )
 
     def on_arena_click(self, x, y):
@@ -1173,8 +1416,24 @@ class MainWindow(QMainWindow):
             f"home {corner}",
             f"startpose {p['x']:.2f} {p['y']:.2f} {p['heading']:.2f}",
             "auto" if p["pickup"] else "roam",
-            "config",
+
+            # Rebuild the firmware priority list from the GUI draft.
+            "targets clear",
         ]
+
+
+        for x, y in self.planned_weights:
+            commands.append(
+                f"target add {x:.0f} {y:.0f}"
+            )
+
+
+        commands.extend(
+            [
+                "targets",
+                "config",
+            ]
+        )
 
         for command in commands:
             if not self.send_command(command, visible=command != "config"):

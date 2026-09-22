@@ -68,8 +68,9 @@ def command_allowed(command, config, mode, locked=False):
         return False
 
     if c in (
-        "config", "mode", "gains", "help", "flags",
-        "arms", "tof", "debug list", "debug status", "mark fault"
+    "config", "mode", "gains", "help", "flags",
+    "arms", "tof", "targets",
+    "debug list", "debug status", "mark fault"
     ):
         return True
 
@@ -85,7 +86,12 @@ def command_allowed(command, config, mode, locked=False):
         ("base ", "home ", "homepos ", "startpose ")
     ):
         return not started and not locked and not config["locked"]
-
+    if c == "targets clear" or c.startswith("target add "):
+        return (
+            not started
+            and not locked
+            and not config["locked"]
+        )
     if c in ("auto", "roam") and not started:
         return not locked and not config["locked"]
 

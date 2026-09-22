@@ -9,7 +9,7 @@
 #include "state_machine.h"
 #include "inputs/tof_expander.h"
 #include "outputs/smart_servo.h"
-
+#include "priority_targets.h"
 #include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
@@ -150,6 +150,107 @@ static bool handleConfig(const String& command, Stream& port)
     return true;
 }
 
+static bool handleTargets(
+    const String& command,
+    Stream& port)
+{
+    // --------------------------------------------------------
+    // Read-only target list.
+    // Allowed even after configuration has been locked.
+    // --------------------------------------------------------
+
+    if (command == "targets")
+    {
+        priority_targets_print(port);
+        return true;
+    }
+
+
+    // From here down, target editing is PRE-RUN ONLY.
+
+    if (arena_is_locked() ||
+        arena_run_started())
+    {
+        if (command == "targets clear" ||
+            command.startsWith(
+                "target add "))
+        {
+            port.println(
+                "ERR,targets,locked"
+            );
+
+            return true;
+        }
+
+        return false;
+    }
+
+
+    // --------------------------------------------------------
+    // Clear list
+    // --------------------------------------------------------
+
+    if (command == "targets clear")
+    {
+        priority_targets_clear();
+
+        port.println(
+            "OK,targets,cleared"
+        );
+
+        return true;
+    }
+
+
+    // --------------------------------------------------------
+    // Add:
+    //
+    // target add <x> <y>
+    // --------------------------------------------------------
+
+    if (command.startsWith(
+            "target add "))
+    {
+        float values[2];
+
+
+        if (!parseNumbers(
+                command.c_str() + 11,
+                values,
+                2))
+        {
+            port.println(
+                "ERR,target,invalid"
+            );
+
+            return true;
+        }
+
+
+        if (!priority_targets_add(
+                values[0],
+                values[1]))
+        {
+            port.println(
+                "ERR,target,invalid_or_full"
+            );
+
+            return true;
+        }
+
+
+        port.print("OK,target,");
+        port.println(
+            priority_targets_count() - 1
+        );
+
+        return true;
+    }
+
+
+    return false;
+}
+
 static bool allowManual(Stream& port)
 {
     if (getCollectState() != IDLE ||
@@ -179,7 +280,16 @@ static RobotCommand parseLine(
         );
         return CMD_NONE;
     }
-    if (handleConfig(command, port)) return CMD_NONE;
+    if (handleConfig(command, port))
+    {
+        return CMD_NONE;
+    }
+
+    if (handleTargets(command, port))
+    {
+        return CMD_NONE;
+    }
+
 
     if (debug_command(
             command,
@@ -197,6 +307,7 @@ static RobotCommand parseLine(
         port.println("Bench mode after GO: auto | roam | stop | open | close");
         port.println("drive [power] | turn <deg> | kp <v> | drivekp <v> | drivepower <v>");
         port.println("left <position> | right <position> | flag <name>");
+        port.println("targets | targets clear | target add <x> <y>");
         return CMD_NONE;
     }
 

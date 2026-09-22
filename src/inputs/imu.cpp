@@ -7,6 +7,7 @@
 #include <utility/imumaths.h>
 
 #include "imu.h"
+#include "debug_print.h"
 #include <math.h>
 
 // IMU OBJECT
@@ -260,6 +261,21 @@ void imu_update()
     if (calibrationNeeded)
     {
         saveCalibration();
+    }
+    static unsigned long lastImuDebugAt = 0;
+
+    if (millis() - lastImuDebugAt >= 200)
+    {
+        lastImuDebugAt = millis();
+
+        debugImu.print("IMU: heading=");
+        debugImu.print(imu_get_heading());
+
+        debugImu.print(" pitch=");
+        debugImu.print(pitch);
+
+        debugImu.print(" roll=");
+        debugImu.println(roll);
     }
 }
 

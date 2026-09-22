@@ -58,6 +58,14 @@ static const int MIDDLE_DETECTION_COUNT_REQUIRED = 2;
 static const unsigned long WEIGHT_RETRIGGER_BLOCK_MS = 1500;
 static unsigned long weightDetectionBlockedUntil = 0;
 
+static const int CENTRE_NAV_WALL_OFFSET_MM = 150;
+
+// Allow mounting / wall-angle / sensor noise variation.
+static const int CENTRE_NAV_WALL_TOLERANCE_MM = 75;
+
+// A broad wall should normally be seen at roughly the same
+// distance by both inner navigation sensors.
+static const int INNER_WALL_AGREEMENT_MM = 120;
 
 // Heading before the robot diverted from roaming toward this weight.
 // Used later if REVERSING needs to restore the original direction.
@@ -330,6 +338,146 @@ static bool obstacleCloserThan(int distance,int threshold)
     return (distance > 0 && distance < threshold);
 }
 
+enum CentreObjectType
+{
+    CENTRE_UNKNOWN,
+    CENTRE_WEIGHT,
+    CENTRE_WALL
+};
+
+
+// From both wall tests, the middle weight ToF reads about
+// 150 mm farther than the average of the two inner nav ToFs
+// when looking at the same wall.
+static const int CENTRE_WALL_OFFSET_MM = 150;
+
+
+// How close to the predicted wall distance counts as wall.
+static const int CENTRE_WALL_TOLERANCE_MM = 60;
+
+
+// Middle must protrude this much in front of the predicted
+// wall surface before we trust it as a separate object.
+static const int CENTRE_WEIGHT_PROTRUSION_MM = 60;
+
+
+// If both nav sensors see nothing, only allow centre-only
+// detection once reasonably close. This prevents a distant
+// wall entering the middle sensor's range first.
+static const int CENTRE_ONLY_DETECT_MM = 400;
+
+
+// Both nav sensors should see roughly the same broad surface.
+
+static CentreObjectType classifyCentreObject(
+    int middle,
+    int innerLeft,
+    int innerRight)
+{
+    // No centre object.
+    if (middle <= 0 ||
+        middle > WEIGHT_DETECT_DISTANCE_MM)
+    {
+        return CENTRE_UNKNOWN;
+    }
+
+
+    // -1 means an unusable ToF reading.
+    //
+    // VERY IMPORTANT:
+    // do not assume "not wall" when the supporting
+    // sensors have bad data.
+    if (innerLeft < 0 ||
+        innerRight < 0)
+    {
+        return CENTRE_UNKNOWN;
+    }
+
+
+    // --------------------------------------------------------
+    // Both nav sensors see no obstacle.
+    //
+    // A reasonably close object seen ONLY by the narrow
+    // middle sensor is a good weight candidate.
+    // --------------------------------------------------------
+
+    if (innerLeft == 0 &&
+        innerRight == 0)
+    {
+        if (middle <=
+            CENTRE_ONLY_DETECT_MM)
+        {
+            return CENTRE_WEIGHT;
+        }
+
+        return CENTRE_UNKNOWN;
+    }
+
+
+    // One sees something and the other sees nothing.
+    // Geometry is ambiguous: wait for better measurements.
+    if (innerLeft == 0 ||
+        innerRight == 0)
+    {
+        return CENTRE_UNKNOWN;
+    }
+
+
+    // --------------------------------------------------------
+    // Both inner navigation sensors have valid ranges.
+    // --------------------------------------------------------
+
+    int innerAverage =
+        (innerLeft + innerRight) / 2;
+
+    int innerDifference =
+        abs(innerLeft - innerRight);
+
+
+    int expectedMiddleForWall =
+        innerAverage +
+        CENTRE_WALL_OFFSET_MM;
+
+
+    // Positive means the middle sensor sees something CLOSER
+    // than where the wall should be.
+    int protrusion =
+        expectedMiddleForWall -
+        middle;
+
+
+    // --------------------------------------------------------
+    // WALL
+    // --------------------------------------------------------
+
+    if (innerDifference <=
+            INNER_WALL_AGREEMENT_MM &&
+        abs(protrusion) <=
+            CENTRE_WALL_TOLERANCE_MM)
+    {
+        return CENTRE_WALL;
+    }
+
+
+    // --------------------------------------------------------
+    // WEIGHT / discrete object
+    //
+    // Middle sees something substantially in front of the
+    // surface suggested by the two nav sensors.
+    // --------------------------------------------------------
+
+    if (protrusion >=
+        CENTRE_WEIGHT_PROTRUSION_MM)
+    {
+        return CENTRE_WEIGHT;
+    }
+
+
+    // Measurements don't currently prove either case.
+    return CENTRE_UNKNOWN;
+}
+
+
 //for now it just has the ability to  look for weights and riase flags
 static void detect_weights_exe()
 {
@@ -544,41 +692,115 @@ static void detect_weights_exe()
     // --------------------------------------------------------
 
     if (middleSample !=
-        lastMiddleDetectionSample)
+    lastMiddleDetectionSample)
     {
         lastMiddleDetectionSample =
             middleSample;
 
 
-        if (middle < 0)
+        CentreObjectType centreType =
+            classifyCentreObject(
+                middle,
+                innerLeft,
+                innerRight
+            );
+
+
+        if (centreType ==
+            CENTRE_WEIGHT)
         {
-            // Invalid measurement.
-            // Don't immediately erase evidence.
+            middleDetectionCount++;
+            middleEvidenceAt = now;
+
+
+            debugNav.print(
+                "CENTRE WEIGHT EVIDENCE "
+            );
+            debugNav.print(
+                middleDetectionCount
+            );
+            debugNav.print("/");
+            debugNav.print(
+                MIDDLE_DETECTION_COUNT_REQUIRED
+            );
+
+            debugNav.print(
+                " IL="
+            );
+            debugNav.print(innerLeft);
+
+            debugNav.print(
+                " IR="
+            );
+            debugNav.print(innerRight);
+
+            debugNav.print(
+                " MID="
+            );
+            debugNav.println(middle);
         }
+
+        else if (centreType ==
+                CENTRE_WALL)
+        {
+            // A confirmed wall must completely clear any
+            // accumulated centre-weight evidence.
+            middleDetectionCount = 0;
+
+
+            static unsigned long
+                lastCentreWallDebug = 0;
+
+
+            if (millis() -
+                    lastCentreWallDebug >=
+                250)
+            {
+                lastCentreWallDebug =
+                    millis();
+
+
+                int innerAverage =
+                    (innerLeft +
+                    innerRight) / 2;
+
+                int expectedMiddle =
+                    innerAverage +
+                    CENTRE_WALL_OFFSET_MM;
+
+
+                debugNav.print(
+                    "CENTRE REJECT WALL: IL="
+                );
+                debugNav.print(innerLeft);
+
+                debugNav.print(
+                    " IR="
+                );
+                debugNav.print(innerRight);
+
+                debugNav.print(
+                    " MID="
+                );
+                debugNav.print(middle);
+
+                debugNav.print(
+                    " EXPECT="
+                );
+                debugNav.println(
+                    expectedMiddle
+                );
+            }
+        }
+
         else
         {
-            // A broad wall should normally appear at about
-            // the same range on BOTH inner navigation sensors.
-            bool middleLooksLikeWall =
-                middle > 0 &&
-                innerLeft > 0 &&
-                innerRight > 0 &&
-                abs(innerLeft - middle) < 120 &&
-                abs(innerRight - middle) < 120;
-
-
-            if (middle > 0 &&
-                middle <=
-                    WEIGHT_DETECT_DISTANCE_MM &&
-                !middleLooksLikeWall)
-            {
-                middleDetectionCount++;
-                middleEvidenceAt = now;
-            }
-            else
-            {
-                middleDetectionCount = 0;
-            }
+            // UNKNOWN IS NOT A WEIGHT.
+            //
+            // This is the critical difference from the previous
+            // implementation. Require two consecutive samples
+            // whose geometry actually supports a weight.
+            middleDetectionCount = 0;
         }
     }
 

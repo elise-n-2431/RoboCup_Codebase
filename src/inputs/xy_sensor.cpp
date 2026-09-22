@@ -34,6 +34,9 @@ int16_t og_X, og_Y;
 static float pendingDeltaXmm = 0.0f;
 static float pendingDeltaYmm = 0.0f;
 
+static float debugAccumXmm = 0.0f;
+static float debugAccumYmm = 0.0f;
+
 int16_t deltaX, deltaY;
 
 // Note: mm_moved = counts × (height_mm / focal_constant)
@@ -57,10 +60,16 @@ void get_xy_delta_mm(float &deltaXmm_out, float &deltaYmm_out)
 
 void print_xy()
 {
-    Serial.print("pending dX_mm: ");
-    Serial.print(pendingDeltaXmm);
-    Serial.print(", dY_mm: ");
-    Serial.println(pendingDeltaYmm);
+    Serial.print("XY accumulated X=");
+    Serial.print(debugAccumXmm);
+
+    Serial.print(" mm Y=");
+    Serial.print(debugAccumYmm);
+
+    Serial.println(" mm");
+
+    debugAccumXmm = 0.0f;
+    debugAccumYmm = 0.0f;
 }
 
 void xy_init()
@@ -76,6 +85,18 @@ void xy_exe()
 {
     flow.readMotionCount(&deltaX, &deltaY);
 
-    pendingDeltaXmm += deltaX * MM_PER_PIXEL;
-    pendingDeltaYmm += deltaY * MM_PER_PIXEL;
+    float dxMm =
+        deltaX * MM_PER_PIXEL;
+
+    float dyMm =
+        deltaY * MM_PER_PIXEL;
+
+
+    pendingDeltaXmm += dxMm;
+    pendingDeltaYmm += dyMm;
+
+
+    // Separate accumulator purely for debugging.
+    debugAccumXmm += dxMm;
+    debugAccumYmm += dyMm;
 }
