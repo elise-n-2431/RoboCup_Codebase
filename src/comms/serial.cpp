@@ -51,7 +51,7 @@ static RobotCommand parseLine(String command, Stream &port)
         port.println("kp <value> | drivekp <value> | drivepower <value> | gains");
         port.println("tof | flag <name> | flags | open | close");
     } else if (command == "tof") {
-        tof_print_readings(port);
+        tof_print_readings();
     } else if (command.startsWith("turn ")) {
         if (allowManual(port)) motor_control_turn_relative(command.substring(5).toFloat());
     } else if (command == "drive" || command.startsWith("drive ")) {

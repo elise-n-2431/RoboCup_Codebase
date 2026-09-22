@@ -59,6 +59,11 @@ int self_y = 0;
 float MAP_ORIGIN_X_MM = 0;
 float MAP_ORIGIN_Y_MM = 0;
 
+float x_min = -MAP_ORIGIN_X_MM;
+float x_max = MAP_WIDTH * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+float y_min = -MAP_ORIGIN_Y_MM;
+float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
+
 int home_x = 0;
 int home_y = 0;
 
@@ -595,6 +600,112 @@ void remove_weight_evidence(int cell_x, int cell_y)
 
 // }
 
+
+float raycast_to_arena_wall(float ox, float oy, float angle_rad)
+{
+    float x_min = -MAP_ORIGIN_X_MM;
+    float x_max = MAP_WIDTH  * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+    float y_min = -MAP_ORIGIN_Y_MM;
+    float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
+
+    float dx = cos(angle_rad);
+    float dy = sin(angle_rad);
+
+    float t_best = INFINITY;
+
+    // Check each of the 4 boundary lines, keep nearest positive-t hit
+    // that actually falls within the rectangle's other axis.
+    if (dx > 1e-6f) {
+        float t = (x_max - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    } else if (dx < -1e-6f) {
+        float t = (x_min - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    }
+    if (dy > 1e-6f) {
+        float t = (y_max - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
+    } else if (dy < -1e-6f) {
+        float t = (y_min - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
+    }
+
+    return isfinite(t_best) ? t_best : -1.0f;
+}
+
+const float WALL_CORRECTION_GAIN = 0.10f;   // start small, tune up
+const float WALL_MATCH_TOLERANCE_MM = 60.0f; // reject if measured is way off predicted
+
+static float g_correction_sum_x, g_correction_sum_y = 0;
+static int g_correction_count = 0;
+
+
+void try_wall_correction(int distance_mm, float angle_deg, int sensor_x_pos = 125)
+{
+    if (distance_mm <= 0 || distance_mm > 1000) return; // no confirmed hit
+
+    float angle = angle_deg * PI / 180.0f;
+    float sensor_x = sensor_x_pos + 90.0f * cos(angle);
+    float sensor_y = 90.0f * sin(angle);
+
+    float sensor_world_x = pose_get_x_mm() + sensor_x * g_cos_heading - sensor_y * g_sin_heading;
+    float sensor_world_y = pose_get_y_mm() + sensor_x * g_sin_heading + sensor_y * g_cos_heading;
+
+    float beam_heading = heading + angle;
+
+    float expected = raycast_to_arena_wall(sensor_world_x, sensor_world_y, beam_heading);
+    if (expected < 0) return;
+
+    float residual = distance_mm - expected;
+
+    // Gate: only trust this as a wall hit if it's close to the predicted
+    // wall distance. A big residual means something else is in the way
+    // (obstacle, robot, weight) -- not a wall, don't use it.
+    if (fabsf(residual) > WALL_MATCH_TOLERANCE_MM) return;
+
+    // Also gate on the hit actually landing near the map border, as a
+    // second sanity check using your existing cell grid.
+    int hit_cell_x = world_to_cell_x(sensor_world_x + expected * cos(beam_heading));
+    int hit_cell_y = world_to_cell_y(sensor_world_y + expected * sin(beam_heading));
+    bool near_border =
+        hit_cell_x <= 1 || hit_cell_x >= MAP_WIDTH - 2 ||
+        hit_cell_y <= 1 || hit_cell_y >= MAP_HEIGHT - 2;
+    if (!near_border) return;
+
+    g_correction_sum_x += residual * cos(beam_heading);
+    g_correction_sum_y += residual * sin(beam_heading);
+    g_correction_count++;
+}
+
+
+void map_correction()
+{
+    g_correction_sum_x = 0;
+    g_correction_sum_y = 0;
+    g_correction_count = 0;
+
+    for (int i = -3; i < 4; i += 2) {
+        try_wall_correction(dist_o_l, -40.0f + i);
+        try_wall_correction(dist_i_l, -15.0f + i);
+        try_wall_correction(dist_i_r,  15.0f + i);
+        try_wall_correction(dist_o_r,  40.0f + i);
+    }
+    try_wall_correction(ultrasound_get_left_mm(),  -90.0f, 0);
+    try_wall_correction(ultrasound_get_right_mm(),  90.0f, 0);
+
+    if (g_correction_count > 0) {
+        float dx = (g_correction_sum_x / g_correction_count) * WALL_CORRECTION_GAIN;
+        float dy = (g_correction_sum_y / g_correction_count) * WALL_CORRECTION_GAIN;
+        pose_apply_correction(dx, dy);
+    }
+}
+
+
+
 void interpret_tof()
 {
     for (int i = -3; i < 4; i += 2) {
@@ -771,6 +882,7 @@ void map_update()
     update_self();
     interpret_tof();
     interpret_ultrasonic();
+    map_correction();
     arena_mirroring();
     find_frontier();
     calc_frontier_target();

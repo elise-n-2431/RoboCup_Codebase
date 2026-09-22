@@ -263,7 +263,7 @@ static bool obstacleCloserThan(int distance,int threshold)
     return (distance > 0 && distance < threshold);
 }
 
-//for now it just has the ability to  look for weights and riase flags
+//for now it just has the ability to  look for weights and raise flags
 static void detect_weights_exe()
 {
     static uint32_t lastLeftTop = 0, lastLeftBottom = 0;
@@ -304,48 +304,10 @@ static void detect_weights_exe()
 
     if (leftDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_LEFT;
-        // Serial2.println("WEIGHT CANDIDATE LEFT");
 
-        // Serial2.print("LT=");
-        // Serial2.print(leftTop);
-        // Serial2.print(" LB=");
-        // Serial2.print(leftBottom);
-
-        // Serial2.print(" RT=");
-        // Serial2.print(rightTop);
-        // Serial2.print(" RB=");
-        // Serial2.println(rightBottom);
-
-        // Serial2.print("NAV OL=");
-        // Serial2.print(tof_get_nav_outer_left());
-        // Serial2.print(" IL=");
-        // Serial2.print(tof_get_nav_inner_left());
-        // Serial2.print(" IR=");
-        // Serial2.print(tof_get_nav_inner_right());
-        // Serial2.print(" OR=");
-        // Serial2.println(tof_get_nav_outer_right());
     } else if (rightDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_RIGHT;
-        // Serial2.println("WEIGHT CANDIDATE RIGHT");
 
-        // Serial2.print("LT=");
-        // Serial2.print(leftTop);
-        // Serial2.print(" LB=");
-        // Serial2.print(leftBottom);
-
-        // Serial2.print(" RT=");
-        // Serial2.print(rightTop);
-        // Serial2.print(" RB=");
-        // Serial2.println(rightBottom);
-
-        // Serial2.print("NAV OL=");
-        // Serial2.print(tof_get_nav_outer_left());
-        // Serial2.print(" IL=");
-        // Serial2.print(tof_get_nav_inner_left());
-        // Serial2.print(" IR=");
-        // Serial2.print(tof_get_nav_inner_right());
-        // Serial2.print(" OR=");
-        // Serial2.println(tof_get_nav_outer_right());
     } else return;
 
     pursuitState = PURSUIT_START;

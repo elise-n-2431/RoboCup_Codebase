@@ -77,12 +77,13 @@ void setup()
 
 
 int i = 0;
-int max_iter = 20;
+int max_iter = 10; // was 20
 
 void loop()
 {
     if (digitalRead(GO_PIN) == HIGH)  {
         run = true;
+        setStateFlag(&STATE_FLAGS.not_target_weight_onboard);
     }
 
     imu_update();
@@ -94,7 +95,9 @@ void loop()
     ultrasound_exe();
 
     if (i >= max_iter) {
-        send_map_data();
+        // send_map_data();
+        // tof_print_readings();
+        // print_state();
         i = 0;
     }
     i ++;
