@@ -79,7 +79,8 @@ enum RoamingState
     ROAM_START,
     ROAM_DRIVING,
     ROAM_TURNING,
-    ROAM_CHECKING
+    ROAM_CHECKING,
+    EXPLORING
 };
 static RoamingState roamingState = ROAM_START;
 
@@ -456,7 +457,7 @@ static void roaming_exe()
         case ROAM_START:
             motor_control_stop();
             roamCheckStartedAt = millis();
-            roamingState = ROAM_CHECKING;
+            roamingState = EXPLORING;
             break;
 
         case ROAM_TURNING:
@@ -501,6 +502,10 @@ static void roaming_exe()
             }
 
             roaming_drive(front < ROAM_SLOW_MM ? ROAM_SLOW_POWER : ROAM_POWER);
+            break;
+
+        case EXPLORING:
+            frontier_targetting();
             break;
     }
 }
@@ -759,11 +764,18 @@ static void reversing_exe()
     }
 }
 
-void frontier_targetting(){
-    int frontier_x = get_frontier_x();
-    int frontier_y = get_frontier_y();
+void frontier_targetting()
+{
+    float fx = get_frontier_world_x_mm();
+    float fy = get_frontier_world_y_mm();
 
-    
+    // if (fy!=0 && fx!=0)   // note: `target` lives in map.cpp; expose a getter,
+    // {                     // e.g. bool get_frontier_valid(), rather than
+    //     motor_control_stop();   // reaching into map.cpp's static directly
+    //     return;
+    // }
+
+    motor_control_drive_to_point(fx, fy, ROAM_POWER);
 }
 
 static int homeDockHeading = 0;
@@ -1161,3 +1173,7 @@ void navigator_exe()
     }
 }
 
+void print_navigator_state() {
+    Serial.print("ROAMINGSTATENAVIGATOR: ");
+    Serial.println(roamingState);
+}

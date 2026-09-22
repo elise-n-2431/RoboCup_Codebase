@@ -12,7 +12,10 @@ void map_init();
 void map_update();
 int get_frontier_x();
 int get_frontier_y();
+float get_frontier_world_x_mm();
+float get_frontier_world_y_mm();
 void change_print_it();
 void send_map_data();
+void print_target();
 
 #endif

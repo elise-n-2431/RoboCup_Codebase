@@ -95,10 +95,14 @@ void loop()
     ultrasound_exe();
 
     if (i >= max_iter) {
-        // send_map_data();
+        send_map_data();
         // tof_print_readings();
         // print_state();
         i = 0;
+        // print_motor_state();
+        // print_DC_power();
+        // print_target();
+        // print_navigator_state();
     }
     i ++;
 
@@ -138,6 +142,7 @@ void loop()
     smartservo_update();
     navigator_exe();
     motor_control_update();
+
 
     }
 }

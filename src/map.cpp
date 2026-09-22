@@ -88,6 +88,7 @@ struct FrontierTarget {
 
 FrontierTarget target;
 
+
 const int n = 3; // number of starting weight estimates
 int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
 
@@ -109,6 +110,22 @@ int get_frontier_y() {
     return target.centre.y;
 }
 
+float get_frontier_world_x_mm()
+{
+    return (target.centre.x * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_X_MM;
+}
+
+float get_frontier_world_y_mm()
+{
+    return (target.centre.y * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_Y_MM;
+}
+
+void print_target() {
+    Serial.print("TARGET: ");
+    Serial.print(target.centre.x);
+    Serial.print(" ");
+    Serial.println(target.centre.y);
+}
 
 int world_to_cell_x(float x_mm)
 {
@@ -247,9 +264,9 @@ void arena_mirroring()
 // }
 
 void find_frontier() {
-    for (int x = 1; x < MAP_WIDTH - 1; x++)
+    for (int x = 6; x < MAP_WIDTH - 1; x++)
     {
-        for (int y = 1; y < MAP_HEIGHT - 1; y++)
+        for (int y = 6; y < MAP_HEIGHT - 1; y++)
         {
             if (OBSTACLE_MAP[x][y] > OBSTACLE_UNKNOWN_BAND || OBSTACLE_MAP[x][y] < -OBSTACLE_UNKNOWN_BAND)
             {
@@ -335,8 +352,8 @@ void find_frontier() {
 }
 
 float cost(float distance, int size, float orientation) {
-    float c1 = 1.0f;
-    float c2 = 1.0f;
+    float c1 = 0.5f;
+    float c2 = 2.0f;
     float c3 = 1.0f;
     return c1 * distance - c2 * size + c3 * fabsf(orientation);
 }
@@ -882,7 +899,7 @@ void map_update()
     update_self();
     interpret_tof();
     interpret_ultrasonic();
-    map_correction();
+    // map_correction();
     arena_mirroring();
     find_frontier();
     calc_frontier_target();
@@ -910,17 +927,17 @@ void map_update()
 
     // calculate period time for map
 
-    uint32_t dt = micros() - t0;
-    dbg_sum_us += dt;
-    dbg_calls++;
-    if (dt > dbg_max_us) dbg_max_us = dt;
+    // uint32_t dt = micros() - t0;
+    // dbg_sum_us += dt;
+    // dbg_calls++;
+    // if (dt > dbg_max_us) dbg_max_us = dt;
 
-    if (dbg_calls % 20 == 0) {
-        Serial.print(F("map_update avg_us="));
-        Serial.print(dbg_sum_us / dbg_calls);
-        Serial.print(F(" max_us="));
-        Serial.println(dbg_max_us);
-    }
+    // if (dbg_calls % 20 == 0) {
+    //     Serial.print(F("map_update avg_us="));
+    //     Serial.print(dbg_sum_us / dbg_calls);
+    //     Serial.print(F(" max_us="));
+    //     Serial.println(dbg_max_us);
+    // }
 }
 
 

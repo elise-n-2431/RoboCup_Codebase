@@ -5,6 +5,8 @@
 
 #include "outputs/DC_motors.h"
 #include "inputs/imu.h"
+#include "map.h"
+#include "pose.h"
 
 
 
@@ -13,7 +15,8 @@ enum MotorControlMode
 {
     CONTROL_IDLE,
     CONTROL_TURNING,
-    CONTROL_DRIVE_HEADING
+    CONTROL_DRIVE_HEADING,
+    CONTROL_DRIVE_TO_POINT
 };
 
 //start in idle
@@ -33,6 +36,10 @@ const int MIN_TURN_POWER = 280;
 
 const int MAX_TURN_POWER = 450;
 
+static float ARRIVAL_TOLERANCE_MM = 40.0f;
+static float SLOWDOWN_RADIUS_MM = 150.0f;
+const int MIN_DRIVE_TO_POINT_POWER = 200;
+
 
 // Consider target reached inside this angle
 const float ANGLE_TOLERANCE = 2.5;
@@ -49,7 +56,8 @@ const int TURN_SIGN = 1;
 const int DRIVE_STEER_SIGN = 1;
 
 
-
+static float targetPointX = 0.0f;
+static float targetPointY = 0.0f;
 
 
 static float targetHeading = 0.0;
@@ -133,14 +141,14 @@ void motor_control_turn_relative(float angle)
     controlMode = CONTROL_TURNING;
 
 
-    Serial.print("Current heading: ");
-    Serial.println(currentHeading);
+    // Serial.print("Current heading: ");
+    // Serial.println(currentHeading);
 
-    Serial.print("Relative turn: ");
-    Serial.println(angle);
+    // Serial.print("Relative turn: ");
+    // Serial.println(angle);
 
-    Serial.print("Target heading: ");
-    Serial.println(targetHeading);
+    // Serial.print("Target heading: ");
+    // Serial.println(targetHeading);
 
     // Serial2.print("Current heading: ");
     // Serial2.println(currentHeading);
@@ -172,7 +180,6 @@ void motor_control_turn_to(float heading)
     controlMode = CONTROL_TURNING;
 }
 
-
 void motor_control_drive_current_heading(int basePower)
 {
     targetHeading = imu_get_heading();
@@ -183,20 +190,7 @@ void motor_control_drive_current_heading(int basePower)
 
     previousTime = millis();
 
-    controlMode = CONTROL_DRIVE_HEADING;
-
-
-    Serial.print("Driving at heading: ");
-    Serial.println(targetHeading);
-
-    Serial.print("Base power: ");
-    Serial.println(driveBasePower);
-
-    // Serial2.print("Driving at heading: ");
-    // Serial2.println(targetHeading);
-
-    // Serial2.print("Base power: ");
-    // Serial2.println(driveBasePower);
+    controlMode = CONTROL_DRIVE_HEADING;   // restore this
 }
 
 void motor_control_drive_heading(float heading, int basePower)
@@ -212,10 +206,8 @@ void motor_control_drive_heading(float heading, int basePower)
 
     previousTime = millis();
 
-    controlMode = CONTROL_DRIVE_HEADING;
+    controlMode = CONTROL_DRIVE_HEADING;   // restore this
 }
-
-
 
 static void updateTurnControl(float currentHeading, unsigned long currentTime)
 {
@@ -244,8 +236,8 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
         {
             controlMode = CONTROL_IDLE;
 
-            Serial.print("Turn complete. Heading: ");
-            Serial.println(currentHeading);
+            // Serial.print("Turn complete. Heading: ");
+            // Serial.println(currentHeading);
         }
 
 
@@ -305,7 +297,67 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
 
 
 
+static void updateDriveToPointControl(
+    float currentHeading,
+    float currentX,
+    float currentY
+)
+{
+    // Serial.println("HERRRREEEE");
+    float dx = targetPointX - currentX;
+    float dy = targetPointY - currentY;
+    float distance = sqrtf(dx * dx + dy * dy);
 
+    // if (distance <= ARRIVAL_TOLERANCE_MM)
+    // {
+    //     DC_motors_setPower(0, 0);
+    //     controlMode = CONTROL_IDLE;
+
+    //     // Serial.print("Arrived at frontier: ");
+    //     // Serial.print(targetPointX);
+    //     // Serial.print(",");
+    //     // Serial.println(targetPointY);
+
+    //     return;
+    // }
+
+    // Recompute desired heading EVERY cycle from current position --
+    // this is what lets it steer continuously instead of turn-then-drive.
+    float desiredHeading = atan2f(dy, dx) * 180.0f / PI;
+    targetHeading = wrapHeading(desiredHeading);
+
+    currentError = headingError(targetHeading, currentHeading);
+
+    float correction = DRIVE_KP * currentError;
+    correction *= DRIVE_STEER_SIGN;
+
+    if (correction > MAX_DRIVE_CORRECTION)  correction = MAX_DRIVE_CORRECTION;
+    if (correction < -MAX_DRIVE_CORRECTION) correction = -MAX_DRIVE_CORRECTION;
+
+    // Taper base power as we approach the target, and also ease off
+    // when the heading error is large (avoid driving hard sideways
+    // through a near-90 deg required turn).
+    int power = driveBasePower;
+
+    if (distance < SLOWDOWN_RADIUS_MM)
+    {
+        float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
+        power = MIN_DRIVE_TO_POINT_POWER +
+                (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
+    }
+
+    float errorFactor = 1.0f - (fabsf(currentError) / 90.0f);
+    if (errorFactor < 0.5f) errorFactor = 0.5f; // never drop below 30% power
+    power = (int)(power * errorFactor);
+
+    int leftPower  = power + (int)correction;
+    int rightPower = power - (int)correction;
+    // Serial.print(leftPower);
+    // Serial.print(" ");
+    // Serial.println(rightPower);
+
+    DC_motors_setPower(leftPower, rightPower);
+}
 
 static void updateDriveHeadingControl(
     float currentHeading
@@ -369,6 +421,9 @@ void motor_control_update()
 
     float currentHeading =
         imu_get_heading();
+    
+    float currentX = pose_get_x_mm();
+    float currentY = pose_get_y_mm();
 
 
     if (controlMode == CONTROL_TURNING)
@@ -390,16 +445,56 @@ void motor_control_update()
 
         return;
     }
+
+    if (controlMode == CONTROL_DRIVE_TO_POINT)
+    {
+        updateDriveToPointControl(
+            currentHeading,
+            currentX,
+            currentY
+        );
+        return;
+    }
+}
+
+void motor_control_drive_to_point(float target_x_mm, float target_y_mm, int basePower)
+{
+    targetPointX = target_x_mm;
+    targetPointY = target_y_mm;
+    driveBasePower = basePower;
+
+    if (controlMode != CONTROL_DRIVE_TO_POINT)
+    {
+        currentError = 0.0f;
+        previousTime = millis();
+        controlMode = CONTROL_DRIVE_TO_POINT;
+    }
 }
 
 
+
+
+bool motor_control_is_driving_to_point()
+{
+    return controlMode == CONTROL_DRIVE_TO_POINT;
+}
+
+void motor_control_set_arrival_tolerance(float mm)
+{
+    ARRIVAL_TOLERANCE_MM = mm;
+}
+
+void motor_control_set_slowdown_radius(float mm)
+{
+    SLOWDOWN_RADIUS_MM = mm;
+}
 
 void motor_control_stop()
 {
     controlMode = CONTROL_IDLE;
 
     DC_motors_setPower(0, 0);
-    Serial.println("Motor control stopped");
+    // Serial.println("Motor control stopped");
     // Serial2.println("Motor control stopped");
 }
 
@@ -449,11 +544,16 @@ bool motor_control_is_turning()
 
 bool motor_control_is_driving()
 {
-    return controlMode == CONTROL_DRIVE_HEADING;
+    return controlMode == CONTROL_DRIVE_TO_POINT;
 }
 
 void motor_control_reverse(int power)
 {
     controlMode = CONTROL_IDLE;
     DC_motors_setPower(-power, -power);
+}
+
+void print_motor_state () {
+    Serial.print("Mode: ");
+    Serial.println(controlMode == CONTROL_DRIVE_TO_POINT);
 }
