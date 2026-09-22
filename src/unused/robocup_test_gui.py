@@ -599,7 +599,8 @@ class TestGUI(RoboCupGUI):
                 )
 
             self.recorder.add("TX", command)
-            super().append_log("> " + command)
+            if command != "config":
+                super().append_log("> " + command)
             return True
 
         except (serial.SerialException, OSError) as exc:
@@ -670,6 +671,7 @@ class TestGUI(RoboCupGUI):
                     )
 
             self.refresh_setup()
+            return
 
         elif line in ("MODE,BENCH", "MODE,COMPETITION"):
             self.mode = line.split(",")[1]
@@ -759,8 +761,10 @@ class TestGUI(RoboCupGUI):
         super().parse_telemetry(line)
 
     def poll_status(self):
-        if self.ser and not self.pending:
-            self.send_command("config")
+        if self.ser:
+            # Only query until initial state is known.
+            if self.config is None:
+                self.send_command("config")
 
             if self.mode is None:
                 self.send_command("mode")

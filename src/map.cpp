@@ -814,7 +814,7 @@ void map_update()
     if (dt > dbg_max_us) dbg_max_us = dt;
 
     if (dbg_calls % 20 == 0) {
-        Serial.print(F("map_update avg_us="));
+        debugMap.print(F("map_update avg_us="));
         debugMap.print(dbg_sum_us / dbg_calls);
         debugMap.print(F(" max_us="));
         debugMap.println(dbg_max_us);

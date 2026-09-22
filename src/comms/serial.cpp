@@ -116,7 +116,7 @@ static bool handleConfig(const String& command, Stream& port)
         if (command == "home ne")
             ok = arena_set_home_corner(HomeCorner::NE);
 
-        if (ok) map_init();
+        //if (ok) map_init();
         configResult(port, ok);
     }
     else if (command.startsWith("homepos ")) {
@@ -126,7 +126,7 @@ static bool handleConfig(const String& command, Stream& port)
             parseNumbers(command.c_str() + 8, v, 2) &&
             arena_set_home_position(v[0], v[1]);
 
-        if (ok) map_init();
+        //if (ok) map_init();
         configResult(port, ok);
     }
     else if (command.startsWith("startpose ")) {
@@ -138,7 +138,7 @@ static bool handleConfig(const String& command, Stream& port)
 
         if (ok) {
             pose_reset();
-            map_init();
+            //map_init();
         }
 
         configResult(port, ok);

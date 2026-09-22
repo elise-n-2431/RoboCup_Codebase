@@ -36,7 +36,7 @@ const byte GO_PIN = 26;
 
 bool run = false;
 static bool previousGoHigh = false;
-static int mapPrintCounter = 0;
+//static int mapPrintCounter = 0;
 
 void setup()
 {
@@ -65,7 +65,7 @@ void setup()
     xy_init();
 
     pose_init();
-    map_init();
+    //map_init();
 
     // No navigator_start here: GO is the only run-start trigger.
     Serial.println(BENCH_TEST_MODE ? "MODE,BENCH" : "MODE,COMPETITION");
@@ -97,8 +97,8 @@ static void checkGo()
     pose_reset();
     map_init();
 
-    if (!BENCH_TEST_MODE &&
-        !navigator_start(arena_get_config().pickupEnabled)) {
+    if (!navigator_start(arena_get_config().pickupEnabled))
+    {
         Serial.println("ERR,GO,navigator_start");
         Serial2.println("ERR,GO,navigator_start");
         return;
@@ -132,12 +132,12 @@ void loop()
     }
 
     if (!run) {
-        map_update();
+        /*map_update();
 
         if (++mapPrintCounter >= 20) {
             send_map_data();
             mapPrintCounter = 0;
-        }
+        }*/
 
         return;
     }
