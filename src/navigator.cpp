@@ -15,14 +15,21 @@
 
 
 static const int WEIGHT_DETECT_DISTANCE_MM = 550;
+static const int WEIGHT_MIDDLE_SENSOR = 8;
 
 static int middleLostCount = 0;
 static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 
 
-static const float LEFT_WEIGHT_TURN_DEG  = -36.0f;
-static const float RIGHT_WEIGHT_TURN_DEG = 36.0f;
+// Pursuit no longer assumes that a side detection means a fixed 36 degree turn.
+// Instead, search around the heading where pursuit started until the centre
+// ToF genuinely sees the weight.
+static const float PURSUIT_SCAN_STEP_DEG = 12.0f;
+static const float PURSUIT_SCAN_MAX_DEG  = 48.0f;
+
+
 static const int WEIGHT_DIFFERENCE_MM = 100;
+
 static const int WEIGHT_STOP_DISTANCE_MM = 75;
 static int DETECTION_COUNT_REQUIRED = 3;
 
@@ -36,6 +43,27 @@ static int leftDetectionCount = 0;
 static int rightDetectionCount = 0;
 static float weightApproachHeading = 0.0f;
 static bool weightApproachSlowed = false;
+
+// Heading before the robot diverted from roaming toward this weight.
+// Used later if REVERSING needs to restore the original direction.
+static float pursuitEntryHeading = 0.0f;
+
+
+// Heading around which the current centre-acquisition scan is performed.
+static float pursuitScanOriginHeading = 0.0f;
+
+
+// Which scan target we are up to.
+static int pursuitScanIndex = 0;
+
+
+// -1 means search left first, +1 means search right first.
+static int pursuitPreferredDirection = 1;
+
+
+// Used so one stale centre-ToF reading cannot be counted many times
+// by the much faster main loop.
+static uint32_t lastMiddleSample = 0;
 
 
 //In the roaming state to see which side it thinks the weight is on
@@ -542,6 +570,76 @@ static void roaming_exe()
     }
 }
 
+static bool readFreshMiddleDistance(int &distance)
+{
+    uint32_t sample =
+        tof_get_sample_number(WEIGHT_MIDDLE_SENSOR);
+
+    if (sample == lastMiddleSample)
+    {
+        return false;
+    }
+
+    lastMiddleSample = sample;
+    distance = tof_get_weight_middle();
+
+    return true;
+}
+
+
+static void resetPursuitScan()
+{
+    pursuitScanOriginHeading = imu_get_heading();
+    pursuitScanIndex = 0;
+
+    // Ignore whatever middle reading already exists.
+    // We want the next fresh sample.
+    lastMiddleSample =
+        tof_get_sample_number(WEIGHT_MIDDLE_SENSOR);
+}
+
+
+static bool commandNextPursuitScan()
+{
+    // 0,1 -> 12 degrees
+    // 2,3 -> 24 degrees
+    // 4,5 -> 36 degrees
+    // 6,7 -> 48 degrees
+    int level =
+        (pursuitScanIndex / 2) + 1;
+
+    float magnitude =
+        level * PURSUIT_SCAN_STEP_DEG;
+
+    if (magnitude > PURSUIT_SCAN_MAX_DEG)
+    {
+        return false;
+    }
+
+
+    // Search the side which originally detected the weight first,
+    // then the equivalent angle on the opposite side.
+    int direction = (pursuitScanIndex % 2 == 0) ? 1: -1;
+
+
+    float offset =
+        direction * magnitude;
+
+    pursuitScanIndex++;
+
+
+    debugNav.print("Pursuit: scanning offset ");
+    debugNav.print(offset);
+    debugNav.println(" deg");
+
+
+    // motor_control_turn_to() already handles heading wraparound.
+    motor_control_turn_to(
+        pursuitScanOriginHeading + offset
+    );
+
+    return true;
+}
 
 static void pursuit_exe()
 {
@@ -549,25 +647,61 @@ static void pursuit_exe()
     {
         case PURSUIT_START:
         {
-            // Make sure funnel is open before approaching the weight
+            motor_control_stop();
+
+            // Open funnel before attempting to line up.
             smartservo_arms_open();
+
+
+            pursuitEntryHeading =
+                imu_get_heading();
+
 
             if (weightTargetSide == TARGET_LEFT)
             {
-                debugNav.println("Pursuit: opening arms and turning LEFT");
-                motor_control_turn_relative(LEFT_WEIGHT_TURN_DEG);
-                pursuitState = PURSUIT_TURNING;
+                pursuitPreferredDirection = -1;
+                debugNav.println(
+                    "Pursuit: target came from LEFT"
+                );
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                debugNav.println("Pursuit: opening arms and turning RIGHT");
-                motor_control_turn_relative(RIGHT_WEIGHT_TURN_DEG);
-                pursuitState = PURSUIT_TURNING;
+                pursuitPreferredDirection = 1;
+                debugNav.println(
+                    "Pursuit: target came from RIGHT"
+                );
             }
             else
             {
-                debugNav.println("Pursuit started without target side");
+                debugNav.println(
+                    "Pursuit: started without target side"
+                );
+
+                setStateFlag(
+                    &STATE_FLAGS.target_lost
+                );
+
+                pursuitState =
+                    PURSUIT_FINISHED;
+
+                return;
             }
+
+
+            debugNav.print(
+                "Pursuit: search origin heading "
+            );
+            debugNav.println(
+                pursuitEntryHeading
+            );
+
+
+            // Do NOT immediately perform a fixed side turn.
+            // First give the centre sensor a chance to see the weight.
+            resetPursuitScan();
+
+            pursuitState =
+                PURSUIT_ACQUIRING;
 
             break;
         }
@@ -575,11 +709,29 @@ static void pursuit_exe()
 
         case PURSUIT_TURNING:
         {
-            if (motor_control_is_turning()) return;
+            if (motor_control_is_turning())
+            {
+                return;
+            }
 
-            debugNav.println("Pursuit: turn complete");
 
-            pursuitState = PURSUIT_ACQUIRING;
+            motor_control_stop();
+
+            debugNav.println(
+                "Pursuit: scan turn complete"
+            );
+
+
+            // Samples taken while physically turning are not useful for
+            // deciding whether the now-stationary robot is aligned.
+            lastMiddleSample =
+                tof_get_sample_number(
+                    WEIGHT_MIDDLE_SENSOR
+                );
+
+
+            pursuitState =
+                PURSUIT_ACQUIRING;
 
             break;
         }
@@ -587,23 +739,76 @@ static void pursuit_exe()
 
         case PURSUIT_ACQUIRING:
         {
-            int centreDistance = tof_get_weight_middle();
+            int centreDistance;
 
-            if (centreDistance > 0 &&
-                centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
+
+            // Only make one decision per actual ToF measurement.
+            if (!readFreshMiddleDistance(
+                    centreDistance))
             {
-                debugNav.print("Pursuit: centre acquired weight at ");
-                debugNav.print(centreDistance);
-                debugNav.println(" mm");
+                return;
+            }
+
+
+            // -------------------------------
+            // Centre has actually found it
+            // -------------------------------
+            if (centreDistance > 0 &&
+                centreDistance <=
+                    WEIGHT_DETECT_DISTANCE_MM)
+            {
+                debugNav.print(
+                    "Pursuit: centre acquired weight at "
+                );
+                debugNav.print(
+                    centreDistance
+                );
+                debugNav.println(
+                    " mm"
+                );
+
 
                 middleLostCount = 0;
 
-                weightApproachHeading = imu_get_heading();
-                weightApproachSlowed = false;
+                weightApproachHeading =
+                    imu_get_heading();
 
-                pursuitState = PURSUIT_APPROACHING;
+                weightApproachSlowed =
+                    false;
+
+
+                pursuitState =
+                    PURSUIT_APPROACHING;
+
                 return;
             }
+
+
+            // -------------------------------
+            // Centre still cannot see it
+            // -------------------------------
+            if (!commandNextPursuitScan())
+            {
+                motor_control_stop();
+
+                debugNav.println(
+                    "Pursuit: scan exhausted - target lost"
+                );
+
+
+                setStateFlag(
+                    &STATE_FLAGS.target_lost
+                );
+
+                pursuitState =
+                    PURSUIT_FINISHED;
+
+                return;
+            }
+
+
+            pursuitState =
+                PURSUIT_TURNING;
 
             break;
         }
@@ -611,25 +816,65 @@ static void pursuit_exe()
 
         case PURSUIT_APPROACHING:
         {
-            int centreDistance = tof_get_weight_middle();
+            int centreDistance;
+
+
+            // Again, only react to genuinely new middle-ToF samples.
+            if (!readFreshMiddleDistance(
+                    centreDistance))
+            {
+                return;
+            }
+
 
             // -------------------------------
             // Lost target
             // -------------------------------
             if (centreDistance <= 0 ||
-                centreDistance > WEIGHT_DETECT_DISTANCE_MM)
+                centreDistance >
+                    WEIGHT_DETECT_DISTANCE_MM)
             {
+                // Keep the current conservative behaviour:
+                // stop as soon as centre vision is uncertain.
                 motor_control_stop();
 
-                weightApproachSlowed = false;
+                weightApproachSlowed =
+                    false;
+
                 middleLostCount++;
 
-                if (middleLostCount >= MIDDLE_LOST_COUNT_REQUIRED)
+
+                debugNav.print(
+                    "Pursuit: centre miss "
+                );
+                debugNav.print(
+                    middleLostCount
+                );
+                debugNav.print(
+                    "/"
+                );
+                debugNav.println(
+                    MIDDLE_LOST_COUNT_REQUIRED
+                );
+
+
+                if (middleLostCount >=
+                    MIDDLE_LOST_COUNT_REQUIRED)
                 {
-                    debugNav.println("Pursuit: centre lost weight");
+                    debugNav.println(
+                        "Pursuit: centre lost weight - reacquiring"
+                    );
+
 
                     middleLostCount = 0;
-                    pursuitState = PURSUIT_ACQUIRING;
+
+                    // Search around the heading where it was lost,
+                    // rather than jumping all the way back to the
+                    // original roaming heading.
+                    resetPursuitScan();
+
+                    pursuitState =
+                        PURSUIT_ACQUIRING;
                 }
 
                 return;
@@ -642,19 +887,32 @@ static void pursuit_exe()
             // -------------------------------
             // Weight has reached funnel
             // -------------------------------
-            if (centreDistance <= WEIGHT_STOP_DISTANCE_MM)
+            if (centreDistance <=
+                WEIGHT_STOP_DISTANCE_MM)
             {
                 motor_control_stop();
 
-                debugNav.print("Pursuit: weight reached entrance at ");
-                debugNav.print(centreDistance);
-                debugNav.println(" mm");
 
-                // Secure the weight before handing over to SORTING
+                debugNav.print(
+                    "Pursuit: weight reached entrance at "
+                );
+                debugNav.print(
+                    centreDistance
+                );
+                debugNav.println(
+                    " mm"
+                );
+
+
+                // Secure weight before SORTING takes control.
                 smartservo_arms_close();
 
-                pursuitSecureStartedAt = millis();
-                pursuitState = PURSUIT_SECURING;
+
+                pursuitSecureStartedAt =
+                    millis();
+
+                pursuitState =
+                    PURSUIT_SECURING;
 
                 return;
             }
@@ -663,7 +921,8 @@ static void pursuit_exe()
             // -------------------------------
             // Slow approach
             // -------------------------------
-            if (centreDistance <= WEIGHT_SLOW_DISTANCE_MM)
+            if (centreDistance <=
+                WEIGHT_SLOW_DISTANCE_MM)
             {
                 if (!weightApproachSlowed ||
                     !motor_control_is_driving())
@@ -673,9 +932,14 @@ static void pursuit_exe()
                         WEIGHT_SLOW_POWER
                     );
 
-                    weightApproachSlowed = true;
 
-                    debugNav.println("Pursuit: slowing approach");
+                    weightApproachSlowed =
+                        true;
+
+
+                    debugNav.println(
+                        "Pursuit: slowing approach"
+                    );
                 }
 
                 return;
@@ -699,17 +963,25 @@ static void pursuit_exe()
 
         case PURSUIT_SECURING:
         {
-            // Robot must remain stationary while arms close
             motor_control_stop();
 
-            if (millis() - pursuitSecureStartedAt < ARM_SECURE_WAIT_MS)
+
+            if (millis() -
+                    pursuitSecureStartedAt <
+                ARM_SECURE_WAIT_MS)
             {
                 return;
             }
 
-            debugNav.println("Pursuit: weight secured");
 
-            pursuitState = PURSUIT_FINISHED;
+            debugNav.println(
+                "Pursuit: weight secured"
+            );
+
+
+            pursuitState =
+                PURSUIT_FINISHED;
+
 
             setStateFlag(
                 &STATE_FLAGS.weight_in_entrance
@@ -721,12 +993,10 @@ static void pursuit_exe()
 
         case PURSUIT_FINISHED:
         {
-            // Wait for:
-            //
+            // State machine takes over:
             // PURSUIT -> SORTING
-            //
-            // in the main state machine.
-
+            // or
+            // PURSUIT -> ROAMING after target_lost.
             break;
         }
     }
@@ -753,20 +1023,33 @@ static void reversing_exe()
 
             motor_control_stop();
 
-            if (weightTargetSide == TARGET_LEFT)
+            if (weightTargetSide != TARGET_NONE)
             {
-                debugNav.println("Reverse: turning RIGHT");
-                motor_control_turn_relative(-LEFT_WEIGHT_TURN_DEG);
-            }
-            else if (weightTargetSide == TARGET_RIGHT)
-            {
-                debugNav.println("Reverse: turning LEFT");
-                motor_control_turn_relative(-RIGHT_WEIGHT_TURN_DEG);
+                debugNav.print(
+                    "Reverse: returning to pre-pursuit heading "
+                );
+                debugNav.println(
+                    pursuitEntryHeading
+                );
+
+
+                motor_control_turn_to(
+                    pursuitEntryHeading
+                );
+
+
+                reversingState =
+                    REVERSE_TURNING;
             }
             else
             {
-                debugNav.println("Reverse: no target side, skipping turn");
-                reversingState = REVERSE_FINISHED;
+                debugNav.println(
+                    "Reverse: no pursuit heading to restore"
+                );
+
+                reversingState =
+                    REVERSE_FINISHED;
+
                 return;
             }
 
