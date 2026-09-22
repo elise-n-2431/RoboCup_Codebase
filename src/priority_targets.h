@@ -13,6 +13,12 @@ struct PriorityTarget
     float y;
 };
 
+bool priority_targets_remove_nearest(
+    float x,
+    float y,
+    float maxDistanceMm
+);
+
 
 void priority_targets_clear();
 

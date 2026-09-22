@@ -133,3 +133,69 @@ void priority_targets_print(
         );
     }
 }
+
+bool priority_targets_remove_nearest(
+    float x,
+    float y,
+    float maxDistanceMm
+)
+{
+    if (targetCount == 0 ||
+        !isfinite(x) ||
+        !isfinite(y) ||
+        !isfinite(maxDistanceMm) ||
+        maxDistanceMm <= 0.0f)
+    {
+        return false;
+    }
+
+
+    int bestIndex = -1;
+
+    float bestDistanceSquared =
+        maxDistanceMm *
+        maxDistanceMm;
+
+
+    for (uint8_t i = 0;
+         i < targetCount;
+         i++)
+    {
+        float dx =
+            targets[i].x -
+            x;
+
+        float dy =
+            targets[i].y -
+            y;
+
+
+        float distanceSquared =
+            dx * dx +
+            dy * dy;
+
+
+        if (distanceSquared <=
+            bestDistanceSquared)
+        {
+            bestDistanceSquared =
+                distanceSquared;
+
+            bestIndex =
+                static_cast<int>(i);
+        }
+    }
+
+
+    if (bestIndex < 0)
+    {
+        return false;
+    }
+
+
+    return priority_targets_remove(
+        static_cast<uint8_t>(
+            bestIndex
+        )
+    );
+}

@@ -1,5 +1,7 @@
 #include "logic_engine.h"
 #include "state_machine.h"
+#include "priority_targets.h"
+#include "pose.h"
 
 int current_weights = 0;
 int current_iterations = 0;
@@ -8,6 +10,11 @@ int current_iterations = 0;
 
 void increment_weights() {
     current_weights ++;
+    priority_targets_remove_nearest(
+        pose_get_x_mm(),
+        pose_get_y_mm(),
+        700.0f
+    );
 }
 
 void reset_weights()
