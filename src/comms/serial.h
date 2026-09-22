@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 
-
 enum RobotCommand
 {
     CMD_NONE,
@@ -12,10 +11,11 @@ enum RobotCommand
     CLOSE_GATE
 };
 
-
 void serial_init();
 
-RobotCommand serial_exe();
+// Actuator commands require an explicitly enabled bench run.
+RobotCommand serial_exe(bool allowControl = false);
 
+void serial_set_bench_mode(bool enabled);
 
 #endif

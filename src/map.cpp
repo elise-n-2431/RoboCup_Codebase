@@ -9,6 +9,8 @@
 #include <numeric> // for std::accumulate
 #include "inputs/ultrasound.h"
 #include "state_machine.h"
+#include "arena_config.h"
+#include "debug_print.h"
 #include <iostream>
 #include <queue>
 using namespace std;
@@ -113,7 +115,7 @@ int world_to_cell_x(float x_mm)
     if (coord < 0) {
         return 0;
     } else if (coord >= MAP_WIDTH) {
-        return MAP_WIDTH;
+        return MAP_WIDTH - 1;
     } else {
         return coord;
     }
@@ -129,7 +131,7 @@ int world_to_cell_y(float y_mm)
     if (coord < 0) {
         return 0;
     } else if (coord >= MAP_HEIGHT) {
-        return MAP_HEIGHT;
+        return MAP_HEIGHT - 1;
     } else {
         return coord;
     }
@@ -177,6 +179,8 @@ void map_init() {
         for (int y = 0; y < MAP_HEIGHT; y++) {
             WEIGHT_MAP[x][y] = 0;
             OBSTACLE_MAP[x][y] = 0;
+            FRONTIER_MAP[x][y] = false;
+            FRONTIER_VISITED[x][y] = false;
         }
     }
     for (int i = 0; i < n; i++) {
@@ -184,11 +188,17 @@ void map_init() {
         int y = starting_weight_estimates[i][1];
         WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
     }
-    MAP_ORIGIN_X_MM = pose_get_x_mm();
-    MAP_ORIGIN_Y_MM = pose_get_y_mm();
+    MAP_ORIGIN_X_MM = 0.0f;
+    MAP_ORIGIN_Y_MM = 0.0f;
 
     home_x = world_to_cell_x(pose_get_x_mm());
     home_y = world_to_cell_y(pose_get_y_mm());
+    self_x = world_to_cell_x(pose_get_x_mm());
+    self_y = world_to_cell_y(pose_get_y_mm());
+
+    FRONTIER_GROUPS_X.clear();
+    FRONTIER_GROUPS_Y.clear();
+    target = {};
 }
 
 void apply_decay() {
@@ -805,9 +815,9 @@ void map_update()
 
     if (dbg_calls % 20 == 0) {
         Serial.print(F("map_update avg_us="));
-        Serial.print(dbg_sum_us / dbg_calls);
-        Serial.print(F(" max_us="));
-        Serial.println(dbg_max_us);
+        debugMap.print(dbg_sum_us / dbg_calls);
+        debugMap.print(F(" max_us="));
+        debugMap.println(dbg_max_us);
     }
 }
 

@@ -6,6 +6,7 @@
 #include "driving_controller.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/smart_servo.h"
+#include "debug_print.h"
 
 // enums and structs moved to h file
 
@@ -179,10 +180,10 @@ void checkChangeNavState(NavState navState, bool* flag)
     if (navState == OPENING) gateOpen();
     if (navState == CLOSING) gateClose();
 
-    Serial2.print("[NAV] ");
-    Serial2.print(navStateName(prev_nav_state));
-    Serial2.print(" -> ");
-    Serial2.println(navStateName(current_nav_state));
+    debugState.print("[NAV] ");
+    debugState.print(navStateName(prev_nav_state));
+    debugState.print(" -> ");
+    debugState.println(navStateName(current_nav_state));
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -197,10 +198,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         *flag = false;
         collectStateEnteredAt = millis();
 
-        Serial2.print("[COLLECT] ");
-        Serial2.print(collectStateName(prev_collect_state));
-        Serial2.print(" -> ");
-        Serial2.println(collectStateName(current_collect_state));
+        debugState.print("[COLLECT] ");
+        debugState.print(collectStateName(prev_collect_state));
+        debugState.print(" -> ");
+        debugState.println(collectStateName(current_collect_state));
     }
 }
 

@@ -7,7 +7,8 @@
 #include "inputs/imu.h"
 #include "inputs/tof_expander.h"
 #include "inputs/xy_sensor.h"
-
+#include "arena_config.h"
+#include "debug_print.h"
 
 // ============================================================
 // POSE
@@ -40,20 +41,18 @@ void pose_init()
 
 void pose_reset()
 {
-    poseXmm = 300.0;
-    poseYmm = 300.0;
+    const ArenaConfig& config = arena_get_config();
 
+    poseXmm = config.startX;
+    poseYmm = config.startY;
 
-    startHeadingDeg =
-        imu_get_heading();
+    startHeadingDeg = imu_get_heading() - config.startHeading;
 
+    previousLeftCount = encoders_get_left_count();
+    previousRightCount = encoders_get_right_count();
 
-    previousLeftCount =
-        encoders_get_left_count();
-
-    previousRightCount =
-        encoders_get_right_count();
-
+    float unusedForward, unusedLateral;
+    get_xy_delta_mm(unusedForward, unusedLateral);
 }
 
 
@@ -96,10 +95,7 @@ void pose_update()
     float lateralDistance = XY_FUSION_WEIGHT * xyLateral;
 
 
-    float headingDeg = imu_get_heading() - startHeadingDeg;
-
-    while (headingDeg >= 360.0f) headingDeg -= 360.0f;
-    while (headingDeg < 0.0f)    headingDeg += 360.0f;
+    float headingDeg = pose_get_heading_deg();
 
     float headingRad = headingDeg * PI / 180.0f;
 
@@ -118,20 +114,20 @@ void pose_update()
     {
         lastPoseDebug = millis();
 
-        Serial2.print("POSE ENC: dL=");
-        Serial2.print(deltaLeftCount);
+        debugPose.print("POSE ENC: dL=");
+        debugPose.print(deltaLeftCount);
 
-        Serial2.print(" dR=");
-        Serial2.print(deltaRightCount);
+        debugPose.print(" dR=");
+        debugPose.print(deltaRightCount);
 
-        Serial2.print(" leftMM=");
-        Serial2.print(leftDistance);
+        debugPose.print(" leftMM=");
+        debugPose.print(leftDistance);
 
-        Serial2.print(" rightMM=");
-        Serial2.print(rightDistance);
+        debugPose.print(" rightMM=");
+        debugPose.print(rightDistance);
 
-        Serial2.print(" forward=");
-        Serial2.println(encoderForward);
+        debugPose.print(" forward=");
+        debugPose.println(encoderForward);
     }
 
 }
@@ -204,8 +200,8 @@ void pose_telemetry_exe()
 
     lastTelemetryTime = millis();
 
-    pose_print_telemetry(Serial);
     pose_print_telemetry(Serial2);
+    pose_print_telemetry(Serial);
 }
 
 void pose_print_telemetry(Stream &port)

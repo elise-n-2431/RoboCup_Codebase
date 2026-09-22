@@ -89,7 +89,6 @@ void limit_switch_exe()
 
 bool getLimitSwitch() {
     return io.digitalRead(AIO5_PIN) == LOW;
-    return io.digitalRead(AIO5_PIN) == LOW;
 }
 
 void print_limit() {

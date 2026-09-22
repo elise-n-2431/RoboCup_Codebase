@@ -1,64 +1,56 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
+
 #include "state_machine.h"
 #include "logic_engine.h"
 #include "comms/serial.h"
 #include "comms/flag_control.h"
+#include "comms/command_router.h"
+
 #include "outputs/DC_motors.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/emag.h"
 #include "outputs/smart_servo.h"
+
 #include "inputs/tof_expander.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
 #include "inputs/xy_sensor.h"
-#include "navigator.h"
-#include "driving_controller.h"
 #include "inputs/encoders.h"
-#include "pose.h"
 #include "inputs/colour_sensor.h"
 #include "inputs/imu.h"
 #include "inputs/ultrasound.h"
-#include "comms/command_router.h"
-#include "map.h"
 
+#include "navigator.h"
+#include "driving_controller.h"
+#include "pose.h"
+#include "map.h"
+#include "arena_config.h"
+#include "debug_print.h"
+
+// Set true only for bench testing. Competition runs reject remote control.
+static constexpr bool BENCH_TEST_MODE = true;
 
 const byte GO_PIN = 26;
 
 bool run = false;
-
-
-static bool poseStreamEnabled = true;
-static unsigned long lastPosePrintTime = 0;
-
-const unsigned long POSE_PRINT_PERIOD_MS = 100;
-
-const byte GO_PIN = 26;
+static bool previousGoHigh = false;
+static int mapPrintCounter = 0;
 
 void setup()
 {
-    // GO BUTTON
     pinMode(GO_PIN, INPUT);
 
-
-    // GO button
-    pinMode(GO_PIN, INPUT);
-
-    // Communications
     serial_init();
+    serial_set_bench_mode(BENCH_TEST_MODE);
     encoders_init();
-
-    // Hardware
     DC_motors_init();
-
     imu_init();
-
     tof_init();
     limit_switch_init();
     proximity_init();
 
-    // Control
-    map_init();
     motor_control_init();
     pickup_servo_init();
     emag_init();
@@ -70,64 +62,91 @@ void setup()
 
     smartservo_torque_on();
     ultrasound_init();
+    xy_init();
 
     pose_init();
+    map_init();
 
-    // Start in roaming-only mode.
-    // Type "auto" to enable weight pickup.
-    navigator_start(true);
+    // No navigator_start here: GO is the only run-start trigger.
+    Serial.println(BENCH_TEST_MODE ? "MODE,BENCH" : "MODE,COMPETITION");
+    Serial2.println(BENCH_TEST_MODE ? "MODE,BENCH" : "MODE,COMPETITION");
 
-    xy_init();
+    Serial.println("RUN,WAITING");
+    Serial2.println("RUN,WAITING");
 }
 
-
-int i = 0;
-int max_iter = 20;
-bool run = false;
-
-
-void loop()
+static void checkGo()
 {
-    if (digitalRead(GO_PIN) == HIGH)  {
-        run = true;
-    }
+    const bool high = digitalRead(GO_PIN) == HIGH;
+    const bool pressed = high && !previousGoHigh;
+    previousGoHigh = high;
 
-    if (run) {
+    if (!pressed || arena_run_started()) return;
 
-    // PRINT STATEMENTS
-    // pose_telemetry_exe();
-    // print_state();
-    // print_DC_power();
-    // print_limit();
-
-    xy_exe();
-
-    imu_update();
-    tof_update();
-
-    ultrasound_exe();
-    limit_switch_exe();
-
-    colour_sensor_update();
-
-    //print_limit();
-    // print_xy();
-    // tof_print_readings(Serial);
-
-
-    RobotCommand command = serial_exe();
-    command_router_exe(command);
-
-
-    if (!run)
-    {
+    if (!imu_is_online() ||
+        !isfinite(imu_get_heading()) ||
+        !colour_sensor_capture_home()) {
+        Serial.println("ERR,GO,sensors_not_ready");
+        Serial2.println("ERR,GO,sensors_not_ready");
         return;
     }
 
+    // Robot must be in its configured starting pose, on its selected base.
+    // Re-sample the actual base colour; do not invent RGB thresholds.
+    imu_update();
+    pose_reset();
+    map_init();
+
+    if (!BENCH_TEST_MODE &&
+        !navigator_start(arena_get_config().pickupEnabled)) {
+        Serial.println("ERR,GO,navigator_start");
+        Serial2.println("ERR,GO,navigator_start");
+        return;
+    }
+
+    arena_begin_run();
+    run = true;
+
+    Serial.println("RUN,STARTED");
+    Serial2.println("RUN,STARTED");
+
+    Serial.println("CONFIG,LOCKED");
+    Serial2.println("CONFIG,LOCKED");
+}
+
+void loop()
+{
+    imu_update();
+    xy_exe();
+    tof_update();
+    ultrasound_exe();
+    pose_update();
+
+    // Lock before processing queued commands when GO is pressed.
+    checkGo();
+
+    RobotCommand command = serial_exe(BENCH_TEST_MODE && run);
+
+    if (BENCH_TEST_MODE && run) {
+        command_router_exe(command);
+    }
+
+    if (!run) {
+        map_update();
+
+        if (++mapPrintCounter >= 20) {
+            send_map_data();
+            mapPrintCounter = 0;
+        }
+
+        return;
+    }
+
+    limit_switch_exe();
+    colour_sensor_update();
 
     logic_exe();
     updateStateMachine();
-
 
     pickup_servo_exe();
     emag_exe();
@@ -138,24 +157,4 @@ void loop()
     smartservo_update();
     navigator_exe();
     motor_control_update();
-
-    // pose_print(Serial);
-
-    
-    }
-
-    else {
-    imu_update();
-
-    tof_update();
-    pose_update();
-    map_update();
-
-    if (i >= max_iter) {
-        send_map_data();
-        i = 0;
-    }
-    i ++;
-    }
 }
-

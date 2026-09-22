@@ -10,7 +10,8 @@
 #include "outputs/smart_servo.h"
 #include "map.h"
 #include "pose.h"
-
+#include "arena_config.h"
+#include "debug_print.h"
 
 
 static const int WEIGHT_DETECT_DISTANCE_MM = 550;
@@ -143,9 +144,6 @@ enum HomingState
 
 static HomingState homingState = HOMING_START;
 
-static const float HOME_X_MM = 300.0f;
-static const float HOME_Y_MM = 300.0f;
-
 static const int HOME_POWER = 430;
 static const int HOME_SLOW_POWER = 340;
 
@@ -163,6 +161,7 @@ static unsigned long homeDockStart = 0;
 
 static const int HOME_DOCK_POWER = 280;
 static const unsigned long HOME_DOCK_TIME_MS = 1800;
+
 
 
 static float wrap180(float angle)
@@ -183,10 +182,10 @@ static float wrap180(float angle)
 static float homeDistance()
 {
     float dx =
-        HOME_X_MM - pose_get_x_mm();
+        arena_get_home_x_mm() - pose_get_x_mm();
 
     float dy =
-        HOME_Y_MM - pose_get_y_mm();
+        arena_get_home_y_mm() - pose_get_y_mm();
 
     return sqrtf(
         dx * dx +
@@ -197,10 +196,10 @@ static float homeDistance()
 static float homeHeadingError()
 {
     float dx =
-        HOME_X_MM - pose_get_x_mm();
+        arena_get_home_x_mm() - pose_get_x_mm();
 
     float dy =
-        HOME_Y_MM - pose_get_y_mm();
+        arena_get_home_y_mm() - pose_get_y_mm();
 
     // Heading in the pose coordinate system
     float desiredPoseHeading =
@@ -304,48 +303,48 @@ static void detect_weights_exe()
 
     if (leftDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_LEFT;
-        Serial2.println("WEIGHT CANDIDATE LEFT");
+        debugNav.println("WEIGHT CANDIDATE LEFT");
 
-        Serial2.print("LT=");
-        Serial2.print(leftTop);
-        Serial2.print(" LB=");
-        Serial2.print(leftBottom);
+        debugNav.print("LT=");
+        debugNav.print(leftTop);
+        debugNav.print(" LB=");
+        debugNav.print(leftBottom);
 
-        Serial2.print(" RT=");
-        Serial2.print(rightTop);
-        Serial2.print(" RB=");
-        Serial2.println(rightBottom);
+        debugNav.print(" RT=");
+        debugNav.print(rightTop);
+        debugNav.print(" RB=");
+        debugNav.println(rightBottom);
 
-        Serial2.print("NAV OL=");
-        Serial2.print(tof_get_nav_outer_left());
-        Serial2.print(" IL=");
-        Serial2.print(tof_get_nav_inner_left());
-        Serial2.print(" IR=");
-        Serial2.print(tof_get_nav_inner_right());
-        Serial2.print(" OR=");
-        Serial2.println(tof_get_nav_outer_right());
+        debugNav.print("NAV OL=");
+        debugNav.print(tof_get_nav_outer_left());
+        debugNav.print(" IL=");
+        debugNav.print(tof_get_nav_inner_left());
+        debugNav.print(" IR=");
+        debugNav.print(tof_get_nav_inner_right());
+        debugNav.print(" OR=");
+        debugNav.println(tof_get_nav_outer_right());
     } else if (rightDetectionCount >= DETECTION_COUNT_REQUIRED) {
         weightTargetSide = TARGET_RIGHT;
-        Serial2.println("WEIGHT CANDIDATE RIGHT");
+        debugNav.println("WEIGHT CANDIDATE RIGHT");
 
-        Serial2.print("LT=");
-        Serial2.print(leftTop);
-        Serial2.print(" LB=");
-        Serial2.print(leftBottom);
+        debugNav.print("LT=");
+        debugNav.print(leftTop);
+        debugNav.print(" LB=");
+        debugNav.print(leftBottom);
 
-        Serial2.print(" RT=");
-        Serial2.print(rightTop);
-        Serial2.print(" RB=");
-        Serial2.println(rightBottom);
+        debugNav.print(" RT=");
+        debugNav.print(rightTop);
+        debugNav.print(" RB=");
+        debugNav.println(rightBottom);
 
-        Serial2.print("NAV OL=");
-        Serial2.print(tof_get_nav_outer_left());
-        Serial2.print(" IL=");
-        Serial2.print(tof_get_nav_inner_left());
-        Serial2.print(" IR=");
-        Serial2.print(tof_get_nav_inner_right());
-        Serial2.print(" OR=");
-        Serial2.println(tof_get_nav_outer_right());
+        debugNav.print("NAV OL=");
+        debugNav.print(tof_get_nav_outer_left());
+        debugNav.print(" IL=");
+        debugNav.print(tof_get_nav_inner_left());
+        debugNav.print(" IR=");
+        debugNav.print(tof_get_nav_inner_right());
+        debugNav.print(" OR=");
+        debugNav.println(tof_get_nav_outer_right());
     } else return;
 
     pursuitState = PURSUIT_START;
@@ -381,7 +380,7 @@ bool navigator_start(bool enablePickup)
 {
     if (getCollectState() != IDLE ||
         (getNavState() != ROAMING && getNavState() != STATIONARY)) {
-        // Serial2.println("Navigator: start from ROAMING or STATIONARY");
+        // debugNav.println("Navigator: start from ROAMING or STATIONARY");
         return false;
     }
 
@@ -398,7 +397,7 @@ bool navigator_start(bool enablePickup)
     roamCommandedPower = 0;
     weightTargetSide = TARGET_NONE;
 
-    // // Serial2.println(enablePickup ? "Navigator: roaming + pickup" : "Navigator: roaming only");
+    // // debugNav.println(enablePickup ? "Navigator: roaming + pickup" : "Navigator: roaming only");
     return true;
 }
 
@@ -415,7 +414,7 @@ static void roaming_start_turn(int leftClearance, int rightClearance)
     roamCommandedPower = 0;
     leftDetectionCount = rightDetectionCount = 0;
 
-    Serial2.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
+    debugNav.println(roamTurnDirection < 0 ? "Roaming: turn LEFT" : "Roaming: turn RIGHT");
 }
 
 static void roaming_drive(int power)
@@ -464,7 +463,7 @@ static void roaming_exe()
         if (millis() - navTofInvalidStarted > 500)
         {
             navigator_stop();
-            // Serial2.println("Roaming stopped: navigation ToF unavailable");
+            // debugNav.println("Roaming stopped: navigation ToF unavailable");
         }
 
         return;
@@ -486,7 +485,7 @@ static void roaming_exe()
     if (front <= ROAM_CRITICAL_MM) {
         // navigator_stop();
         motor_control_stop();
-        Serial2.println("Roaming stopped: obstacle critically close");
+        debugNav.println("Roaming stopped: obstacle critically close");
         return;
     }
 
@@ -555,19 +554,19 @@ static void pursuit_exe()
 
             if (weightTargetSide == TARGET_LEFT)
             {
-                Serial.println("Pursuit: opening arms and turning LEFT");
+                debugNav.println("Pursuit: opening arms and turning LEFT");
                 motor_control_turn_relative(LEFT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                Serial.println("Pursuit: opening arms and turning RIGHT");
+                debugNav.println("Pursuit: opening arms and turning RIGHT");
                 motor_control_turn_relative(RIGHT_WEIGHT_TURN_DEG);
                 pursuitState = PURSUIT_TURNING;
             }
             else
             {
-                Serial.println("Pursuit started without target side");
+                debugNav.println("Pursuit started without target side");
             }
 
             break;
@@ -578,7 +577,7 @@ static void pursuit_exe()
         {
             if (motor_control_is_turning()) return;
 
-            Serial.println("Pursuit: turn complete");
+            debugNav.println("Pursuit: turn complete");
 
             pursuitState = PURSUIT_ACQUIRING;
 
@@ -593,9 +592,9 @@ static void pursuit_exe()
             if (centreDistance > 0 &&
                 centreDistance <= WEIGHT_DETECT_DISTANCE_MM)
             {
-                Serial.print("Pursuit: centre acquired weight at ");
-                Serial.print(centreDistance);
-                Serial.println(" mm");
+                debugNav.print("Pursuit: centre acquired weight at ");
+                debugNav.print(centreDistance);
+                debugNav.println(" mm");
 
                 middleLostCount = 0;
 
@@ -627,7 +626,7 @@ static void pursuit_exe()
 
                 if (middleLostCount >= MIDDLE_LOST_COUNT_REQUIRED)
                 {
-                    Serial.println("Pursuit: centre lost weight");
+                    debugNav.println("Pursuit: centre lost weight");
 
                     middleLostCount = 0;
                     pursuitState = PURSUIT_ACQUIRING;
@@ -647,9 +646,9 @@ static void pursuit_exe()
             {
                 motor_control_stop();
 
-                Serial.print("Pursuit: weight reached entrance at ");
-                Serial.print(centreDistance);
-                Serial.println(" mm");
+                debugNav.print("Pursuit: weight reached entrance at ");
+                debugNav.print(centreDistance);
+                debugNav.println(" mm");
 
                 // Secure the weight before handing over to SORTING
                 smartservo_arms_close();
@@ -676,7 +675,7 @@ static void pursuit_exe()
 
                     weightApproachSlowed = true;
 
-                    Serial.println("Pursuit: slowing approach");
+                    debugNav.println("Pursuit: slowing approach");
                 }
 
                 return;
@@ -708,7 +707,7 @@ static void pursuit_exe()
                 return;
             }
 
-            Serial.println("Pursuit: weight secured");
+            debugNav.println("Pursuit: weight secured");
 
             pursuitState = PURSUIT_FINISHED;
 
@@ -739,7 +738,7 @@ static void reversing_exe()
     {
         case REVERSE_START:
         {
-            Serial.println("Reverse: backing away");
+            debugNav.println("Reverse: backing away");
 
             motor_control_reverse(REVERSE_POWER);
             reverseStartedAt = millis();
@@ -756,17 +755,17 @@ static void reversing_exe()
 
             if (weightTargetSide == TARGET_LEFT)
             {
-                Serial.println("Reverse: turning RIGHT");
+                debugNav.println("Reverse: turning RIGHT");
                 motor_control_turn_relative(-LEFT_WEIGHT_TURN_DEG);
             }
             else if (weightTargetSide == TARGET_RIGHT)
             {
-                Serial.println("Reverse: turning LEFT");
+                debugNav.println("Reverse: turning LEFT");
                 motor_control_turn_relative(-RIGHT_WEIGHT_TURN_DEG);
             }
             else
             {
-                Serial.println("Reverse: no target side, skipping turn");
+                debugNav.println("Reverse: no target side, skipping turn");
                 reversingState = REVERSE_FINISHED;
                 return;
             }
@@ -779,14 +778,14 @@ static void reversing_exe()
         {
             if (motor_control_is_turning()) return;
 
-            Serial.println("Reverse: turn complete");
+            debugNav.println("Reverse: turn complete");
             reversingState = REVERSE_FINISHED;
             break;
         }
 
         case REVERSE_FINISHED:
         {
-            Serial.println("Reverse: manoeuvre complete");
+            debugNav.println("Reverse: manoeuvre complete");
 
             weightTargetSide = TARGET_NONE;
             reversingState = REVERSE_START;
@@ -823,7 +822,7 @@ static void homing_exe()
             HOME_DOCK_POWER
         );
 
-        Serial2.println("Home detected - docking");
+        debugNav.println("Home detected - docking");
 
         return;
     }
@@ -835,10 +834,10 @@ static void homing_exe()
     {
         motor_control_stop();
 
-        Serial2.print(
+        debugNav.print(
             "HOMING: inside home arrival zone, distance = "
         );
-        Serial2.println(distanceHome);
+        debugNav.println(distanceHome);
 
         return;
     }
@@ -878,48 +877,48 @@ static void homing_exe()
         case HOMING_START:
         {
             motor_control_stop();
-            Serial2.println("----- HOMING START -----");
+            debugNav.println("----- HOMING START -----");
 
-            Serial2.print("Pose X = ");
-            Serial2.println(pose_get_x_mm());
+            debugNav.print("Pose X = ");
+            debugNav.println(pose_get_x_mm());
 
-            Serial2.print("Pose Y = ");
-            Serial2.println(pose_get_y_mm());
+            debugNav.print("Pose Y = ");
+            debugNav.println(pose_get_y_mm());
 
-            Serial2.print("Pose heading = ");
-            Serial2.println(pose_get_heading_deg());
+            debugNav.print("Pose heading = ");
+            debugNav.println(pose_get_heading_deg());
 
-            Serial2.print("IMU heading = ");
-            Serial2.println(imu_get_heading());
+            debugNav.print("IMU heading = ");
+            debugNav.println(imu_get_heading());
 
-            float dx = HOME_X_MM - pose_get_x_mm();
-            float dy = HOME_Y_MM - pose_get_y_mm();
+            float dx = arena_get_home_x_mm() - pose_get_x_mm();
+            float dy = arena_get_home_y_mm() - pose_get_y_mm();
 
-            Serial2.print("dx home = ");
-            Serial2.println(dx);
+            debugNav.print("dx home = ");
+            debugNav.println(dx);
 
-            Serial2.print("dy home = ");
-            Serial2.println(dy);
+            debugNav.print("dy home = ");
+            debugNav.println(dy);
 
             float desiredPoseHeading =
                 atan2f(dy, dx) * 180.0f / PI;
 
-            Serial2.print("Desired pose heading = ");
-            Serial2.println(desiredPoseHeading);
+            debugNav.print("Desired pose heading = ");
+            debugNav.println(desiredPoseHeading);
 
             float turn = homeHeadingError();
 
-            Serial2.print("Homing relative turn = ");
-            Serial2.println(turn);
-            Serial.print(
+            debugNav.print("Homing relative turn = ");
+            debugNav.println(turn);
+            debugNav.print(
                 "Homing turn toward base: "
             );
-            Serial.println(turn);
+            debugNav.println(turn);
 
             if (fabs(turn) > 5.0f)
             {   
-                Serial2.print("Commanding home turn = ");
-                Serial2.println(turn);
+                debugNav.print("Commanding home turn = ");
+                debugNav.println(turn);
                 motor_control_turn_relative(
                     turn
                 );
@@ -974,7 +973,7 @@ static void homing_exe()
                         HOME_AVOID_TURN_DEG;
                 }
 
-                Serial.println(
+                debugNav.println(
                     "Homing: obstacle avoidance"
                 );
 
@@ -1045,7 +1044,7 @@ static void homing_exe()
             if (millis() - homeDockStart >= HOME_DOCK_TIME_MS)
             {
                 motor_control_stop();
-                Serial2.println("Docking complete - turning 180");
+                debugNav.println("Docking complete - turning 180");
 
                 motor_control_turn_relative(180.0f);
 
@@ -1062,7 +1061,7 @@ static void homing_exe()
                 return;
             }
 
-            Serial2.println(
+            debugNav.println(
                 "Home 180 turn complete"
             );
 
@@ -1115,13 +1114,13 @@ void navigator_exe()
             homingState = HOMING_START;
             lastHomeHeadingUpdate = 0;
 
-            Serial2.println("Navigator: HOMING started");
+            debugNav.println("Navigator: HOMING started");
         }
     }
 
     if (!imu_is_online() || !isfinite(imu_get_heading())) {
         navigator_stop();
-        // Serial2.println("Navigator stopped: IMU unavailable");
+        // debugNav.println("Navigator stopped: IMU unavailable");
         return;
     }
 
@@ -1132,7 +1131,7 @@ void navigator_exe()
 
         turnWatchActive = false;
 
-        Serial2.println(
+        debugNav.println(
             "Navigation turn timeout - recovering"
         );
 
@@ -1163,7 +1162,7 @@ void navigator_exe()
         {
             motor_control_stop();
 
-            Serial.println("Pursuit: timeout");
+            debugNav.println("Pursuit: timeout");
 
             setStateFlag(&STATE_FLAGS.target_lost);
 
@@ -1186,7 +1185,7 @@ void navigator_exe()
 
         case HOMING:
             homing_exe();
-            // Serial2.println("Navigator stopped: homing not implemented");
+            // debugNav.println("Navigator stopped: homing not implemented");
             break;
 
         default:

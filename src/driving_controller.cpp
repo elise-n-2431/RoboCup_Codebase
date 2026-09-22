@@ -5,7 +5,7 @@
 
 #include "outputs/DC_motors.h"
 #include "inputs/imu.h"
-
+#include "debug_print.h"
 
 
 //to check if tunring or drving straight
@@ -133,23 +133,23 @@ void motor_control_turn_relative(float angle)
     controlMode = CONTROL_TURNING;
 
 
-    Serial.print("Current heading: ");
-    Serial.println(currentHeading);
+    debugMotor.print("Current heading: ");
+    debugMotor.println(currentHeading);
 
-    Serial.print("Relative turn: ");
-    Serial.println(angle);
+    debugMotor.print("Relative turn: ");
+    debugMotor.println(angle);
 
-    Serial.print("Target heading: ");
-    Serial.println(targetHeading);
+    debugMotor.print("Target heading: ");
+    debugMotor.println(targetHeading);
 
-    // Serial2.print("Current heading: ");
-    // Serial2.println(currentHeading);
+    // debugMotor.print("Current heading: ");
+    // debugMotor.println(currentHeading);
 
-    // Serial2.print("Relative turn: ");
-    // Serial2.println(angle);
+    // debugMotor.print("Relative turn: ");
+    // debugMotor.println(angle);
 
-    // Serial2.print("Target heading: ");
-    // Serial2.println(targetHeading);
+    // debugMotor.print("Target heading: ");
+    // debugMotor.println(targetHeading);
 }
 
 
@@ -186,17 +186,17 @@ void motor_control_drive_current_heading(int basePower)
     controlMode = CONTROL_DRIVE_HEADING;
 
 
-    Serial.print("Driving at heading: ");
-    Serial.println(targetHeading);
+    debugMotor.print("Driving at heading: ");
+    debugMotor.println(targetHeading);
 
-    Serial.print("Base power: ");
-    Serial.println(driveBasePower);
+    debugMotor.print("Base power: ");
+    debugMotor.println(driveBasePower);
 
-    // Serial2.print("Driving at heading: ");
-    // Serial2.println(targetHeading);
+    // debugMotor.print("Driving at heading: ");
+    // debugMotor.println(targetHeading);
 
-    // Serial2.print("Base power: ");
-    // Serial2.println(driveBasePower);
+    // debugMotor.print("Base power: ");
+    // debugMotor.println(driveBasePower);
 }
 
 void motor_control_drive_heading(float heading, int basePower)
@@ -244,8 +244,8 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
         {
             controlMode = CONTROL_IDLE;
 
-            Serial.print("Turn complete. Heading: ");
-            Serial.println(currentHeading);
+            debugMotor.print("Turn complete. Heading: ");
+            debugMotor.println(currentHeading);
         }
 
 
@@ -399,8 +399,8 @@ void motor_control_stop()
     controlMode = CONTROL_IDLE;
 
     DC_motors_setPower(0, 0);
-    Serial.println("Motor control stopped");
-    // Serial2.println("Motor control stopped");
+    debugMotor.println("Motor control stopped");
+    // debugMotor.println("Motor control stopped");
 }
 
 

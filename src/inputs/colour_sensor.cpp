@@ -4,18 +4,7 @@
 #include <Wire.h>
 #include <Adafruit_TCS34725.h>
 #include "state_machine.h"
-#include <iostream>
-
-struct Colour {
-    uint16_t red;
-    uint16_t green;
-    uint16_t blue;
-    uint16_t clear; 
-};
-
-Colour Home = {0, 0, 0, 0};
-Colour Current = {0, 0, 0, 0};
-#include "state_machine.h"
+#include "debug_print.h"
 #include <iostream>
 
 struct Colour {
@@ -41,44 +30,36 @@ static unsigned long lastPrintTime = 0;
 const unsigned long COLOUR_PRINT_PERIOD_MS = 250;
 
 int consecutive_hits = 0;
-int consecutive_hits = 0;
+
+
 
 bool colour_sensor_init()
 {
-    Serial.println(
-        "Starting colour sensor setup..."
-    );
+    Serial.println("Starting colour sensor setup...");
 
-
-    // Colour sensor is on second I2C bus
     Wire1.begin();
 
+    colourSensorOnline = colourSensor.begin(
+        TCS34725_ADDRESS,
+        &Wire1
+    );
 
-    colourSensorOnline =
-        colourSensor.begin(
-            TCS34725_ADDRESS,
-            &Wire1
-        );
-
-
-    if (!colourSensorOnline)
-    {
-        Serial.println(
-            "ERROR: TCS34725 colour sensor not detected"
-        );
-
+    if (!colourSensorOnline) {
+        Serial.println("ERROR: TCS34725 colour sensor not detected");
         return false;
     }
 
-
-    Serial.println(
-        "TCS34725 colour sensor detected"
-    );
-
+    Serial.println("TCS34725 colour sensor detected");
     delay(200);
 
-    for (int i = 0; i < 5; i++)
-    {
+    return colour_sensor_capture_home();
+}
+
+bool colour_sensor_capture_home()
+{
+    if (!colourSensorOnline) return false;
+
+    for (int i = 0; i < 5; i++) {
         colourSensor.getRawData(
             &Current.red,
             &Current.green,
@@ -90,7 +71,7 @@ bool colour_sensor_init()
     }
 
     Home = Current;
-
+    consecutive_hits = 0;
     return true;
 }
 
@@ -105,10 +86,6 @@ void colour_sensor_update()
 
 
     colourSensor.getRawData(
-        &Current.red,
-        &Current.green,
-        &Current.blue,
-        &Current.clear
         &Current.red,
         &Current.green,
         &Current.blue,
@@ -169,19 +146,19 @@ void colour_sensor_update()
         {
             lastColourDebug = millis();
 
-            Serial2.print("HOME STORED: G=");
-            Serial2.print(Home.green);
-            Serial2.print(" B=");
-            Serial2.print(Home.blue);
-            Serial2.print(" C=");
-            Serial2.println(Home.clear);
+            debugColour.print("HOME STORED: G=");
+            debugColour.print(Home.green);
+            debugColour.print(" B=");
+            debugColour.print(Home.blue);
+            debugColour.print(" C=");
+            debugColour.println(Home.clear);
 
-            Serial2.print("HOME CURRENT: G=");
-            Serial2.print(Current.green);
-            Serial2.print(" B=");
-            Serial2.print(Current.blue);
-            Serial2.print(" C=");
-            Serial2.println(Current.clear);
+            debugColour.print("HOME CURRENT: G=");
+            debugColour.print(Current.green);
+            debugColour.print(" B=");
+            debugColour.print(Current.blue);
+            debugColour.print(" C=");
+            debugColour.println(Current.clear);
         }
     }
 }
