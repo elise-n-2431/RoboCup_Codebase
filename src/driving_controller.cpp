@@ -303,60 +303,38 @@ static void updateDriveToPointControl(
     float currentY
 )
 {
-    // Serial.println("HERRRREEEE");
     float dx = targetPointX - currentX;
     float dy = targetPointY - currentY;
-    float distance = sqrtf(dx * dx + dy * dy);
 
-    // if (distance <= ARRIVAL_TOLERANCE_MM)
-    // {
-    //     DC_motors_setPower(0, 0);
-    //     controlMode = CONTROL_IDLE;
+    float desiredHeading =
+        atan2f(dy, dx) * 180.0f / PI;
 
-    //     // Serial.print("Arrived at frontier: ");
-    //     // Serial.print(targetPointX);
-    //     // Serial.print(",");
-    //     // Serial.println(targetPointY);
-
-    //     return;
-    // }
-
-    // Recompute desired heading EVERY cycle from current position --
-    // this is what lets it steer continuously instead of turn-then-drive.
-    float desiredHeading = atan2f(dy, dx) * 180.0f / PI;
     targetHeading = wrapHeading(desiredHeading);
 
-    currentError = headingError(targetHeading, currentHeading);
+    currentError =
+        headingError(targetHeading, currentHeading);
 
-    float correction = DRIVE_KP * currentError;
+    float correction =
+        DRIVE_KP * currentError;
+
     correction *= DRIVE_STEER_SIGN;
 
-    if (correction > MAX_DRIVE_CORRECTION)  correction = MAX_DRIVE_CORRECTION;
-    if (correction < -MAX_DRIVE_CORRECTION) correction = -MAX_DRIVE_CORRECTION;
+    if (correction > MAX_DRIVE_CORRECTION)
+        correction = MAX_DRIVE_CORRECTION;
 
-    // Taper base power as we approach the target, and also ease off
-    // when the heading error is large (avoid driving hard sideways
-    // through a near-90 deg required turn).
-    int power = driveBasePower;
+    if (correction < -MAX_DRIVE_CORRECTION)
+        correction = -MAX_DRIVE_CORRECTION;
 
-    // if (distance < SLOWDOWN_RADIUS_MM)
-    // {
-    //     float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
-    //     power = MIN_DRIVE_TO_POINT_POWER +
-    //             (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
-    // }
+    int leftPower =
+        driveBasePower + (int)correction;
 
-    float errorFactor = 1.0f - (fabsf(currentError) / 90.0f);
-    if (errorFactor < 0.5f) errorFactor = 0.5f; // never drop below 30% power
-    power = (int)(power * errorFactor);
+    int rightPower =
+        driveBasePower - (int)correction;
 
-    int leftPower  = power + (int)correction;
-    int rightPower = power - (int)correction;
-    // Serial.print(leftPower);
-    // Serial.print(" ");
-    // Serial.println(rightPower);
-
-    DC_motors_setPower(leftPower, rightPower);
+    DC_motors_setPower(
+        leftPower,
+        rightPower
+    );
 }
 
 static void updateDriveHeadingControl(
