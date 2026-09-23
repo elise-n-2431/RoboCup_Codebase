@@ -16,7 +16,8 @@ enum MotorControlMode
     CONTROL_IDLE,
     CONTROL_TURNING,
     CONTROL_DRIVE_HEADING,
-    CONTROL_DRIVE_TO_POINT
+    CONTROL_DRIVE_TO_POINT,
+    CONTROL_AVOID_TURN
 };
 
 //start in idle
@@ -43,6 +44,8 @@ const int MIN_DRIVE_TO_POINT_POWER = 200;
 
 // Consider target reached inside this angle
 const float ANGLE_TOLERANCE = 2.5;
+
+const float WALL_AVOID_TRIGGER_MM = 150.0f;
 
 
 // Must stay in tolerance this long before finishing
@@ -365,6 +368,51 @@ void updateDriveToPointControl(
     );
 }
 
+
+static void updateAvoidTurnControl(
+    float currentHeading,
+    float currentX,
+    float currentY,
+    unsigned long currentTime
+)
+{
+    float dx = targetPointX - currentX;
+    float dy = targetPointY - currentY;
+
+    float desiredHeading = atan2f(dy, dx) * 180.0f / PI;
+    targetHeading = wrapHeading(desiredHeading);
+
+    currentError = headingError(targetHeading, currentHeading);
+
+    // Close enough to the target bearing — resume normal drive-to-point
+    if (fabs(currentError) <= ANGLE_TOLERANCE)
+    {
+        DC_motors_setPower(0, 0);
+
+        if (toleranceStart == 0) toleranceStart = currentTime;
+
+        if (currentTime - toleranceStart >= SETTLE_TIME_MS)
+        {
+            controlMode = CONTROL_DRIVE_TO_POINT;
+            toleranceStart = 0;
+        }
+        return;
+    }
+
+    toleranceStart = 0;
+
+    float output = TURN_KP * currentError;
+
+    int turnPower = abs((int)output);
+    if (turnPower < MIN_TURN_POWER) turnPower = MIN_TURN_POWER;
+    if (turnPower > MAX_TURN_POWER) turnPower = MAX_TURN_POWER;
+
+    int direction = (output > 0) ? 1 : -1;
+    turnPower = turnPower * direction * TURN_SIGN;
+
+    DC_motors_setPower(turnPower, -turnPower);   // pivot in place, no forward bias
+}
+
 static void updateDriveHeadingControl(
     float currentHeading
 )
@@ -454,11 +502,21 @@ void motor_control_update()
 
     if (controlMode == CONTROL_DRIVE_TO_POINT)
     {
-        updateDriveToPointControl(
-            currentHeading,
-            currentX,
-            currentY
-        );
+        if (get_front_clearance_mm() < WALL_AVOID_TRIGGER_MM)
+        {
+            controlMode = CONTROL_AVOID_TURN;
+            toleranceStart = 0;
+        }
+        else
+        {
+            updateDriveToPointControl(currentHeading, currentX, currentY);
+            return;
+        }
+    }
+
+    if (controlMode == CONTROL_AVOID_TURN)
+    {
+        updateAvoidTurnControl(currentHeading, currentX, currentY, currentTime);
         return;
     }
 }
