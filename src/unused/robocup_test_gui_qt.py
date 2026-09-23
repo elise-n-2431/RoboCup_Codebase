@@ -1384,7 +1384,10 @@ class MainWindow(QMainWindow):
         if not self.editable() or self.pending:
             return
 
-        if self.blue_corner_combo.currentData() == self.green_corner_combo.currentData():
+        if (
+            self.blue_corner_combo.currentData()
+            == self.green_corner_combo.currentData()
+        ):
             QMessageBox.warning(
                 self,
                 "Setup",
@@ -1392,32 +1395,57 @@ class MainWindow(QMainWindow):
             )
             return
 
+
         colour = self.base_combo.currentText()
+
         corner = (
             self.blue_corner_combo.currentData()
             if colour == "blue"
             else self.green_corner_combo.currentData()
         )
+
         hx, hy = CORNERS[corner]
+
+
+        # ----------------------------------------------------------
+        # What we expect the Teensy configuration to report back.
+        # ----------------------------------------------------------
 
         self.pending = {
             "colour": colour,
             "home_x": float(hx),
             "home_y": float(hy),
-            "x": round(self.x_spin.value(), 2),
-            "y": round(self.y_spin.value(), 2),
-            "heading": round(self.heading_spin.value() % 360, 2),
+            "x": round(
+                self.x_spin.value(),
+                2
+            ),
+            "y": round(
+                self.y_spin.value(),
+                2
+            ),
+            "heading": round(
+                self.heading_spin.value() % 360,
+                2
+            ),
             "pickup": self.pickup_check.isChecked(),
         }
 
-        p = self.pending
-        commands = [
-            f"base {colour}",
-            f"home {corner}",
-            f"startpose {p['x']:.2f} {p['y']:.2f} {p['heading']:.2f}",
-            "auto" if p["pickup"] else "roam",
 
-            # Rebuild the firmware priority list from the GUI draft.
+        p = self.pending
+
+
+        # ----------------------------------------------------------
+        # Build command sequence.
+        #
+        # IMPORTANT:
+        # Send the priority targets FIRST.
+        #
+        # This means that by the time normal CONFIG replies can
+        # make the GUI say "Confirmed by Teensy", the target list
+        # has already been sent.
+        # ----------------------------------------------------------
+
+        commands = [
             "targets clear",
         ]
 
@@ -1428,31 +1456,117 @@ class MainWindow(QMainWindow):
             )
 
 
+        # Ask the Teensy to print the list back.
+        #
+        # We should visibly see:
+        #
+        # TARGETS,4
+        # TARGET,0,...
+        # TARGET,1,...
+        # etc.
+        commands.append(
+            "targets"
+        )
+
+
+        # Normal robot configuration comes afterwards.
         commands.extend(
             [
+                f"base {colour}",
+                f"home {corner}",
+                (
+                    f"startpose "
+                    f"{p['x']:.2f} "
+                    f"{p['y']:.2f} "
+                    f"{p['heading']:.2f}"
+                ),
+                "auto"
+                if p["pickup"]
+                else "roam",
+
+                # Final readbacks.
                 "targets",
                 "config",
             ]
         )
 
-        for command in commands:
-            if not self.send_command(command, visible=command != "config"):
-                self.pending = None
-                break
 
-        self.refresh_setup()
+        # ----------------------------------------------------------
+        # Send the commands ONE AT A TIME.
+        #
+        # Previously they were all written almost instantly.
+        # Give the Teensy/main loop time to consume and respond
+        # to each command.
+        # ----------------------------------------------------------
+
         token = self.pending
 
-        def timeout():
-            if token is not None and self.pending is token:
-                self.pending = None
-                self.refresh_setup()
-                self.setup_status.setText(
-                    "No matching readback. Read configuration before retrying."
-                )
-                self.append_log("[GUI] Setup confirmation timed out")
 
-        QTimer.singleShot(6000, timeout)
+        def send_next(index=0):
+            if index >= len(commands):
+                return
+
+
+            command = commands[index]
+
+
+            if not self.send_command(
+                command,
+                visible=(command != "config")
+            ):
+                self.pending = None
+
+                self.refresh_setup()
+
+                self.setup_status.setText(
+                    "Setup upload failed."
+                )
+
+                return
+
+
+            QTimer.singleShot(
+                150,
+                lambda: send_next(
+                    index + 1
+                )
+            )
+
+
+        send_next()
+
+
+        self.refresh_setup()
+
+
+        # ----------------------------------------------------------
+        # Existing readback timeout.
+        # ----------------------------------------------------------
+
+        def timeout():
+            if (
+                token is not None
+                and self.pending is token
+            ):
+                self.pending = None
+
+                self.refresh_setup()
+
+                self.setup_status.setText(
+                    "No matching readback. "
+                    "Read configuration before retrying."
+                )
+
+                self.append_log(
+                    "[GUI] Setup confirmation timed out"
+                )
+
+
+        # Give the paced upload a little more time than before.
+        QTimer.singleShot(
+            8000,
+            timeout
+        )
 
     # ------------------------------------------------------------- debug UI
     def debug_changes_allowed(self):
@@ -1538,9 +1652,9 @@ class MainWindow(QMainWindow):
         self.record_status.setStyleSheet("color: #cf222e;")
 
         self.send_command("config", visible=False)
+        self.send_command("targets", visible=False)
         self.send_command("debug status", visible=False)
         self.send_command("gains", visible=False)
-
     def stop_test(self):
         if not self.recorder.active:
             return

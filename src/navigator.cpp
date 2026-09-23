@@ -155,6 +155,7 @@ static unsigned long pitchExceededAt = 0;
 static unsigned long rampDetectionBlockedUntil = 0;
 
 static bool reverseTriggeredByPitch = false;
+static bool reverseTriggeredByCriticalObstacle = false;
 
 static const float RAMP_TRIGGER_DEG = 10.0f;
 
@@ -200,6 +201,8 @@ static unsigned long reverseStartedAt = 0;
 static const int ROAM_SIDE_BLOCK_MM = 180;
 static const int ROAM_SLOW_MM = 500;
 static const int ROAM_SLOW_POWER = 340;
+
+static const int SIDE_NAV_WALL_TOLERANCE_MM = 120;
 
 static const unsigned long NAV_TURN_TIMEOUT_MS = 8000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
@@ -422,27 +425,104 @@ static float homeHeadingError()
     );
 }
 
-static bool weightPairDetected(int top, int bottom, int navDistance, int &difference)
+static bool navSensorSupportsWall(
+    int objectDistance,
+    int outerLeft,
+    int innerLeft,
+    int innerRight,
+    int outerRight)
+{
+    int navDistances[4] =
+    {
+        outerLeft,
+        innerLeft,
+        innerRight,
+        outerRight
+    };
+
+
+    for (int i = 0; i < 4; i++)
+    {
+        int navDistance =
+            navDistances[i];
+
+
+        // -1 = invalid/stale
+        //  0 = no obstacle return
+        //
+        // Neither proves a wall.
+        if (navDistance <= 0)
+        {
+            continue;
+        }
+
+
+        if (abs(
+                navDistance -
+                objectDistance
+            ) <=
+            SIDE_NAV_WALL_TOLERANCE_MM)
+        {
+            return true;
+        }
+    }
+
+
+    return false;
+}
+
+static bool weightPairDetected(
+    int top,
+    int bottom,
+    int outerLeft,
+    int innerLeft,
+    int innerRight,
+    int outerRight,
+    int &difference)
 {
     difference = 0;
 
-    if (top < 0 || bottom <= 0 || bottom > WEIGHT_DETECT_DISTANCE_MM) return false;
-    if (top == 0) {
+
+    if (top < 0 ||
+        bottom <= 0 ||
+        bottom >
+            WEIGHT_DETECT_DISTANCE_MM)
+    {
+        return false;
+    }
+
+
+
+    if (top == 0)
+    {
         if (bottom > 330)
         {
             return false;
         }
 
-        // If the nav sensor sees something at approximately
-        // the same distance, it is probably a wall.
-        if (navDistance > 0 && abs(navDistance - bottom) < 100)
+
+        if (navSensorSupportsWall(
+                bottom,
+                outerLeft,
+                innerLeft,
+                innerRight,
+                outerRight))
         {
             return false;
         }
+
         return true;
     }
-    difference = top - bottom;
-    return difference >= WEIGHT_DIFFERENCE_MM;
+
+
+
+    difference =
+        top -
+        bottom;
+
+
+    return difference >=
+        WEIGHT_DIFFERENCE_MM;
 }
 
 
@@ -660,17 +740,17 @@ static void detect_weights_exe()
         tof_get_weight_middle();
 
 
-    int leftNav =
+    int outerLeft =
         tof_get_nav_outer_left();
-
-    int rightNav =
-        tof_get_nav_outer_right();
 
     int innerLeft =
         tof_get_nav_inner_left();
 
     int innerRight =
         tof_get_nav_inner_right();
+
+    int outerRight =
+        tof_get_nav_outer_right();
 
 
     // --------------------------------------------------------
@@ -760,10 +840,13 @@ static void detect_weights_exe()
             int difference = 0;
 
             if (weightPairDetected(
-                    leftTop,
-                    leftBottom,
-                    leftNav,
-                    difference))
+                leftTop,
+                leftBottom,
+                outerLeft,
+                innerLeft,
+                innerRight,
+                outerRight,
+                difference))
             {
                 leftDetectionCount++;
                 leftEvidenceAt = now;
@@ -801,12 +884,15 @@ static void detect_weights_exe()
         {
             int difference = 0;
 
-            if (weightPairDetected(
-                    rightTop,
-                    rightBottom,
-                    rightNav,
-                    difference))
-            {
+        if (weightPairDetected(
+                rightTop,
+                rightBottom,
+                outerLeft,
+                innerLeft,
+                innerRight,
+                outerRight,
+                difference))
+                    {
                 rightDetectionCount++;
                 rightEvidenceAt = now;
             }
@@ -1064,7 +1150,7 @@ bool navigator_start(bool enablePickup)
     pitchExceededAt = 0;
 
     reverseTriggeredByPitch = false;
-
+    reverseTriggeredByCriticalObstacle = false;
     rampDetectionBlockedUntil = 0;
 
 
@@ -1078,6 +1164,20 @@ bool navigator_start(bool enablePickup)
 
     navigatorEnabled = true;
     roamingPickupEnabled = enablePickup;
+    debugNav.print(
+    "Navigator: priority targets loaded = "
+    );
+    debugNav.println(
+        priority_targets_count()
+    );
+
+    priority_targets_print(
+        Serial
+    );
+
+    priority_targets_print(
+        Serial2
+    );
     lastNavState = getNavState();
 
     navigatorStateStarted = millis();
@@ -1493,13 +1593,30 @@ static void roaming_exe()
 
     // Keep your existing critical-distance protection.
     if (front <=
-        ROAM_CRITICAL_MM)
+    ROAM_CRITICAL_MM)
     {
         motor_control_stop();
 
-        debugNav.println(
-            "Roaming stopped: obstacle critically close"
+
+        debugNav.print(
+            "Roaming: obstacle critically close, front="
         );
+
+        debugNav.print(front);
+
+        debugNav.println(
+            " mm - triggering reverse escape"
+        );
+
+
+        reverseTriggeredByCriticalObstacle =
+            true;
+
+
+        setStateFlag(
+            &STATE_FLAGS.reverse_triggered
+        );
+
 
         return;
     }
@@ -2189,9 +2306,19 @@ static void reversing_exe()
             if (reverseTriggeredByPitch)
             {
                 debugNav.println(
-                    "Reverse: ramp/wall escape - backing away"
+                    "Reverse: ramp escape - backing away"
                 );
             }
+
+            else if (
+                reverseTriggeredByCriticalObstacle
+            )
+            {
+                debugNav.println(
+                    "Reverse: critical obstacle escape - backing away"
+                );
+            }
+
             else
             {
                 debugNav.println(
@@ -2201,7 +2328,9 @@ static void reversing_exe()
 
 
             motor_control_reverse(
-                REVERSE_POWER
+                reverseTriggeredByCriticalObstacle
+                    ? ROAM_REVERSE_POWER
+                    : REVERSE_POWER
             );
 
             reverseStartedAt =
@@ -2251,10 +2380,32 @@ static void reversing_exe()
                 }
             }
 
+
             // ------------------------------------------------
-            // Normal dummy/failed collection reverse:
-            // retain existing fixed reverse time.
+            // Critically-close roaming obstacle:
+            //
+            // We only need enough reverse to get the funnel /
+            // front sensors away from the obstacle.
             // ------------------------------------------------
+
+            else if (
+                reverseTriggeredByCriticalObstacle
+            )
+            {
+                if (elapsed <
+                    ROAM_REVERSE_TIME_MS)
+                {
+                    return;
+                }
+            }
+
+
+            // ------------------------------------------------
+            // Dummy / failed collection:
+            //
+            // Preserve the existing longer reverse.
+            // ------------------------------------------------
+
             else
             {
                 if (elapsed <
@@ -2262,6 +2413,7 @@ static void reversing_exe()
                 {
                     return;
                 }
+            }
             }
 
 
@@ -2364,9 +2516,25 @@ static void reversing_exe()
             );
 
 
+            float escapeTurnAngle =
+                reverseTriggeredByCriticalObstacle
+                    ? ROAM_RECOVERY_TURN_DEG
+                    : REVERSE_ESCAPE_TURN_DEG;
+
+
+            debugNav.print(
+                "Reverse: escape turn angle="
+            );
+
+            debugNav.println(
+                turnDirection *
+                escapeTurnAngle
+            );
+
+
             motor_control_turn_relative(
                 turnDirection *
-                REVERSE_ESCAPE_TURN_DEG
+                escapeTurnAngle
             );
 
 
@@ -2377,7 +2545,7 @@ static void reversing_exe()
         }
 
 
-        case REVERSE_TURNING:
+    case REVERSE_TURNING:
         {
             if (motor_control_is_turning())
             {
@@ -2427,6 +2595,7 @@ static void reversing_exe()
 
             reverseTriggeredByPitch =
                 false;
+            reverseTriggeredByCriticalObstacle = false;
 
             reversingState =
                 REVERSE_START;
