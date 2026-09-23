@@ -7,7 +7,7 @@
 #include "inputs/imu.h"
 #include "map.h"
 #include "pose.h"
-
+#include "state_machine.h"
 
 
 //to check if tunring or drving straight
@@ -48,7 +48,6 @@ const float ANGLE_TOLERANCE = 2.5;
 const float WALL_AVOID_TRIGGER_MM = 150.0f;
 
 
-// Must stay in tolerance this long before finishing
 const unsigned long SETTLE_TIME_MS = 100;
 
 
@@ -140,7 +139,6 @@ void motor_control_turn_relative(float angle)
 
     previousTime = millis();
     toleranceStart = 0;
-
     controlMode = CONTROL_TURNING;
 
 
@@ -369,49 +367,105 @@ void updateDriveToPointControl(
 }
 
 
-static void updateAvoidTurnControl(
-    float currentHeading,
-    float currentX,
-    float currentY,
-    unsigned long currentTime
-)
+const int AVOID_TURN_STEP_DEG      = 90; 
+const int WALL_AVOID_CLEAR_MM      = 250;  
+const int AVOID_MAX_ROTATION_DEG   = 350; 
+
+static float avoidStartHeading   = 0.0f;
+static float avoidTargetHeading  = 0.0f;
+static float avoidTotalRotation  = 0.0f;
+static bool  avoidInitialized    = false;
+int iteration = 0;
+int max_iterations = 10;
+
+// Call this once, right when you switch INTO CONTROL_AVOID_TURN
+// (i.e. in motor_control_update(), alongside setting controlMode)
+static void initAvoidTurn(float currentHeading)
 {
-    float dx = targetPointX - currentX;
-    float dy = targetPointY - currentY;
+    avoidStartHeading  = currentHeading;
+    avoidTargetHeading = wrapHeading(currentHeading + AVOID_TURN_STEP_DEG);
+    avoidTotalRotation = 0.0f;
+    avoidInitialized   = true;
+    toleranceStart      = 0;
+    iteration = 0;
+}
 
-    float desiredHeading = atan2f(dy, dx) * 180.0f / PI;
-    targetHeading = wrapHeading(desiredHeading);
+static void updateAvoidTurnControl(float currentHeading, unsigned long currentTime) {
+    if (!avoidInitialized) {
+        initAvoidTurn(currentHeading);
+    }
+    // Serial.println("just checking");
 
-    currentError = headingError(targetHeading, currentHeading);
-
-    // Close enough to the target bearing — resume normal drive-to-point
-    if (fabs(currentError) <= ANGLE_TOLERANCE)
+    // Have avoided the wall, yay!
+    if (get_front_clearance_mm() > WALL_AVOID_CLEAR_MM)
     {
+        // Serial.println("SOMEHOW HERE??!");
         DC_motors_setPower(0, 0);
-
-        if (toleranceStart == 0) toleranceStart = currentTime;
-
-        if (currentTime - toleranceStart >= SETTLE_TIME_MS)
-        {
-            controlMode = CONTROL_DRIVE_TO_POINT;
-            toleranceStart = 0;
-        }
+        avoidInitialized = false;
+        controlMode = CONTROL_DRIVE_TO_POINT;
+        toleranceStart = 0;
         return;
     }
 
-    toleranceStart = 0;
+    // if (headingError(avoidTargetHeading, currentHeading) > ANGLE_TOLERANCE) {
+    //     Serial.println("THIS ONE!");
+    // }
 
-    float output = TURN_KP * currentError;
 
-    int turnPower = abs((int)output);
-    if (turnPower < MIN_TURN_POWER) turnPower = MIN_TURN_POWER;
-    if (turnPower > MAX_TURN_POWER) turnPower = MAX_TURN_POWER;
+    if (iteration < max_iterations) {
+        
+        toleranceStart = 0;
 
-    int direction = (output > 0) ? 1 : -1;
-    turnPower = turnPower * direction * TURN_SIGN;
+        float output =
+            TURN_KP * currentError;
 
-    DC_motors_setPower(turnPower, -turnPower);   // pivot in place, no forward bias
+        int turnPower =
+            abs((int)output);
+
+        if (turnPower < MIN_TURN_POWER) {
+            turnPower = MIN_TURN_POWER;
+        }
+
+        if (turnPower > MAX_TURN_POWER) {
+            turnPower = MAX_TURN_POWER;
+        }
+
+        int direction;
+
+        if (output > 0) {
+            direction = 1;
+        }
+        else {
+            direction = -1;
+        }
+
+
+        turnPower =
+            turnPower
+            * direction
+            * TURN_SIGN;
+
+
+        DC_motors_setPower(
+            turnPower,
+            -turnPower
+        );
+
+        iteration += 1;
+        // Serial.println(iteration);
+
+        
+    }
+    else {
+        setStateFlag(&STATE_FLAGS.reverse_triggered);
+        controlMode = CONTROL_IDLE;
+    }
+
 }
+
+
+
+
 
 static void updateDriveHeadingControl(
     float currentHeading
@@ -505,7 +559,7 @@ void motor_control_update()
         if (get_front_clearance_mm() < WALL_AVOID_TRIGGER_MM)
         {
             controlMode = CONTROL_AVOID_TURN;
-            toleranceStart = 0;
+            initAvoidTurn(currentHeading);
         }
         else
         {
@@ -516,7 +570,7 @@ void motor_control_update()
 
     if (controlMode == CONTROL_AVOID_TURN)
     {
-        updateAvoidTurnControl(currentHeading, currentX, currentY, currentTime);
+        updateAvoidTurnControl(currentHeading, currentTime);
         return;
     }
 }
@@ -555,6 +609,7 @@ void motor_control_set_slowdown_radius(float mm)
 
 void motor_control_stop()
 {
+    // Serial.println("stopped");
     controlMode = CONTROL_IDLE;
 
     DC_motors_setPower(0, 0);

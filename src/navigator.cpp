@@ -448,7 +448,7 @@ static void roaming_exe()
 
     if (front <= ROAM_CRITICAL_MM) {
         // navigator_stop();
-        motor_control_stop();
+        // motor_control_stop();
         // Serial2.println("Roaming stopped: obstacle critically close");
         return;
     }
