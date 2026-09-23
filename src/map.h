@@ -18,5 +18,7 @@ void change_print_it();
 void send_map_data();
 void print_target();
 bool cell_too_close_to_obstacle(int, int);
+void find_frontier();
+void calc_frontier_target();
 
 #endif

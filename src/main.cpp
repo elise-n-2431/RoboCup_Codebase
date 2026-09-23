@@ -81,10 +81,10 @@ int max_iter = 10; // was 20
 
 void loop()
 {
-    if (digitalRead(GO_PIN) == HIGH)  {
-        run = true;
-        setStateFlag(&STATE_FLAGS.not_target_weight_onboard);
-    }
+    // if (digitalRead(GO_PIN) == HIGH)  {
+    run = true;
+        // setStateFlag(&STATE_FLAGS.not_target_weight_onboard);
+    // }
 
     imu_update();
 
@@ -99,6 +99,9 @@ void loop()
         // tof_print_readings();
         // print_state();
         i = 0;
+        calc_frontier_target();
+
+
         // print_motor_state();
         // print_DC_power();
         // print_target();

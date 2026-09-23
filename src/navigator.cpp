@@ -768,6 +768,10 @@ void frontier_targetting()
 {
     float fx = get_frontier_world_x_mm();
     float fy = get_frontier_world_y_mm();
+    // Serial.print(" FX ");
+    // Serial.print(fx);
+    // Serial.print(" FY ");
+    // Serial.println(fy);
 
     // if (fy!=0 && fx!=0)   // note: `target` lives in map.cpp; expose a getter,
     // {                     // e.g. bool get_frontier_valid(), rather than

@@ -25,9 +25,9 @@ static MotorControlMode controlMode = CONTROL_IDLE;
 // To be tuned
 static float TURN_KP = 22.0;
 
-static float DRIVE_KP = 10.0;
+static float DRIVE_KP = 6.0; // was 10
 
-const int MAX_DRIVE_CORRECTION = 100;
+const int MAX_DRIVE_CORRECTION = 220;
 
 static int driveBasePower = 300;
 
@@ -297,7 +297,7 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
 
 
 
-static void updateDriveToPointControl(
+void updateDriveToPointControl(
     float currentHeading,
     float currentX,
     float currentY
@@ -306,8 +306,16 @@ static void updateDriveToPointControl(
     float dx = targetPointX - currentX;
     float dy = targetPointY - currentY;
 
+    float distance = sqrtf(dx * dx + dy * dy);
+
     float desiredHeading =
         atan2f(dy, dx) * 180.0f / PI;
+    
+    // Serial.print("CURRENT ");
+    // Serial.print(currentHeading);
+    // Serial.print(" DESIRED ");
+    // Serial.print(desiredHeading);
+
 
     targetHeading = wrapHeading(desiredHeading);
 
@@ -325,11 +333,31 @@ static void updateDriveToPointControl(
     if (correction < -MAX_DRIVE_CORRECTION)
         correction = -MAX_DRIVE_CORRECTION;
 
-    int leftPower =
-        driveBasePower + (int)correction;
 
-    int rightPower =
-        driveBasePower - (int)correction;
+    int power = driveBasePower;
+
+    if (distance < SLOWDOWN_RADIUS_MM)
+    {
+        float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
+        power = MIN_DRIVE_TO_POINT_POWER +
+                (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
+    }
+
+    float errorFactor = 1.0f - (fabsf(currentError) / 90.0f);
+    if (errorFactor < 0.2f) errorFactor = 0.2f; // never drop below 30% power
+    power = (int)(power * errorFactor);
+
+    int leftPower  = power + (int)correction;
+    int rightPower = power - (int)correction;
+
+    leftPower  = constrain(leftPower,  0, MAX_TURN_POWER);   // or whatever your true PWM ceiling is
+    rightPower = constrain(rightPower, 0, MAX_TURN_POWER);
+    
+    // Serial.print(" LEFT: ");
+    // Serial.print(leftPower);
+    // Serial.print(" RIGHT: ");
+    // Serial.println(rightPower);
+
 
     DC_motors_setPower(
         leftPower,

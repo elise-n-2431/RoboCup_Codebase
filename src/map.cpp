@@ -401,15 +401,27 @@ FrontierCentre get_frontier_centre(int group_index)
     return centre;
 }
 
+const float FRONTIER_SWITCH_MARGIN = 15.0f;  // tune: new candidate must beat
+                                               // current target by this much
 
 void calc_frontier_target() {
     FrontierTarget best;
     best.valid = false;
     best.cost = INFINITY;
 
+    float current_target_cost = INFINITY;
+    int current_target_group = -1;
+
     for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {
         int size = FRONTIER_GROUPS_X[i].size();
         FrontierCentre centre = get_frontier_centre(i);
+
+        // Is this group roughly the same physical target we're already
+        // driving to? Compare centres, not group index (index isn't stable).
+
+        float cdx = (centre.x - target.centre.x) * CELL_SIZE_MM;
+        float cdy = (centre.y - target.centre.y) * CELL_SIZE_MM;
+        bool isCurrentTarget = target.valid && (cdx*cdx + cdy*cdy) < (150*150);
 
         float dx = centre.x - self_x;
         float dy = centre.y - self_y;
@@ -418,11 +430,12 @@ void calc_frontier_target() {
         float xy_orientation = atan2f(dy, dx);
         float heading = pose_get_heading_deg() * PI / 180.0f;
         float relative_orientation = xy_orientation - heading;
-
         while (relative_orientation > PI)  relative_orientation -= 2.0f * PI;
         while (relative_orientation < -PI) relative_orientation += 2.0f * PI;
 
         float frontier_cost = cost(sqrd_distance, size, relative_orientation);
+
+        if (isCurrentTarget) current_target_cost = frontier_cost;
 
         if (frontier_cost < best.cost) {
             best.valid = true;
@@ -431,6 +444,16 @@ void calc_frontier_target() {
             best.cost = frontier_cost;
         }
     }
+
+    // Only switch away from the current target if the new best is
+    // meaningfully better -- not just marginally, which is what
+    // causes flicker between near-tied candidates.
+    if (target.valid && current_target_cost < INFINITY &&
+        best.cost > current_target_cost - FRONTIER_SWITCH_MARGIN)
+    {
+        return; // keep current target, don't overwrite it
+    }
+
     target = best;
 }
 
@@ -931,7 +954,8 @@ void map_update()
     // map_correction();
     arena_mirroring();
     find_frontier();
-    calc_frontier_target();
+    // calc_frontier_target();
+
 
     // NavState nav = getNavState();
     // if (nav == HOMING) {
