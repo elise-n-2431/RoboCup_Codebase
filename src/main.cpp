@@ -97,7 +97,10 @@ static void checkGo()
 
     // Competition assumption:
     // robot physically starts inside its configured home base.
-    arena_sync_start_to_home();
+    if (!BENCH_TEST_MODE)
+    {
+        arena_sync_start_to_home();
+    }
 
     pose_reset();
     map_init();

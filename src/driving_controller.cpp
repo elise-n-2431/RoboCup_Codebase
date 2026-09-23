@@ -20,7 +20,7 @@ enum MotorControlMode
 static MotorControlMode controlMode = CONTROL_IDLE;
 
 // To be tuned
-static float TURN_KP = 12.0;
+static float TURN_KP = 16.0;
 
 static float DRIVE_KP = 10.0;
 

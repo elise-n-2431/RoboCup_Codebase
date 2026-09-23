@@ -302,7 +302,7 @@ static const unsigned long HOME_HEADING_UPDATE_MS = 250;
 static unsigned long homeDockStart = 0;
 
 static const int HOME_DOCK_POWER = 280;
-static const unsigned long HOME_DOCK_TIME_MS = 1800;
+static const unsigned long HOME_DOCK_TIME_MS = 1000;
 
 
 
@@ -1012,12 +1012,30 @@ static void detect_weights_exe()
 
         else
         {
-            // UNKNOWN IS NOT A WEIGHT.
-            //
-            // This is the critical difference from the previous
-            // implementation. Require two consecutive samples
-            // whose geometry actually supports a weight.
-            middleDetectionCount = 0;
+
+            if (middle == 0 ||
+                middle > WEIGHT_DETECT_DISTANCE_MM)
+            {
+                // Middle sensor itself says the object is gone.
+                middleDetectionCount = 0;
+            }
+
+            else if (middle < 0 ||
+                    innerLeft < 0 ||
+                    innerRight < 0)
+            {
+                // Unusable sensor data.
+                //
+                // Do not increment evidence,
+                // but do not destroy valid previous evidence either.
+            }
+
+            else
+            {
+                // Sensors are valid, but the geometry does not
+                // currently support a weight.
+                middleDetectionCount = 0;
+            }
         }
     }
 
@@ -2294,14 +2312,18 @@ static int reverseSideClearance(
     );
 }
 
-
 static void reversing_exe()
 {
     switch (reversingState)
     {
+        // ====================================================
+        // START REVERSING
+        // ====================================================
+
         case REVERSE_START:
         {
             motor_control_stop();
+
 
             if (reverseTriggeredByPitch)
             {
@@ -2327,14 +2349,25 @@ static void reversing_exe()
             }
 
 
-            motor_control_reverse(
+            // Critical obstacle recovery uses the roaming
+            // reverse power.
+            //
+            // Dummy / failed collection and ramp recovery
+            // retain the normal reverse power.
+            int reversePower =
                 reverseTriggeredByCriticalObstacle
                     ? ROAM_REVERSE_POWER
-                    : REVERSE_POWER
+                    : REVERSE_POWER;
+
+
+            motor_control_reverse(
+                reversePower
             );
+
 
             reverseStartedAt =
                 millis();
+
 
             reversingState =
                 REVERSE_BACKING;
@@ -2342,6 +2375,10 @@ static void reversing_exe()
             break;
         }
 
+
+        // ====================================================
+        // BACK AWAY
+        // ====================================================
 
         case REVERSE_BACKING:
         {
@@ -2351,10 +2388,12 @@ static void reversing_exe()
 
 
             // ------------------------------------------------
-            // Ramp/wall escape:
-            // keep reversing until reasonably flat again,
-            // with minimum and maximum limits.
+            // RAMP ESCAPE
+            //
+            // Reverse at least the minimum time, then keep
+            // reversing while pitch remains abnormal.
             // ------------------------------------------------
+
             if (reverseTriggeredByPitch)
             {
                 float pitchError =
@@ -2371,10 +2410,13 @@ static void reversing_exe()
                 }
 
 
-                if (pitchError >
-                        RAMP_RELEASE_DEG &&
+                if (
+                    pitchError >
+                        RAMP_RELEASE_DEG
+                    &&
                     elapsed <
-                        RAMP_MAX_REVERSE_MS)
+                        RAMP_MAX_REVERSE_MS
+                )
                 {
                     return;
                 }
@@ -2382,18 +2424,20 @@ static void reversing_exe()
 
 
             // ------------------------------------------------
-            // Critically-close roaming obstacle:
+            // CRITICAL OBSTACLE ESCAPE
             //
-            // We only need enough reverse to get the funnel /
-            // front sensors away from the obstacle.
+            // We only need a short reverse to physically
+            // separate from the wall before turning away.
             // ------------------------------------------------
 
             else if (
                 reverseTriggeredByCriticalObstacle
             )
             {
-                if (elapsed <
-                    ROAM_REVERSE_TIME_MS)
+                if (
+                    elapsed <
+                    ROAM_REVERSE_TIME_MS
+                )
                 {
                     return;
                 }
@@ -2401,34 +2445,36 @@ static void reversing_exe()
 
 
             // ------------------------------------------------
-            // Dummy / failed collection:
+            // NORMAL REVERSE
             //
-            // Preserve the existing longer reverse.
+            // Dummy / failed collection behaviour.
             // ------------------------------------------------
 
             else
             {
-                if (elapsed <
-                    REVERSE_TIME_MS)
+                if (
+                    elapsed <
+                    REVERSE_TIME_MS
+                )
                 {
                     return;
                 }
-            }
             }
 
 
             motor_control_stop();
 
 
-            // ------------------------------------------------
-            // Find which side appears clearer AFTER backing up.
-            // ------------------------------------------------
+            // =================================================
+            // FIND CLEARER SIDE
+            // =================================================
 
             int leftClearance =
                 reverseSideClearance(
                     tof_get_nav_outer_left(),
                     tof_get_nav_inner_left()
                 );
+
 
             int rightClearance =
                 reverseSideClearance(
@@ -2440,14 +2486,20 @@ static void reversing_exe()
             int turnDirection = 0;
 
 
-            // Existing robot sign convention:
-            // -1 = left turn
-            // +1 = right turn
-            if (leftClearance >= 0 &&
-                rightClearance >= 0)
+            // Robot sign convention:
+            //
+            // -1 = LEFT
+            // +1 = RIGHT
+
+            if (
+                leftClearance >= 0 &&
+                rightClearance >= 0
+            )
             {
-                if (leftClearance >
-                    rightClearance)
+                if (
+                    leftClearance >
+                    rightClearance
+                )
                 {
                     turnDirection = -1;
 
@@ -2455,6 +2507,7 @@ static void reversing_exe()
                         "Reverse: escape turn LEFT"
                     );
                 }
+
                 else
                 {
                     turnDirection = 1;
@@ -2465,7 +2518,9 @@ static void reversing_exe()
                 }
             }
 
-            else if (leftClearance >= 0)
+            else if (
+                leftClearance >= 0
+            )
             {
                 turnDirection = -1;
 
@@ -2474,7 +2529,9 @@ static void reversing_exe()
                 );
             }
 
-            else if (rightClearance >= 0)
+            else if (
+                rightClearance >= 0
+            )
             {
                 turnDirection = 1;
 
@@ -2485,15 +2542,19 @@ static void reversing_exe()
 
             else
             {
-                // Neither side gave useful data.
+                // Neither side produced useful range data.
+                //
                 // Alternate fallback direction so repeated
-                // escapes cannot always choose the same side.
+                // failures do not always choose the same side.
                 static int fallbackDirection = 1;
+
 
                 turnDirection =
                     fallbackDirection;
 
+
                 fallbackDirection *= -1;
+
 
                 debugNav.println(
                     "Reverse: clearance unknown - fallback turn"
@@ -2504,6 +2565,7 @@ static void reversing_exe()
             debugNav.print(
                 "Reverse: left clearance="
             );
+
             debugNav.print(
                 leftClearance
             );
@@ -2511,10 +2573,21 @@ static void reversing_exe()
             debugNav.print(
                 " right clearance="
             );
+
             debugNav.println(
                 rightClearance
             );
 
+
+            // =================================================
+            // CHOOSE TURN ANGLE
+            //
+            // Critically close wall:
+            //     stronger 90 degree recovery.
+            //
+            // Ramp / dummy:
+            //     existing 60 degree escape.
+            // =================================================
 
             float escapeTurnAngle =
                 reverseTriggeredByCriticalObstacle
@@ -2545,15 +2618,22 @@ static void reversing_exe()
         }
 
 
-    case REVERSE_TURNING:
+        // ====================================================
+        // WAIT FOR ESCAPE TURN
+        // ====================================================
+
+        case REVERSE_TURNING:
         {
-            if (motor_control_is_turning())
+            if (
+                motor_control_is_turning()
+            )
             {
                 return;
             }
 
 
             motor_control_stop();
+
 
             debugNav.println(
                 "Reverse: escape turn complete"
@@ -2567,6 +2647,10 @@ static void reversing_exe()
         }
 
 
+        // ====================================================
+        // CLEAN UP
+        // ====================================================
+
         case REVERSE_FINISHED:
         {
             debugNav.println(
@@ -2574,28 +2658,35 @@ static void reversing_exe()
             );
 
 
-            // Don't immediately detect the exact same rejected
-            // dummy again while leaving it.
+            // Prevent immediately detecting the same object
+            // again after reversing away.
             weightDetectionBlockedUntil =
                 millis() +
                 WEIGHT_RETRIGGER_BLOCK_MS;
 
 
-            // Don't immediately retrigger pitch either.
+            // Prevent an immediate pitch retrigger too.
             rampDetectionBlockedUntil =
-                millis() + 1500;
+                millis() +
+                1500;
 
 
             leftDetectionCount = 0;
             rightDetectionCount = 0;
             middleDetectionCount = 0;
 
+
             weightTargetSide =
                 TARGET_NONE;
 
+
             reverseTriggeredByPitch =
                 false;
-            reverseTriggeredByCriticalObstacle = false;
+
+
+            reverseTriggeredByCriticalObstacle =
+                false;
+
 
             reversingState =
                 REVERSE_START;
@@ -2604,6 +2695,7 @@ static void reversing_exe()
             setStateFlag(
                 &STATE_FLAGS.reverse_complete
             );
+
 
             break;
         }
@@ -2645,18 +2737,6 @@ static void homing_exe()
      float distanceHome = homeDistance();
 
     // We are close enough that steering toward the exact (300,300)
-    // coordinate is no longer useful.
-    if (distanceHome <= 50 && homingState != HOMING_DOCKING && homingState != HOMING_DOCK_TURNING)
-    {
-        motor_control_stop();
-
-        debugNav.print(
-            "HOMING: inside home arrival zone, distance = "
-        );
-        debugNav.println(distanceHome);
-
-        return;
-    }
 
     int outerLeft =
         clearanceValue(
