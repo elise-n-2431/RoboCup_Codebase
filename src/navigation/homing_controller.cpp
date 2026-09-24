@@ -164,7 +164,7 @@ void homing_update()
             {
                 debugNav.print("Commanding home turn = ");
                 debugNav.println(turn);
-                motor_control_turn_relative(turn);
+                motor_control_turn_relative(-turn);
                 homingState = HOMING_TURNING;
             }
             else
@@ -221,7 +221,7 @@ void homing_update()
 
                 // homeHeadingError() is in pose coordinates.
                 // Convert that relative correction to an absolute IMU heading.
-                float targetHeading = imu_get_heading() + relativeError;
+                float targetHeading = imu_get_heading() - relativeError;
 
                 int power =
                     homeDistance() < HOME_SLOW_DISTANCE_MM

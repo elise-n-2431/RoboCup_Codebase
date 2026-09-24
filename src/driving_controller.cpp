@@ -32,7 +32,7 @@ static MotorControlMode controlMode = CONTROL_IDLE;
 // ============================================================
 
 static float TURN_KP = 16.0f;
-static float DRIVE_KP = 10.0f;
+static float DRIVE_KP = 5.0f;
 
 
 static const int MAX_DRIVE_CORRECTION = 100;
@@ -48,6 +48,7 @@ static const unsigned long SETTLE_TIME_MS = 100;
 
 static const int TURN_SIGN = 1;
 static const int DRIVE_STEER_SIGN = 1;
+static const int POINT_STEER_SIGN = -1;
 
 static const unsigned long CONTROL_PERIOD_MS = 20;
 
@@ -424,9 +425,7 @@ static void updateDriveHeadingControl(float currentHeading)
     );
 
     float correction =
-        DRIVE_KP *
-        currentError *
-        DRIVE_STEER_SIGN;
+        DRIVE_KP * currentError * POINT_STEER_SIGN;
 
     correction = constrain(
         correction,

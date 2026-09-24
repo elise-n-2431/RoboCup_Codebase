@@ -930,14 +930,40 @@ void map_correction()
     g_correction_sum_y = 0;
     g_correction_count = 0;
 
-    for (int i = -3; i < 4; i += 2) {
-        try_wall_correction(dist_o_l, -40.0f + i);
-        try_wall_correction(dist_i_l, -15.0f + i);
-        try_wall_correction(dist_i_r,  15.0f + i);
-        try_wall_correction(dist_o_r,  40.0f + i);
+    for (int i = -3; i < 4; i += 2)
+    {
+        try_wall_correction(
+            dist_o_l,
+            40.0f + i
+        );
+
+        try_wall_correction(
+            dist_i_l,
+            15.0f + i
+        );
+
+        try_wall_correction(
+            dist_i_r,
+            -15.0f + i
+        );
+
+        try_wall_correction(
+            dist_o_r,
+            -40.0f + i
+        );
     }
-    try_wall_correction(ultrasound_get_left_mm(),  -90.0f, 0);
-    try_wall_correction(ultrasound_get_right_mm(),  90.0f, 0);
+
+    try_wall_correction(
+        ultrasound_get_left_mm(),
+        90.0f,
+        0
+    );
+
+    try_wall_correction(
+        ultrasound_get_right_mm(),
+        -90.0f,
+        0
+    );
 
     if (g_correction_count > 0) {
         float dx = (g_correction_sum_x / g_correction_count) * WALL_CORRECTION_GAIN;
@@ -948,32 +974,73 @@ void map_correction()
 
 
 
+
 void interpret_tof()
 {
-    for (int i = -3; i < 4; i += 2) {
-        dist_o_l = tof_get_distance(NAV_OUTER_LEFT);
-        update_obstacle_map(dist_o_l, -40.0 + i);
-        dist_i_l = tof_get_distance(NAV_INNER_LEFT);
-        update_obstacle_map(dist_i_l,  -15.0 + i);
-        dist_i_r = tof_get_distance(NAV_INNER_RIGHT);
-        update_obstacle_map(dist_i_r, 15.0 + i);
-        dist_o_r = tof_get_distance(NAV_OUTER_RIGHT);
-        update_obstacle_map(dist_o_r, 40.0 + i);
-    }
+    for (int i = -3; i < 4; i += 2)
+    {
+        dist_o_l =
+            tof_get_distance(
+                NAV_OUTER_LEFT
+            );
 
+        update_obstacle_map(
+            dist_o_l,
+            40.0f + i
+        );
+
+        dist_i_l =
+            tof_get_distance(
+                NAV_INNER_LEFT
+            );
+
+        update_obstacle_map(
+            dist_i_l,
+            15.0f + i
+        );
+
+        dist_i_r =
+            tof_get_distance(
+                NAV_INNER_RIGHT
+            );
+
+        update_obstacle_map(
+            dist_i_r,
+            -15.0f + i
+        );
+
+        dist_o_r =
+            tof_get_distance(
+                NAV_OUTER_RIGHT
+            );
+
+        update_obstacle_map(
+            dist_o_r,
+            -40.0f + i
+        );
+    }
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
     // update_weight_map(tof_get_distance(WEIGHT_RIGHT_BOTTOM), 15.0, tof_get_distance(WEIGHT_RIGHT_TOP));
     // update_weight_map(tof_get_distance(WEIGHT_MIDDLE), 0.0);
 }
 
-void interpret_ultrasonic() { // multiple to get wide cone shape
-    for (int i = 80; i < 101; i += 2) {
-        update_obstacle_map(ultrasound_get_left_mm(), -i, 0);
-        update_obstacle_map(ultrasound_get_right_mm(), i, 0);
+void interpret_ultrasonic() //multiple to get cone shape
+{
+    for (int i = 80; i < 101; i += 2)
+    {
+        update_obstacle_map(
+            ultrasound_get_left_mm(),
+            i,
+            0
+        );
+
+        update_obstacle_map(
+            ultrasound_get_right_mm(),
+            -i,
+            0
+        );
     }
-
 }
-
 
 bool get_frontier_target(float &x_mm, float &y_mm)
 {

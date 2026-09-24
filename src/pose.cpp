@@ -21,7 +21,8 @@ static float poseYmm = 0.0;
 // IMU heading when pose was reset.
 // This makes position coordinates relative to the robot's
 // starting direction rather than magnetic north.
-static float startHeadingDeg = 0.0;
+static float startImuHeadingDeg = 0.0f;
+static float startPoseHeadingDeg = 0.0f;
 
 
 static long previousLeftCount = 0;
@@ -46,7 +47,9 @@ void pose_reset()
     poseXmm = config.startX;
     poseYmm = config.startY;
 
-    startHeadingDeg = imu_get_heading() - config.startHeading;
+    startImuHeadingDeg = imu_get_heading();
+
+    startPoseHeadingDeg = config.startHeading;
 
     previousLeftCount = encoders_get_left_count();
     previousRightCount = encoders_get_right_count();
@@ -192,22 +195,31 @@ float pose_get_y_mm()
 
 float pose_get_heading_deg()
 {
-    float heading =
-        imu_get_heading()
-        - startHeadingDeg;
+    float imuDelta = imu_get_heading() - startImuHeadingDeg;
 
-
-    while (heading >= 360.0)
+    while (imuDelta > 180.0f)
     {
-        heading -= 360.0;
+        imuDelta -= 360.0f;
     }
 
-
-    while (heading < 0.0)
+    while (imuDelta < -180.0f)
     {
-        heading += 360.0;
+        imuDelta += 360.0f;
     }
 
+    // IMU positive rotation is clockwise.
+    // Arena/pose positive rotation is counter-clockwise.
+    float heading = startPoseHeadingDeg - imuDelta;
+
+    while (heading >= 360.0f)
+    {
+        heading -= 360.0f;
+    }
+
+    while (heading < 0.0f)
+    {
+        heading += 360.0f;
+    }
 
     return heading;
 }
@@ -241,8 +253,8 @@ void pose_telemetry_exe()
 
     lastTelemetryTime = millis();
 
-    // pose_print_telemetry(Serial);
-    // pose_print_telemetry(Serial2);
+    pose_print_telemetry(Serial);
+    pose_print_telemetry(Serial2);
 }
 
 void pose_print_telemetry(Stream &port)

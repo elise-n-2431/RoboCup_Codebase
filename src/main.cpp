@@ -121,6 +121,7 @@ void loop()
     tof_update();
     ultrasound_exe();
     pose_update();
+    pose_telemetry_exe();
 
     // Lock before processing queued commands when GO is pressed.
     checkGo();

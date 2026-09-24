@@ -331,13 +331,18 @@ static RobotCommand parseLine(
         return CMD_NONE;
     }
 
+    if (command == "mode")
+    {
+        port.println("MODE,COMPETITION");
+        return CMD_NONE;
+    }
+
     if ((command == "auto" || command == "roam") &&
         !arena_run_started()) {
         configResult(
             port,
             arena_set_pickup_enabled(command == "auto")
         );
-        port.println("ERR,command,unknown_or_control_disabled");
         return CMD_NONE;
     }
 
