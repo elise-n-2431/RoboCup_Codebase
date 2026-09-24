@@ -18,12 +18,6 @@
 static String usbBuffer, bluetoothBuffer;
 static bool usbOverflow = false, bluetoothOverflow = false;
 static int manualPower = 280;
-static bool benchMode = false;
-
-void serial_set_bench_mode(bool enabled)
-{
-    benchMode = enabled;
-}
 
 static void printConfig(Stream& port)
 {
@@ -266,20 +260,12 @@ static bool allowManual(Stream& port)
 
 static RobotCommand parseLine(
     String command,
-    Stream& port,
-    bool allowControl)
+    Stream& port)
 {
     command.trim();
     command.toLowerCase();
 
     if (!command.length()) return CMD_NONE;
-    if (command == "mode")
-    {
-        port.println(
-            benchMode ? "MODE,BENCH" : "MODE,COMPETITION"
-        );
-        return CMD_NONE;
-    }
     if (handleConfig(command, port))
     {
         return CMD_NONE;
@@ -294,7 +280,7 @@ static RobotCommand parseLine(
     if (debug_command(
             command,
             port,
-            !arena_run_started() || allowControl)) {
+            !arena_run_started())) {
         return CMD_NONE;
     }
 
@@ -351,13 +337,14 @@ static RobotCommand parseLine(
             port,
             arena_set_pickup_enabled(command == "auto")
         );
+        port.println("ERR,command,unknown_or_control_disabled");
         return CMD_NONE;
     }
 
     // Never pass a pre-GO actuator/flag command to the router or drivers.
     // In competition firmware these remain disabled after GO as well.
-    if (!allowControl || !arena_run_started()) {
-        port.println("ERR,control,requires_bench_mode_and_GO");
+    if (!arena_run_started()) {
+        port.println("ERR,control,disabled");
         return CMD_NONE;
     }
 
@@ -451,21 +438,21 @@ static RobotCommand parseLine(
 static RobotCommand readPort(
     Stream& port,
     String& buffer,
-    bool& overflow,
-    bool allowControl)
+    bool& overflow)
 {
     while (port.available()) {
         char c = port.read();
         if (c == '\r') continue;
 
         if (c == '\n') {
-            RobotCommand result = overflow
-                ? CMD_NONE
-                : parseLine(buffer, port, allowControl);
+            if (!overflow)
+            {
+                parseLine(buffer, port);
+            }
 
             buffer = "";
             overflow = false;
-            return result;
+            return;
         }
 
         if (overflow) continue;
@@ -497,14 +484,13 @@ void serial_init()
 RobotCommand serial_exe(bool allowControl)
 {
     RobotCommand command =
-        readPort(Serial, usbBuffer, usbOverflow, allowControl);
+        readPort(Serial, usbBuffer, usbOverflow);
 
     if (command != CMD_NONE) return command;
 
     return readPort(
         Serial2,
         bluetoothBuffer,
-        bluetoothOverflow,
-        allowControl
+        bluetoothOverflow
     );
 }

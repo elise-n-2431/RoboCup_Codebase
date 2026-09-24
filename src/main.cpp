@@ -29,8 +29,6 @@
 #include "arena_config.h"
 #include "debug_print.h"
 
-// Set true only for bench testing. Competition runs reject remote control.
-static constexpr bool BENCH_TEST_MODE = true;
 
 const byte GO_PIN = 26;
 
@@ -43,7 +41,6 @@ void setup()
     pinMode(GO_PIN, INPUT);
 
     serial_init();
-    serial_set_bench_mode(BENCH_TEST_MODE);
     encoders_init();
     DC_motors_init();
     imu_init();
@@ -67,9 +64,6 @@ void setup()
     pose_init();
     //map_init();
 
-    // No navigator_start here: GO is the only run-start trigger.
-    Serial.println(BENCH_TEST_MODE ? "MODE,BENCH" : "MODE,COMPETITION");
-    Serial2.println(BENCH_TEST_MODE ? "MODE,BENCH" : "MODE,COMPETITION");
 
     Serial.println("RUN,WAITING");
     Serial2.println("RUN,WAITING");
@@ -97,10 +91,9 @@ static void checkGo()
 
     // Competition assumption:
     // robot physically starts inside its configured home base.
-    if (!BENCH_TEST_MODE)
-    {
-        arena_sync_start_to_home();
-    }
+    
+    arena_sync_start_to_home();
+    
 
     pose_reset();
     map_init();
@@ -131,12 +124,7 @@ void loop()
 
     // Lock before processing queued commands when GO is pressed.
     checkGo();
-
-    RobotCommand command = serial_exe(BENCH_TEST_MODE && run);
-
-    if (BENCH_TEST_MODE && run) {
-        command_router_exe(command);
-    }
+    serial_exe();
 
     if (!run) {
         /*map_update();

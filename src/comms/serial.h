@@ -12,10 +12,6 @@ enum RobotCommand
 };
 
 void serial_init();
-
-// Actuator commands require an explicitly enabled bench run.
-RobotCommand serial_exe(bool allowControl = false);
-
-void serial_set_bench_mode(bool enabled);
+void serial_exe();
 
 #endif

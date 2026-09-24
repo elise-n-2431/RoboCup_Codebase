@@ -19,15 +19,6 @@
 #include "navigation/homing_controller.h"
 
 
-static const int WEIGHT_DIFFERENCE_MM = 100;
-static int middlelostcount = 0;
-
-
-static unsigned long pursuitSecureStartedAt = 0;
-
-static const unsigned long ARM_SECURE_WAIT_MS = 1000;
-
-
 enum RoamingState
 {
     ROAM_START,
@@ -97,22 +88,16 @@ static int roamTurnDirection = 1;
 //
 // At this distance, stop and let the real weight sensors
 // decide whether something actually exists there.
-static const float PRIORITY_TARGET_ARRIVAL_MM =
-    450.0f;
-
+static const float PRIORITY_TARGET_ARRIVAL_MM = 250.0f;
 
 // If the desired target is substantially off our current
 // heading, point-turn before driving toward it.
 static const float PRIORITY_TARGET_TURN_THRESHOLD_DEG =
     18.0f;
-
-
 // When at the expected target position, align a bit more
 // accurately before waiting for weight detection.
 static const float PRIORITY_TARGET_FINAL_ALIGN_DEG =
     8.0f;
-
-
 // Time to wait at an expected location before deciding
 // the weight isn't actually there.
 static const unsigned long PRIORITY_TARGET_CONFIRM_MS =
@@ -127,12 +112,8 @@ static const unsigned long PRIORITY_TARGET_CONFIRM_MS =
 //
 // This prevents the same kind of loop currently possible
 // in HOMING.
-static const unsigned long PRIORITY_TARGET_REJOIN_DELAY_MS =
-    700;
-
-
+static const unsigned long PRIORITY_TARGET_REJOIN_DELAY_MS = 700;
 static unsigned long priorityTargetWaitStartedAt = 0;
-
 static unsigned long priorityRejoinAllowedAt = 0;
 
 
@@ -242,14 +223,6 @@ static int clearanceValue(int distance)
     return distance;
 }
 
-static bool obstacleCloserThan(int distance,int threshold)
-{
-    return (distance > 0 && distance < threshold);
-}
-
-
-
-
 
 void navigator_stop()
 {
@@ -287,14 +260,6 @@ bool navigator_start(bool enablePickup)
 
     debugNav.print("Navigator: flat pitch reference = ");
     debugNav.println(flatPitchReference);
-
-
-    debugNav.print(
-        "Navigator: flat pitch reference = "
-    );
-    debugNav.println(
-        flatPitchReference
-    );
     navigator_stop();
 
     navigatorEnabled = true;
@@ -974,7 +939,6 @@ void navigator_exe()
         turnWatchActive = false;
 
         weight_detection_reset_side_evidence();
-        middlelostcount = 0;
 
         if (nav == ROAMING)
         {
