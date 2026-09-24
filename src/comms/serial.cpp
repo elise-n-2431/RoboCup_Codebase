@@ -440,30 +440,36 @@ static RobotCommand readPort(
     String& buffer,
     bool& overflow)
 {
-    while (port.available()) {
+    while (port.available())
+    {
         char c = port.read();
+
         if (c == '\r') continue;
 
-        if (c == '\n') {
-            if (!overflow)
-            {
-                parseLine(buffer, port);
-            }
+        if (c == '\n')
+        {
+            RobotCommand result =
+                overflow
+                ? CMD_NONE
+                : parseLine(buffer, port);
 
             buffer = "";
             overflow = false;
-            return;
+
+            return result;
         }
 
         if (overflow) continue;
 
-        // Discard the whole line if it contains an embedded NUL.
-        if (c == '\0' || buffer.length() >= 96) {
+        if (c == '\0' || buffer.length() >= 96)
+        {
             buffer = "";
             overflow = true;
+
             port.println("ERR,command,invalid_or_too_long");
         }
-        else {
+        else
+        {
             buffer += c;
         }
     }
@@ -483,14 +489,6 @@ void serial_init()
 
 void serial_exe()
 {
-    RobotCommand command =
-        readPort(Serial, usbBuffer, usbOverflow);
-
-    if (command != CMD_NONE) return command;
-
-    return readPort(
-        Serial2,
-        bluetoothBuffer,
-        bluetoothOverflow
-    );
+    readPort(Serial, usbBuffer, usbOverflow);
+    readPort(Serial2, bluetoothBuffer, bluetoothOverflow);
 }

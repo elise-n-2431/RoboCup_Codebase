@@ -472,40 +472,22 @@ int tof_get_weight_right_bottom()
 
 
 
-
-void tof_print_readings()
+void tof_print_readings(Stream &port)
 {
-    // Serial.print("NAV: ");
+    port.print("WEIGHT: ");
 
-    // Serial.print("OL=");
-    // Serial.print(tof_get_nav_outer_left());
+    port.print("LT=");
+    port.print(tof_get_weight_left_top());
 
-    // Serial.print("  IL=");
-    // Serial.print(tof_get_nav_inner_left());
+    port.print("  LB=");
+    port.print(tof_get_weight_left_bottom());
 
-    // Serial.print("  IR=");
-    // Serial.print(tof_get_nav_inner_right());
+    port.print("  RT=");
+    port.print(tof_get_weight_right_top());
 
-    // Serial.print("  OR=");
-    // Serial.println(tof_get_nav_outer_right());
+    port.print("  RB=");
+    port.print(tof_get_weight_right_bottom());
 
-
-    Serial.print("WEIGHT: ");
-
-    Serial.print("LT=");
-    Serial.print(tof_get_weight_left_top());
-
-    Serial.print("  LB=");
-    Serial.print(tof_get_weight_left_bottom());
-
-    Serial.print("  RT=");
-    Serial.print(tof_get_weight_right_top());
-
-    Serial.print("  RB=");
-    Serial.print(tof_get_weight_right_bottom());
-
-    Serial.print("  MIDDLE =");
-    Serial.println(tof_get_weight_middle());
+    port.print("  MIDDLE=");
+    port.println(tof_get_weight_middle());
 }
-
-

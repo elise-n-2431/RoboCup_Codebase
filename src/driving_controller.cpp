@@ -5,115 +5,204 @@
 
 #include "outputs/DC_motors.h"
 #include "inputs/imu.h"
+#include "inputs/tof_expander.h"
+#include "state_machine.h"
 #include "debug_print.h"
 #include "pose.h"
 
-//to check if tunring or drving straight
+
+// ============================================================
+// CONTROL MODES
+// ============================================================
+
 enum MotorControlMode
 {
     CONTROL_IDLE,
     CONTROL_TURNING,
     CONTROL_DRIVE_HEADING,
-    CONTROL_DRIVE_TO_POINT
+    CONTROL_DRIVE_TO_POINT,
+    CONTROL_AVOID_TURN
 };
 
-//start in idle
 static MotorControlMode controlMode = CONTROL_IDLE;
 
-// To be tuned
-static float TURN_KP = 16.0;
 
-static float DRIVE_KP = 10.0; 
+// ============================================================
+// GENERAL CONTROL TUNING
+// ============================================================
 
-const int MAX_DRIVE_CORRECTION = 220;
+static float TURN_KP = 16.0f;
+static float DRIVE_KP = 10.0f;
+
+
+static const int MAX_DRIVE_CORRECTION = 100;
+static const int MAX_POINT_CORRECTION = 260;
 
 static int driveBasePower = 300;
 
-// Minimum power for robot to actually rotate
-const int MIN_TURN_POWER = 270;
+static const int MIN_TURN_POWER = 270;
+static const int MAX_MOTOR_POWER = 450;
 
-const int MAX_TURN_POWER = 450;
+static const float ANGLE_TOLERANCE_DEG = 3.0f;
+static const unsigned long SETTLE_TIME_MS = 100;
 
-static float ARRIVAL_TOLERANCE_MM = 40.0f;
-static float SLOWDOWN_RADIUS_MM = 150.0f;
-const int MIN_DRIVE_TO_POINT_POWER = 260;
+static const int TURN_SIGN = 1;
+static const int DRIVE_STEER_SIGN = 1;
+
+static const unsigned long CONTROL_PERIOD_MS = 20;
 
 
-// Consider target reached inside this angle
-const float ANGLE_TOLERANCE = 3.0;
+static const float FINE_TURN_ZONE_DEG = 15.0f;
 
-const float FINE_TURN_ZONE_DEG = 15.0f;
-
-const unsigned long FINE_TURN_ON_MS = 50;
-const unsigned long FINE_TURN_OFF_MS = 70;
+static const unsigned long FINE_TURN_ON_MS = 50;
+static const unsigned long FINE_TURN_OFF_MS = 70;
 
 static unsigned long fineTurnPhaseStarted = 0;
 static bool fineTurnPowerOn = true;
 
-const float WALL_AVOID_TRIGGER_MM = 150.0f;
+
+static float ARRIVAL_TOLERANCE_MM = 40.0f;
+static float SLOWDOWN_RADIUS_MM = 150.0f;
+
+static const int MIN_DRIVE_TO_POINT_POWER = 260;
 
 
-const unsigned long SETTLE_TIME_MS = 100;
+// Enter avoidance when something gets this close.
+static const int WALL_AVOID_TRIGGER_MM = 120;
+
+// Do not return to the target until we have clearly opened
+// up some space again.
+static const int WALL_AVOID_CLEAR_MM = 250;
+
+// Safety limits. If local avoidance cannot solve the problem,
+// hand over to the reversing controller.
+static const float AVOID_MAX_ROTATION_DEG = 350.0f;
+static const unsigned long AVOID_MAX_TIME_MS = 2000;
+
+static bool avoidInitialized = false;
+
+// -1 = LEFT
+// +1 = RIGHT
+static int avoidDirection = 1;
+static int fallbackAvoidDirection = 1;
+
+static float avoidLastHeading = 0.0f;
+static float avoidTotalRotation = 0.0f;
+
+static unsigned long avoidStartedAt = 0;
 
 
-// If the robot turns away from the target,
-// change this from +1 to -1
-const int TURN_SIGN = 1;
+static float targetHeading = 0.0f;
+static float currentError = 0.0f;
 
-const int DRIVE_STEER_SIGN = 1;
+static unsigned long previousTime = 0;
+static unsigned long toleranceStart = 0;
 
 
 static float targetPointX = 0.0f;
 static float targetPointY = 0.0f;
 
-
-static float targetHeading = 0.0;
-static float currentError = 0.0;
-
-//varaibles used to chceck how long imu heading has been in tolerance zone
-static unsigned long previousTime = 0;
-static unsigned long toleranceStart = 0;
-
-const unsigned long CONTROL_PERIOD_MS = 20;
+static bool pointTargetValid = false;
+static bool pointReached = false;
 
 
+//for debugging
+static int lastLeftPower = 0;
+static int lastRightPower = 0;
+
+static float lastPointDistance = -1.0f;
+
+static unsigned long lastMotorTelemetryAt = 0;
+static const unsigned long MOTOR_TELEMETRY_PERIOD_MS = 150;
+
+static const char* motorModeName()
+{
+    switch (controlMode)
+    {
+        case CONTROL_IDLE: return "IDLE";
+        case CONTROL_TURNING: return "TURNING";
+        case CONTROL_DRIVE_HEADING: return "DRIVE_HEADING";
+        case CONTROL_DRIVE_TO_POINT: return "DRIVE_POINT";
+        case CONTROL_AVOID_TURN: return "AVOID";
+        default: return "UNKNOWN";
+    }
+}
 
 
 
-//to make sure the angle is always positive for PD math
 static float wrapHeading(float heading)
 {
-    while (heading >= 360.0) {
-        heading -= 360.0;
-    }
-
-    while (heading < 0.0) {
-        heading += 360.0;
-    }
+    while (heading >= 360.0f) heading -= 360.0f;
+    while (heading < 0.0f) heading += 360.0f;
 
     return heading;
 }
 
-void motor_control_set_target_heading(float heading)
-{
-    targetHeading =
-        wrapHeading(heading);
-}
 
-//also wraps the heading angle error
 static float headingError(float target, float current)
 {
     float error = target - current;
 
-    while (error > 180.0) {
-        error -= 360.0;
-    }
-
-    while (error < -180.0) {
-        error += 360.0;
-    }
+    while (error > 180.0f) error -= 360.0f;
+    while (error < -180.0f) error += 360.0f;
 
     return error;
+}
+
+
+static int clearanceValue(int distance)
+{
+    // 0 = no obstacle return.
+    // -1 = invalid/unavailable.
+    // For local direction choice, treat either as open space.
+    if (distance <= 0)
+    {
+        return 1200;
+    }
+
+    return distance;
+}
+
+
+static int getFrontClearance()
+{
+    int outerLeft = clearanceValue(tof_get_nav_outer_left());
+    int innerLeft = clearanceValue(tof_get_nav_inner_left());
+    int innerRight = clearanceValue(tof_get_nav_inner_right());
+    int outerRight = clearanceValue(tof_get_nav_outer_right());
+
+    return min(
+        min(outerLeft, innerLeft),
+        min(innerRight, outerRight)
+    );
+}
+
+
+static int getLeftClearance()
+{
+    return min(
+        clearanceValue(tof_get_nav_outer_left()),
+        clearanceValue(tof_get_nav_inner_left())
+    );
+}
+
+
+static int getRightClearance()
+{
+    return min(
+        clearanceValue(tof_get_nav_inner_right()),
+        clearanceValue(tof_get_nav_outer_right())
+    );
+}
+
+
+static void clearPointTarget()
+{
+    pointTargetValid = false;
+    pointReached = false;
+
+    avoidInitialized = false;
+    avoidTotalRotation = 0.0f;
 }
 
 
@@ -122,30 +211,34 @@ void motor_control_init()
 {
     controlMode = CONTROL_IDLE;
 
-    targetHeading = 0.0;
-    currentError = 0.0;
+    targetHeading = 0.0f;
+    currentError = 0.0f;
 
     previousTime = millis();
     toleranceStart = 0;
+
+    fineTurnPhaseStarted = 0;
+    fineTurnPowerOn = true;
+
+    clearPointTarget();
 
     DC_motors_setPower(0, 0);
 }
 
 
-//turn to an angle relative to a starting psoition, starting this with bluetooth
 void motor_control_turn_relative(float angle)
 {
+    clearPointTarget();
+
     float currentHeading = imu_get_heading();
 
     targetHeading = wrapHeading(currentHeading + angle);
-
     currentError = headingError(targetHeading, currentHeading);
-
 
     previousTime = millis();
     toleranceStart = 0;
-    controlMode = CONTROL_TURNING;
 
+    controlMode = CONTROL_TURNING;
 
     debugMotor.print("Current heading: ");
     debugMotor.println(currentHeading);
@@ -160,16 +253,12 @@ void motor_control_turn_relative(float angle)
 
 void motor_control_turn_to(float heading)
 {
+    clearPointTarget();
+
+    float currentHeading = imu_get_heading();
+
     targetHeading = wrapHeading(heading);
-
-    float currentHeading =
-        imu_get_heading();
-
-    currentError =
-        headingError(
-            targetHeading,
-            currentHeading
-        );
+    currentError = headingError(targetHeading, currentHeading);
 
     previousTime = millis();
     toleranceStart = 0;
@@ -177,18 +266,18 @@ void motor_control_turn_to(float heading)
     controlMode = CONTROL_TURNING;
 }
 
+
 void motor_control_drive_current_heading(int basePower)
 {
-    targetHeading = imu_get_heading();
+    clearPointTarget();
 
+    targetHeading = imu_get_heading();
     driveBasePower = basePower;
 
-    currentError = 0.0;
-
+    currentError = 0.0f;
     previousTime = millis();
 
     controlMode = CONTROL_DRIVE_HEADING;
-
 
     debugMotor.print("Driving at heading: ");
     debugMotor.println(targetHeading);
@@ -197,39 +286,37 @@ void motor_control_drive_current_heading(int basePower)
     debugMotor.println(driveBasePower);
 }
 
+
 void motor_control_drive_heading(float heading, int basePower)
 {
+    clearPointTarget();
+
     targetHeading = wrapHeading(heading);
     driveBasePower = basePower;
 
-    currentError =
-        headingError(
-            targetHeading,
-            imu_get_heading()
-        );
+    currentError = headingError(
+        targetHeading,
+        imu_get_heading()
+    );
 
     previousTime = millis();
 
-    controlMode = CONTROL_DRIVE_HEADING;   // restore this
+    controlMode = CONTROL_DRIVE_HEADING;
 }
 
-static void updateTurnControl(float currentHeading, unsigned long currentTime)
+static void updateTurnControl(
+    float currentHeading,
+    unsigned long currentTime)
 {
-    currentError =
-        headingError(
-            targetHeading,
-            currentHeading
-        );
+    currentError = headingError(
+        targetHeading,
+        currentHeading
+    );
 
-    float absError =
-        fabs(currentError);
+    float absError = fabsf(currentError);
 
-
-    // ========================================================
-    // TARGET REACHED
-    // ========================================================
-
-    if (absError <= ANGLE_TOLERANCE)
+    // Target reached.
+    if (absError <= ANGLE_TOLERANCE_DEG)
     {
         DC_motors_setPower(0, 0);
 
@@ -238,116 +325,68 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
 
         if (toleranceStart == 0)
         {
-            toleranceStart =
-                currentTime;
+            toleranceStart = currentTime;
         }
 
-        if (currentTime -
-                toleranceStart >=
-            SETTLE_TIME_MS)
+        if (currentTime - toleranceStart >= SETTLE_TIME_MS)
         {
-            controlMode =
-                CONTROL_IDLE;
+            controlMode = CONTROL_IDLE;
 
-            debugMotor.print(
-                "Turn complete. Heading: "
-            );
-
-            debugMotor.println(
-                currentHeading
-            );
+            debugMotor.print("Turn complete. Heading: ");
+            debugMotor.println(currentHeading);
         }
 
         return;
     }
 
-
     toleranceStart = 0;
 
-
-    // ========================================================
-    // CALCULATE TURN DIRECTION
-    // ========================================================
-
-    float output =
-        TURN_KP *
-        currentError;
+    float output = TURN_KP * currentError;
 
     int direction =
-        output > 0
-            ? 1
-            : -1;
+        output > 0.0f
+        ? 1
+        : -1;
 
-
-    // ========================================================
-    // FINE TURNING
-    //
-    // Close to the target we still need ~280 power to overcome
-    // static friction, but continuous 280 causes overshoot.
-    //
-    // Therefore use short 280-power pulses separated by pauses.
-    // ========================================================
-
-    if (absError <=
-        FINE_TURN_ZONE_DEG)
+    // Fine turning near target.
+    if (absError <= FINE_TURN_ZONE_DEG)
     {
         if (fineTurnPhaseStarted == 0)
         {
-            fineTurnPhaseStarted =
-                currentTime;
-
-            fineTurnPowerOn =
-                true;
+            fineTurnPhaseStarted = currentTime;
+            fineTurnPowerOn = true;
         }
 
-
         unsigned long phaseTime =
-            currentTime -
-            fineTurnPhaseStarted;
-
+            currentTime - fineTurnPhaseStarted;
 
         if (fineTurnPowerOn)
         {
-            if (phaseTime >=
-                FINE_TURN_ON_MS)
+            if (phaseTime >= FINE_TURN_ON_MS)
             {
-                fineTurnPowerOn =
-                    false;
-
-                fineTurnPhaseStarted =
-                    currentTime;
+                fineTurnPowerOn = false;
+                fineTurnPhaseStarted = currentTime;
             }
         }
         else
         {
-            if (phaseTime >=
-                FINE_TURN_OFF_MS)
+            if (phaseTime >= FINE_TURN_OFF_MS)
             {
-                fineTurnPowerOn =
-                    true;
-
-                fineTurnPhaseStarted =
-                    currentTime;
+                fineTurnPowerOn = true;
+                fineTurnPhaseStarted = currentTime;
             }
         }
 
-
         if (!fineTurnPowerOn)
         {
-            DC_motors_setPower(
-                0,
-                0
-            );
-
+            DC_motors_setPower(0, 0);
             return;
         }
-
 
         int turnPower =
             MIN_TURN_POWER *
             direction *
             TURN_SIGN;
-
 
         DC_motors_setPower(
             turnPower,
@@ -357,40 +396,19 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
         return;
     }
 
-
-    // ========================================================
-    // NORMAL / LARGE TURN
-    // ========================================================
-
+    // Normal larger turn.
     fineTurnPhaseStarted = 0;
     fineTurnPowerOn = true;
 
+    int turnPower = abs((int)output);
 
-    int turnPower =
-        abs((int)output);
+    turnPower = constrain(
+        turnPower,
+        MIN_TURN_POWER,
+        MAX_MOTOR_POWER
+    );
 
-
-    if (turnPower <
-        MIN_TURN_POWER)
-    {
-        turnPower =
-            MIN_TURN_POWER;
-    }
-
-
-    if (turnPower >
-        MAX_TURN_POWER)
-    {
-        turnPower =
-            MAX_TURN_POWER;
-    }
-
-
-    turnPower =
-        turnPower *
-        direction *
-        TURN_SIGN;
-
+    turnPower *= direction * TURN_SIGN;
 
     DC_motors_setPower(
         turnPower,
@@ -398,213 +416,322 @@ static void updateTurnControl(float currentHeading, unsigned long currentTime)
     );
 }
 
+static void updateDriveHeadingControl(float currentHeading)
+{
+    currentError = headingError(
+        targetHeading,
+        currentHeading
+    );
+
+    float correction =
+        DRIVE_KP *
+        currentError *
+        DRIVE_STEER_SIGN;
+
+    correction = constrain(
+        correction,
+        -MAX_DRIVE_CORRECTION,
+        MAX_DRIVE_CORRECTION
+    );
+
+    int leftPower =
+        driveBasePower +
+        (int)correction;
+
+    int rightPower =
+        driveBasePower -
+        (int)correction;
+
+    DC_motors_setPower(
+        leftPower,
+        rightPower
+    );
+}
 
 
-
-void updateDriveToPointControl(
-    float currentHeading,
+static void updateDriveToPointControl(
+    float currentPoseHeading,
     float currentX,
-    float currentY
-)
+    float currentY)
 {
     float dx = targetPointX - currentX;
     float dy = targetPointY - currentY;
 
-    float distance = sqrtf(dx * dx + dy * dy);
+    float distance =
+        sqrtf(dx * dx + dy * dy);
 
-    float desiredHeading =
-        atan2f(dy, dx) * 180.0f / PI;
-    
-    // Serial.print("CURRENT ");
-    // Serial.print(currentHeading);
-    // Serial.print(" DESIRED ");
-    // Serial.print(desiredHeading);
-
-
-    targetHeading = wrapHeading(desiredHeading);
-
-    currentError =
-        headingError(targetHeading, currentHeading);
-
-    float correction =
-        DRIVE_KP * currentError;
-
-    correction *= DRIVE_STEER_SIGN;
-
-    if (correction > MAX_DRIVE_CORRECTION)
-        correction = MAX_DRIVE_CORRECTION;
-
-    if (correction < -MAX_DRIVE_CORRECTION)
-        correction = -MAX_DRIVE_CORRECTION;
-
-
-    int power = driveBasePower;
-
-    if (distance < SLOWDOWN_RADIUS_MM)
+    // We have reached this XY target.
+    if (distance <= ARRIVAL_TOLERANCE_MM)
     {
-        float t = distance / SLOWDOWN_RADIUS_MM; // 0..1
-        power = MIN_DRIVE_TO_POINT_POWER +
-                (int)((driveBasePower - MIN_DRIVE_TO_POINT_POWER) * t);
-    }
-
-    float errorFactor = 1.0f - (fabsf(currentError) / 90.0f);
-    if (errorFactor < 0.2f) errorFactor = 0.2f; // never drop below 30% power
-    power = (int)(power * errorFactor);
-
-    int leftPower  = power + (int)correction;
-    int rightPower = power - (int)correction;
-
-    leftPower  = constrain(leftPower,  0, MAX_TURN_POWER);   // or whatever your true PWM ceiling is
-    rightPower = constrain(rightPower, 0, MAX_TURN_POWER);
-    
-    // Serial.print(" LEFT: ");
-    // Serial.print(leftPower);
-    // Serial.print(" RIGHT: ");
-    // Serial.println(rightPower);
-
-
-    DC_motors_setPower(
-        leftPower,
-        rightPower
-    );
-}
-
-
-const int AVOID_TURN_STEP_DEG      = 90; 
-const int WALL_AVOID_CLEAR_MM      = 250;  
-const int AVOID_MAX_ROTATION_DEG   = 350; 
-
-static float avoidStartHeading   = 0.0f;
-static float avoidTargetHeading  = 0.0f;
-static float avoidTotalRotation  = 0.0f;
-static bool  avoidInitialized    = false;
-int iteration = 0;
-int max_iterations = 10;
-
-// Call this once, right when you switch INTO CONTROL_AVOID_TURN
-// (i.e. in motor_control_update(), alongside setting controlMode)
-static void initAvoidTurn(float currentHeading)
-{
-    avoidStartHeading  = currentHeading;
-    avoidTargetHeading = wrapHeading(currentHeading + AVOID_TURN_STEP_DEG);
-    avoidTotalRotation = 0.0f;
-    avoidInitialized   = true;
-    toleranceStart      = 0;
-    iteration = 0;
-}
-
-static void updateAvoidTurnControl(float currentHeading, unsigned long currentTime) {
-    if (!avoidInitialized) {
-        initAvoidTurn(currentHeading);
-    }
-    // Serial.println("just checking");
-
-    // Have avoided the wall, yay!
-    if (get_front_clearance_mm() > WALL_AVOID_CLEAR_MM)
-    {
-        // Serial.println("SOMEHOW HERE??!");
         DC_motors_setPower(0, 0);
-        avoidInitialized = false;
-        controlMode = CONTROL_DRIVE_TO_POINT;
-        toleranceStart = 0;
+
+        pointReached = true;
+        controlMode = CONTROL_IDLE;
+
+        debugMotor.print("Drive-to-point reached target, distance=");
+        debugMotor.println(distance);
+
         return;
     }
 
-    // if (headingError(avoidTargetHeading, currentHeading) > ANGLE_TOLERANCE) {
-    //     Serial.println("THIS ONE!");
-    // }
+    // atan2 gives an absolute heading in the POSE coordinate frame.
+    float desiredHeading =
+        atan2f(dy, dx) *
+        180.0f / PI;
 
+    targetHeading =
+        wrapHeading(desiredHeading);
 
-    if (iteration < max_iterations) {
-        
-        toleranceStart = 0;
+    currentError = headingError(
+        targetHeading,
+        currentPoseHeading
+    );
 
-        float output =
-            TURN_KP * currentError;
+    float correction =
+        DRIVE_KP *
+        currentError *
+        DRIVE_STEER_SIGN;
 
-        int turnPower =
-            abs((int)output);
+    correction = constrain(
+        correction,
+        -MAX_POINT_CORRECTION,
+        MAX_POINT_CORRECTION
+    );
 
-        if (turnPower < MIN_TURN_POWER) {
-            turnPower = MIN_TURN_POWER;
-        }
+    int power = driveBasePower;
 
-        if (turnPower > MAX_TURN_POWER) {
-            turnPower = MAX_TURN_POWER;
-        }
+    // Slow as we approach the target.
+    if (distance < SLOWDOWN_RADIUS_MM)
+    {
+        float t =
+            distance /
+            SLOWDOWN_RADIUS_MM;
 
-        int direction;
+        power =
+            MIN_DRIVE_TO_POINT_POWER +
+            (int)(
+                (driveBasePower - MIN_DRIVE_TO_POINT_POWER) *
+                t
+            );
+    }
 
-        if (output > 0) {
-            direction = 1;
-        }
-        else {
-            direction = -1;
-        }
+    // If badly misaligned, reduce forward speed so the robot
+    // curves toward the point rather than charging forward.
+    float errorFactor =1.0f - (fabsf(currentError) / 90.0f);
 
+    if (errorFactor < 0.2f)
+    {
+        errorFactor = 0.2f;
+    }
 
-        turnPower =
-            turnPower
-            * direction
-            * TURN_SIGN;
-
-
-        DC_motors_setPower(
-            turnPower,
-            -turnPower
+    power =
+        (int)(
+            power *
+            errorFactor
         );
 
-        iteration += 1;
-        // Serial.println(iteration);
-
-        
-    }
-    else {
-        setStateFlag(&STATE_FLAGS.reverse_triggered);
-        controlMode = CONTROL_IDLE;
-    }
-
-}
-
-
-
-
-
-static void updateDriveHeadingControl(
-    float currentHeading
-)
-{
-    currentError =headingError(targetHeading, currentHeading);
-
-
-    float correction = DRIVE_KP * currentError;
-    correction *= DRIVE_STEER_SIGN;
-
-
-    // Don't let heading correction become enormous
-    if (correction > MAX_DRIVE_CORRECTION)
-    {
-        correction = MAX_DRIVE_CORRECTION;
-    }
-
-    if (correction < -MAX_DRIVE_CORRECTION)
-    {
-        correction = -MAX_DRIVE_CORRECTION;
-    }
-
-
     int leftPower =
-        driveBasePower + (int)correction;
+        power +
+        (int)correction;
 
     int rightPower =
-        driveBasePower - (int)correction;
+        power -
+        (int)correction;
 
+    leftPower = constrain(
+        leftPower,
+        0,
+        MAX_MOTOR_POWER
+    );
+
+    rightPower = constrain(
+        rightPower,
+        0,
+        MAX_MOTOR_POWER
+    );
 
     DC_motors_setPower(
         leftPower,
         rightPower
     );
 }
+
+
+static void initAvoidTurn(float currentHeading)
+{
+    int leftClearance = getLeftClearance();
+    int rightClearance = getRightClearance();
+
+    if (abs(leftClearance - rightClearance) > 80)
+    {
+        avoidDirection =
+            leftClearance > rightClearance
+            ? -1
+            : 1;
+    }
+    else
+    {
+        avoidDirection = fallbackAvoidDirection;
+        fallbackAvoidDirection *= -1;
+    }
+
+    avoidLastHeading = currentHeading;
+    avoidTotalRotation = 0.0f;
+    avoidStartedAt = millis();
+    avoidInitialized = true;
+
+    debugMotor.print("Point avoidance: ");
+    debugMotor.println(
+        avoidDirection < 0
+        ? "LEFT"
+        : "RIGHT"
+    );
+}
+
+
+static void updateAvoidTurnControl(
+    float currentHeading,
+    unsigned long currentTime)
+{
+    if (!avoidInitialized)
+    {
+        initAvoidTurn(currentHeading);
+    }
+
+    // Track how much we have rotated while attempting to get clear.
+    float rotationStep =
+        fabsf(
+            headingError(
+                currentHeading,
+                avoidLastHeading
+            )
+        );
+
+    avoidTotalRotation += rotationStep;
+    avoidLastHeading = currentHeading;
+
+    // Once clearly away from the obstacle, resume the same XY target.
+    if (getFrontClearance() > WALL_AVOID_CLEAR_MM)
+    {
+        avoidInitialized = false;
+        avoidTotalRotation = 0.0f;
+
+        controlMode = CONTROL_DRIVE_TO_POINT;
+
+        debugMotor.println(
+            "Point avoidance clear - resuming target"
+        );
+
+        return;
+    }
+
+    // If local avoidance cannot solve it, let the reversing
+    // controller perform the more aggressive recovery.
+    if (avoidTotalRotation >= AVOID_MAX_ROTATION_DEG ||
+        currentTime - avoidStartedAt >= AVOID_MAX_TIME_MS)
+    {
+        DC_motors_setPower(0, 0);
+
+        avoidInitialized = false;
+        avoidTotalRotation = 0.0f;
+
+        controlMode = CONTROL_IDLE;
+
+        debugMotor.println(
+            "Point avoidance failed - triggering reverse"
+        );
+
+        setStateFlag(
+            &STATE_FLAGS.reverse_triggered
+        );
+
+        return;
+    }
+
+    // Arc forward around the obstacle instead of point-turning.
+    // Both tracks remain forward, but the inside track is slower.
+    int outerPower = constrain(
+        driveBasePower,
+        MIN_DRIVE_TO_POINT_POWER,
+        MAX_MOTOR_POWER
+    );
+
+    int innerPower =
+        MIN_DRIVE_TO_POINT_POWER;
+
+    if (avoidDirection < 0)
+    {
+        // LEFT arc.
+        DC_motors_setPower(
+            innerPower,
+            outerPower
+        );
+    }
+    else
+    {
+        // RIGHT arc.
+        DC_motors_setPower(
+            outerPower,
+            innerPower
+        );
+    }
+}
+
+
+
+static void printMotorTelemetry()
+{
+    if (!debugMotor.enabled) return;
+
+    if (millis() - lastMotorTelemetryAt <
+        MOTOR_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
+
+    lastMotorTelemetryAt = millis();
+
+    debugMotor.print("MOTOR,");
+    debugMotor.print(millis());
+
+    debugMotor.print(",");
+    debugMotor.print(motorModeName());
+
+    debugMotor.print(",");
+    debugMotor.print(pose_get_x_mm());
+
+    debugMotor.print(",");
+    debugMotor.print(pose_get_y_mm());
+
+    debugMotor.print(",");
+    debugMotor.print(pose_get_heading_deg());
+
+    debugMotor.print(",");
+    debugMotor.print(targetHeading);
+
+    debugMotor.print(",");
+    debugMotor.print(currentError);
+
+    debugMotor.print(",");
+    debugMotor.print(targetPointX);
+
+    debugMotor.print(",");
+    debugMotor.print(targetPointY);
+
+    debugMotor.print(",");
+    debugMotor.print(lastPointDistance);
+
+    debugMotor.print(",");
+    debugMotor.print(getFrontClearance());
+
+    debugMotor.print(",");
+    debugMotor.print(lastLeftPower);
+
+    debugMotor.print(",");
+    debugMotor.println(lastRightPower);
+}
+
+
 
 void motor_control_update()
 {
@@ -613,45 +740,32 @@ void motor_control_update()
         return;
     }
 
+    unsigned long currentTime = millis();
 
-    unsigned long currentTime =
-        millis();
-
-
-    if (
-        currentTime - previousTime
-        < CONTROL_PERIOD_MS
-    )
+    if (currentTime - previousTime < CONTROL_PERIOD_MS)
     {
         return;
     }
 
-
     previousTime = currentTime;
 
-
-    float currentHeading =
+    float currentImuHeading =
         imu_get_heading();
-    
-    float currentX = pose_get_x_mm();
-    float currentY = pose_get_y_mm();
-
 
     if (controlMode == CONTROL_TURNING)
     {
         updateTurnControl(
-            currentHeading,
+            currentImuHeading,
             currentTime
         );
 
         return;
     }
 
-
     if (controlMode == CONTROL_DRIVE_HEADING)
     {
         updateDriveHeadingControl(
-            currentHeading
+            currentImuHeading
         );
 
         return;
@@ -659,65 +773,145 @@ void motor_control_update()
 
     if (controlMode == CONTROL_DRIVE_TO_POINT)
     {
-        if (get_front_clearance_mm() < WALL_AVOID_TRIGGER_MM)
+        if (getFrontClearance() < WALL_AVOID_TRIGGER_MM)
         {
             controlMode = CONTROL_AVOID_TURN;
-            initAvoidTurn(currentHeading);
-        }
-        else
-        {
-            updateDriveToPointControl(currentHeading, currentX, currentY);
+            initAvoidTurn(currentImuHeading);
+
             return;
         }
+
+        updateDriveToPointControl(
+            pose_get_heading_deg(),
+            pose_get_x_mm(),
+            pose_get_y_mm()
+        );
+
+        return;
     }
 
     if (controlMode == CONTROL_AVOID_TURN)
     {
-        updateAvoidTurnControl(currentHeading, currentTime);
+        updateAvoidTurnControl(
+            currentImuHeading,
+            currentTime
+        );
+
         return;
     }
+    printMotorTelemetry();
 }
 
-void motor_control_drive_to_point(float target_x_mm, float target_y_mm, int basePower)
+
+
+void motor_control_drive_to_point(
+    float target_x_mm,
+    float target_y_mm,
+    int basePower)
 {
+    bool newTarget =
+        !pointTargetValid ||
+        fabsf(target_x_mm - targetPointX) > 1.0f ||
+        fabsf(target_y_mm - targetPointY) > 1.0f;
+
     targetPointX = target_x_mm;
     targetPointY = target_y_mm;
     driveBasePower = basePower;
 
-    if (controlMode != CONTROL_DRIVE_TO_POINT)
+    if (newTarget)
+    {
+        //first tell the gui
+        debugMotor.print("MOTOR_EVENT,");
+        debugMotor.print(millis());
+        debugMotor.print(",POINT_START,");
+        debugMotor.print(targetPointX);
+        debugMotor.print(",");
+        debugMotor.println(targetPointY);
+        pointTargetValid = true;
+        pointReached = false;
+
+        debugMotor.print("New point target: ");
+        debugMotor.print(targetPointX);
+        debugMotor.print(",");
+        debugMotor.println(targetPointY);
+    }
+
+    // Navigator may repeatedly request the same target.
+    // Don't restart once it has already been reached.
+    if (pointReached)
+    {
+        return;
+    }
+
+    // Do not interrupt local avoidance for repeated commands
+    // to the same target.
+    if (controlMode != CONTROL_DRIVE_TO_POINT &&
+        controlMode != CONTROL_AVOID_TURN)
     {
         currentError = 0.0f;
         previousTime = millis();
+
         controlMode = CONTROL_DRIVE_TO_POINT;
     }
 }
 
 
+void motor_control_stop()
+{
+    controlMode = CONTROL_IDLE;
+
+    clearPointTarget();
+
+    DC_motors_setPower(0, 0);
+
+    debugMotor.println(
+        "Motor control stopped"
+    );
+}
+
+
+void motor_control_reverse(int power)
+{
+    controlMode = CONTROL_IDLE;
+
+    clearPointTarget();
+
+    DC_motors_setPower(
+        -power,
+        -power
+    );
+}
+
+
+
+bool motor_control_is_turning()
+{
+    return controlMode ==
+           CONTROL_TURNING;
+}
+
+
+bool motor_control_is_driving()
+{
+    // Preserve the meaning used by pursuit/homing.
+    return controlMode ==
+           CONTROL_DRIVE_HEADING;
+}
 
 
 bool motor_control_is_driving_to_point()
 {
-    return controlMode == CONTROL_DRIVE_TO_POINT;
+    return controlMode == CONTROL_DRIVE_TO_POINT ||
+           controlMode == CONTROL_AVOID_TURN;
 }
 
-void motor_control_set_arrival_tolerance(float mm)
+
+bool motor_control_point_reached()
 {
-    ARRIVAL_TOLERANCE_MM = mm;
+    return pointTargetValid &&
+           pointReached;
 }
 
-void motor_control_set_slowdown_radius(float mm)
-{
-    SLOWDOWN_RADIUS_MM = mm;
-}
-
-void motor_control_stop()
-{
-    // Serial.println("stopped");
-    controlMode = CONTROL_IDLE;
-
-    DC_motors_setPower(0, 0);
-    debugMotor.println("Motor control stopped");
-}
 
 
 float motor_control_get_target()
@@ -744,8 +938,6 @@ float motor_control_get_kp()
 }
 
 
-
-
 void motor_control_set_drive_kp(float kp)
 {
     DRIVE_KP = kp;
@@ -757,24 +949,20 @@ float motor_control_get_drive_kp()
     return DRIVE_KP;
 }
 
-bool motor_control_is_turning()
+
+void motor_control_set_arrival_tolerance(float mm)
 {
-    return controlMode == CONTROL_TURNING;
+    if (mm > 0.0f)
+    {
+        ARRIVAL_TOLERANCE_MM = mm;
+    }
 }
 
 
-bool motor_control_is_driving()
+void motor_control_set_slowdown_radius(float mm)
 {
-    return controlMode == CONTROL_DRIVE_TO_POINT;
-}
-
-void motor_control_reverse(int power)
-{
-    controlMode = CONTROL_IDLE;
-    DC_motors_setPower(-power, -power);
-}
-
-void print_motor_state () {
-    Serial.print("Mode: ");
-    Serial.println(controlMode == CONTROL_DRIVE_TO_POINT);
+    if (mm > ARRIVAL_TOLERANCE_MM)
+    {
+        SLOWDOWN_RADIUS_MM = mm;
+    }
 }
