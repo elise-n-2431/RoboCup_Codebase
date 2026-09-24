@@ -481,7 +481,7 @@ void serial_init()
     Serial.println("Serial interface ready");
 }
 
-RobotCommand serial_exe(bool allowControl)
+void serial_exe()
 {
     RobotCommand command =
         readPort(Serial, usbBuffer, usbOverflow);
