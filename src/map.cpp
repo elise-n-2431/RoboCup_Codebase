@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <HardwareSerial.h>
+#include "map.h"
 #include "pose.h"
 #include <list>
 #include <cstdint>
@@ -61,9 +62,9 @@ static int frontierCellCount = 0;
 const int16_t CONF_SCALE = 1000;                // 1.000 in fixed-point units
 const int16_t OBSTACLE_UNKNOWN_BAND = 100;      // |value| below this counts as "unknown" (0.100)
 
-uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
-int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
-bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
+DMAMEM uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
+DMAMEM int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
+DMAMEM bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
 
 int self_x = 0; // define initial position in pose
 int self_y = 0;
@@ -84,7 +85,7 @@ static float g_cos_heading, g_sin_heading, heading;
 std::vector<std::vector<int>> FRONTIER_GROUPS_X;
 std::vector<std::vector<int>> FRONTIER_GROUPS_Y;
 
-bool FRONTIER_VISITED[MAP_WIDTH][MAP_HEIGHT];
+DMAMEM bool FRONTIER_VISITED[MAP_WIDTH][MAP_HEIGHT];
 
 struct FrontierCentre {
     int x;
@@ -367,8 +368,8 @@ void find_frontier() {
     FRONTIER_GROUPS_Y.clear();
     memset(FRONTIER_VISITED, 0, sizeof(FRONTIER_VISITED));
 
-    static int16_t stack_x[MAP_WIDTH * MAP_HEIGHT];
-    static int16_t stack_y[MAP_WIDTH * MAP_HEIGHT];
+    DMAMEM static int16_t stack_x[MAP_WIDTH * MAP_HEIGHT];
+    DMAMEM static int16_t stack_y[MAP_WIDTH * MAP_HEIGHT];
 
     for (int x = 1; x < MAP_WIDTH - 1; x++)
     {
@@ -460,7 +461,7 @@ void calc_frontier_target() {
     int oldX = target.centre.x;
     int oldY = target.centre.y;
 
-    float currentTargetCost = INFINITY;
+    float current_target_cost = INFINITY;
 
 
     for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {

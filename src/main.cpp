@@ -127,7 +127,6 @@ void loop()
     serial_exe();
 
     if (!run) {
-        map_update();
         return;
     }
     map_update();

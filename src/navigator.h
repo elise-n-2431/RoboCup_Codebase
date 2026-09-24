@@ -10,6 +10,7 @@ void navigator_exe();
 
 bool navigator_start(bool enablePickup);
 void navigator_stop();
-void frontier_targetting();
+
 void print_navigator_state();
+
 #endif
