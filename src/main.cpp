@@ -127,16 +127,10 @@ void loop()
     serial_exe();
 
     if (!run) {
-        /*map_update();
-
-        if (++mapPrintCounter >= 20) {
-            send_map_data();
-            mapPrintCounter = 0;
-        }*/
-
+        map_update();
         return;
     }
-
+    map_update();
     limit_switch_exe();
     colour_sensor_update();
 

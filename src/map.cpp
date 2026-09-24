@@ -39,6 +39,16 @@ int dist_o_r = 0;
 int dist_i_l = 0;
 int dist_i_r = 0;
 
+static const unsigned long MAP_UPDATE_PERIOD_MS = 100;
+static const unsigned long FRONTIER_TARGET_PERIOD_MS = 250;
+static const unsigned long MAP_TELEMETRY_PERIOD_MS = 250;
+
+static unsigned long lastMapUpdateAt = 0;
+static unsigned long lastFrontierTargetAt = 0;
+static unsigned long lastMapTelemetryAt = 0;
+
+static int frontierCellCount = 0;
+
 // --- Fixed-point confidence values ---------------------------------------
 // Both maps store confidence as int16_t / uint16_t scaled by CONF_SCALE,
 // i.e. "1000" means 1.000, "250" means 0.250, etc. -- 3 decimal places of
@@ -238,6 +248,10 @@ void map_init() {
     FRONTIER_GROUPS_X.clear();
     FRONTIER_GROUPS_Y.clear();
     target = {};
+    lastMapUpdateAt = 0;
+    lastFrontierTargetAt = 0;
+    lastMapTelemetryAt = 0;
+    frontierCellCount = 0;
 }
 
 void apply_decay() {
@@ -317,6 +331,7 @@ bool cell_too_close_to_obstacle(int x, int y)
 }
 
 void find_frontier() {
+    frontierCellCount = 0;
     for (int x = 6; x < MAP_WIDTH - 1; x++)
     {
         for (int y = 6; y < MAP_HEIGHT - 1; y++)
@@ -325,7 +340,7 @@ void find_frontier() {
             {
                 FRONTIER_MAP[x][y] = false;
             }
-            else if(self_x != x && self_y != y){ // unexplored space
+            else if (!(self_x == x && self_y == y)){ // unexplored space
                 FRONTIER_MAP[x][y] = false;
 
                 bool hasFreeNeighbor = false;
@@ -342,6 +357,7 @@ void find_frontier() {
                 if (hasFreeNeighbor && !cell_too_close_to_obstacle(x, y))
                 {
                     FRONTIER_MAP[x][y] = true;
+                    frontierCellCount++;
                 }
             }
         }
@@ -432,12 +448,20 @@ const float FRONTIER_SWITCH_MARGIN = 15.0f;  // tune: new candidate must beat
                                                // current target by this much
 
 void calc_frontier_target() {
-    FrontierTarget best;
+    FrontierTarget best = {};
+
     best.valid = false;
+    best.group_index = -1;
+    best.centre.x = -1;
+    best.centre.y = -1;
     best.cost = INFINITY;
 
-    float current_target_cost = INFINITY;
-    int current_target_group = -1;
+    bool oldValid = target.valid;
+    int oldX = target.centre.x;
+    int oldY = target.centre.y;
+
+    float currentTargetCost = INFINITY;
+
 
     for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {
         int size = FRONTIER_GROUPS_X[i].size();
@@ -482,6 +506,127 @@ void calc_frontier_target() {
     }
 
     target = best;
+    bool targetChanged = (oldValid != target.valid || (target.valid && (oldX != target.centre.x ||
+         oldY != target.centre.y)));
+    if (targetChanged)
+    {
+        debugMap.print("MAP_EVENT,");
+        debugMap.print(millis());
+
+        if (!target.valid)
+        {
+            debugMap.println(",FRONTIER_NONE");
+        }
+        else
+        {
+            float targetX;
+            float targetY;
+
+            get_frontier_target(
+                targetX,
+                targetY
+            );
+
+            debugMap.print(",FRONTIER_TARGET,");
+            debugMap.print(target.centre.x);
+            debugMap.print(",");
+            debugMap.print(target.centre.y);
+            debugMap.print(",");
+            debugMap.print(targetX);
+            debugMap.print(",");
+            debugMap.print(targetY);
+            debugMap.print(",");
+            debugMap.print(target.cost);
+            debugMap.print(",");
+            debugMap.println(
+                FRONTIER_GROUPS_X.size()
+            );
+        }
+    }
+}
+
+
+static void printMapTelemetry()
+{
+    if (!debugMap.enabled)
+    {
+        return;
+    }
+
+    if (millis() - lastMapTelemetryAt <
+        MAP_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
+
+    lastMapTelemetryAt = millis();
+
+    float targetX = -1.0f;
+    float targetY = -1.0f;
+
+    bool targetValid =
+        get_frontier_target(
+            targetX,
+            targetY
+        );
+
+    debugMap.print("MAP,");
+    debugMap.print(millis());
+
+    debugMap.print(",");
+    debugMap.print(self_x);
+
+    debugMap.print(",");
+    debugMap.print(self_y);
+
+    debugMap.print(",");
+    debugMap.print(pose_get_x_mm());
+
+    debugMap.print(",");
+    debugMap.print(pose_get_y_mm());
+
+    debugMap.print(",");
+    debugMap.print(pose_get_heading_deg());
+
+    debugMap.print(",");
+    debugMap.print(frontierCellCount);
+
+    debugMap.print(",");
+    debugMap.print(
+        FRONTIER_GROUPS_X.size()
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid ? 1 : 0
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid
+            ? target.centre.x
+            : -1
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid
+            ? target.centre.y
+            : -1
+    );
+
+    debugMap.print(",");
+    debugMap.print(targetX);
+
+    debugMap.print(",");
+    debugMap.print(targetY);
+
+    debugMap.print(",");
+    debugMap.println(
+        targetValid
+            ? target.cost
+            : -1.0f
+    );
 }
 
 void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 125)
@@ -828,6 +973,28 @@ void interpret_ultrasonic() { // multiple to get wide cone shape
 
 }
 
+
+bool get_frontier_target(float &x_mm, float &y_mm)
+{
+    if (!target.valid)
+    {
+        return false;
+    }
+
+    x_mm =
+        (target.centre.x * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f) -
+        MAP_ORIGIN_X_MM;
+
+    y_mm =
+        (target.centre.y * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f) -
+        MAP_ORIGIN_Y_MM;
+
+    return true;
+}
+
+
 void print_frontier_map_packed()
 {
     Serial.println("FRONTIER_MAP_START");
@@ -966,58 +1133,45 @@ bool homing_init = false;
 
 void map_update()
 {
-    uint32_t t0 = micros();
+    unsigned long now = millis();
 
+    if (now - lastMapUpdateAt <
+        MAP_UPDATE_PERIOD_MS)
+    {
+        return;
+    }
 
+    lastMapUpdateAt = now;
 
-    heading = pose_get_heading_deg() * PI / 180.0f;
+    heading =
+        pose_get_heading_deg() *
+        PI / 180.0f;
+
     g_cos_heading = cosf(heading);
     g_sin_heading = sinf(heading);
 
     apply_decay();
     update_self();
+
     interpret_tof();
     interpret_ultrasonic();
+
+    // Leave pose correction off until mapping itself is validated.
     // map_correction();
+
     arena_mirroring();
+
     find_frontier();
-    // calc_frontier_target();
 
+    if (lastFrontierTargetAt == 0 ||
+        now - lastFrontierTargetAt >=
+            FRONTIER_TARGET_PERIOD_MS)
+    {
+        lastFrontierTargetAt = now;
+        calc_frontier_target();
+    }
 
-    // NavState nav = getNavState();
-    // if (nav == HOMING) {
-    //     if (!homing_init) {
-    //         initialize();
-    //         computeShortestPath();
-    //         homing_init = true;
-    //     } else {
-    //         if (self_x != last_self_x || self_y != last_self_y) {
-    //             km += d_heuristic(last_self_x, last_self_y, self_x, self_y);
-    //             last_self_x = self_x;
-    //             last_self_y = self_y;
-    //         }
-    //         computeShortestPath();
-    //     }
-    // }
-
-
-
-    // print_weight_map();
-
-
-    // calculate period time for map
-
-    // uint32_t dt = micros() - t0;
-    // dbg_sum_us += dt;
-    // dbg_calls++;
-    // if (dt > dbg_max_us) dbg_max_us = dt;
-
-    // if (dbg_calls % 20 == 0) {
-    //     Serial.print(F("map_update avg_us="));
-    //     Serial.print(dbg_sum_us / dbg_calls);
-    //     Serial.print(F(" max_us="));
-    //     Serial.println(dbg_max_us);
-    // }
+    printMapTelemetry();
 }
 
 
