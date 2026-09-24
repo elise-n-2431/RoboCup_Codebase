@@ -31,7 +31,7 @@ enum RoamingState
 
     // At the expected location, stationary while the real
     // weight sensors get a chance to confirm something exists.
-    ROAM_TARGET_WAITING
+    ROAM_TARGET_WAITING,
 };
 
 static RoamingState roamingState = ROAM_START;
@@ -916,12 +916,22 @@ static void roaming_exe()
     }
 }
 
+void frontier_targetting()
+{
+    float fx = get_frontier_world_x_mm();
+    float fy = get_frontier_world_y_mm();
+    // Serial.print(" FX ");
+    // Serial.print(fx);
+    // Serial.print(" FY ");
+    // Serial.println(fy);
 
-void frontier_targetting(){
-    int frontier_x = get_frontier_x();
-    int frontier_y = get_frontier_y();
+    // if (fy!=0 && fx!=0)   // note: `target` lives in map.cpp; expose a getter,
+    // {                     // e.g. bool get_frontier_valid(), rather than
+    //     motor_control_stop();   // reaching into map.cpp's static directly
+    //     return;
+    // }
 
-    
+    motor_control_drive_to_point(fx, fy, ROAM_POWER);
 }
 
 
@@ -1030,3 +1040,7 @@ void navigator_exe()
     }
 }
 
+void print_navigator_state() {
+    Serial.print("ROAMINGSTATENAVIGATOR: ");
+    Serial.println(roamingState);
+}

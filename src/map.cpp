@@ -61,6 +61,11 @@ int self_y = 0;
 float MAP_ORIGIN_X_MM = 0;
 float MAP_ORIGIN_Y_MM = 0;
 
+float x_min = -MAP_ORIGIN_X_MM;
+float x_max = MAP_WIDTH * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+float y_min = -MAP_ORIGIN_Y_MM;
+float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
+
 int home_x = 0;
 int home_y = 0;
 
@@ -85,6 +90,7 @@ struct FrontierTarget {
 
 FrontierTarget target;
 
+
 const int n = 3; // number of starting weight estimates
 int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
 
@@ -106,6 +112,39 @@ int get_frontier_y() {
     return target.centre.y;
 }
 
+float get_frontier_world_x_mm()
+{
+    return (target.centre.x * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_X_MM;
+}
+
+float get_frontier_world_y_mm()
+{
+    return (target.centre.y * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_Y_MM;
+}
+
+float get_front_clearance_mm()
+{
+    // smallest of the two inner (most forward-facing) sensors
+    int temp_o_l  = dist_o_l;
+    int temp_i_l  = dist_i_l;
+    int temp_i_r  = dist_i_r;
+    int temp_o_r  = dist_o_r;
+
+
+    if (temp_o_l <= 0)  temp_o_l  = 1000;
+    if (temp_i_l <= 0)  temp_i_l  = 1000;
+    if (temp_i_r <= 0)  temp_i_r  = 1000;
+    if (temp_o_r <= 0)  temp_o_r  = 1000;
+
+    return (float)std::min({temp_o_l, temp_i_l, temp_i_r, temp_o_r});
+}
+
+void print_target() {
+    Serial.print("TARGET: ");
+    Serial.print(target.centre.x);
+    Serial.print(" ");
+    Serial.println(target.centre.y);
+}
 
 int world_to_cell_x(float x_mm)
 {
@@ -251,10 +290,36 @@ void arena_mirroring()
 //     }
 // }
 
-void find_frontier() {
-    for (int x = 1; x < MAP_WIDTH - 1; x++)
+// Robot footprint is stamped as a 5x5 block in update_self() (-2..2),
+// so use the same radius here: a frontier cell isn't valid as a
+// target if any cell within OBSTACLE_CLEARANCE_CELLS of it is a
+// confirmed obstacle -- the robot's body wouldn't fit there anyway.
+const int OBSTACLE_CLEARANCE_CELLS = 2;
+
+bool cell_too_close_to_obstacle(int x, int y)
+{
+    for (int i = -OBSTACLE_CLEARANCE_CELLS; i <= OBSTACLE_CLEARANCE_CELLS; i++)
     {
-        for (int y = 1; y < MAP_HEIGHT - 1; y++)
+        for (int j = -OBSTACLE_CLEARANCE_CELLS; j <= OBSTACLE_CLEARANCE_CELLS; j++)
+        {
+            int nx = x + i;
+            int ny = y + j;
+
+            if (nx < 0 || nx >= MAP_WIDTH || ny < 0 || ny >= MAP_HEIGHT) continue;
+
+            if (OBSTACLE_MAP[nx][ny] > OBSTACLE_UNKNOWN_BAND)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void find_frontier() {
+    for (int x = 6; x < MAP_WIDTH - 1; x++)
+    {
+        for (int y = 6; y < MAP_HEIGHT - 1; y++)
         {
             if (OBSTACLE_MAP[x][y] > OBSTACLE_UNKNOWN_BAND || OBSTACLE_MAP[x][y] < -OBSTACLE_UNKNOWN_BAND)
             {
@@ -263,22 +328,24 @@ void find_frontier() {
             else if(self_x != x && self_y != y){ // unexplored space
                 FRONTIER_MAP[x][y] = false;
 
+                bool hasFreeNeighbor = false;
                 for (int i = -1; i <= 1; i++) {
                     for (int j = -1; j <= 1; j++) {
                         if (!(i == 0 && j == 0)) {
                             if (OBSTACLE_MAP[x + i][y + j] < -OBSTACLE_UNKNOWN_BAND) {
-                                FRONTIER_MAP[x][y] = true;
+                                hasFreeNeighbor = true;
                             }
                         }
                     }
                 }
+
+                if (hasFreeNeighbor && !cell_too_close_to_obstacle(x, y))
+                {
+                    FRONTIER_MAP[x][y] = true;
+                }
             }
         }
     }
-
-    // --------------------------------------------------
-    // Group adjacent frontier cells (8-connectivity)
-    // --------------------------------------------------
 
     FRONTIER_GROUPS_X.clear();
     FRONTIER_GROUPS_Y.clear();
@@ -340,8 +407,8 @@ void find_frontier() {
 }
 
 float cost(float distance, int size, float orientation) {
-    float c1 = 1.0f;
-    float c2 = 1.0f;
+    float c1 = 0.5f;
+    float c2 = 3.0f;
     float c3 = 1.0f;
     return c1 * distance - c2 * size + c3 * fabsf(orientation);
 }
@@ -361,14 +428,27 @@ FrontierCentre get_frontier_centre(int group_index)
     return centre;
 }
 
+const float FRONTIER_SWITCH_MARGIN = 15.0f;  // tune: new candidate must beat
+                                               // current target by this much
+
 void calc_frontier_target() {
     FrontierTarget best;
     best.valid = false;
     best.cost = INFINITY;
 
+    float current_target_cost = INFINITY;
+    int current_target_group = -1;
+
     for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {
         int size = FRONTIER_GROUPS_X[i].size();
         FrontierCentre centre = get_frontier_centre(i);
+
+        // Is this group roughly the same physical target we're already
+        // driving to? Compare centres, not group index (index isn't stable).
+
+        float cdx = (centre.x - target.centre.x) * CELL_SIZE_MM;
+        float cdy = (centre.y - target.centre.y) * CELL_SIZE_MM;
+        bool isCurrentTarget = target.valid && (cdx*cdx + cdy*cdy) < (150*150);
 
         float dx = centre.x - self_x;
         float dy = centre.y - self_y;
@@ -377,11 +457,12 @@ void calc_frontier_target() {
         float xy_orientation = atan2f(dy, dx);
         float heading = pose_get_heading_deg() * PI / 180.0f;
         float relative_orientation = xy_orientation - heading;
-
         while (relative_orientation > PI)  relative_orientation -= 2.0f * PI;
         while (relative_orientation < -PI) relative_orientation += 2.0f * PI;
 
         float frontier_cost = cost(sqrd_distance, size, relative_orientation);
+
+        if (isCurrentTarget) current_target_cost = frontier_cost;
 
         if (frontier_cost < best.cost) {
             best.valid = true;
@@ -390,6 +471,16 @@ void calc_frontier_target() {
             best.cost = frontier_cost;
         }
     }
+
+    // Only switch away from the current target if the new best is
+    // meaningfully better -- not just marginally, which is what
+    // causes flicker between near-tied candidates.
+    if (target.valid && current_target_cost < INFINITY &&
+        best.cost > current_target_cost - FRONTIER_SWITCH_MARGIN)
+    {
+        return; // keep current target, don't overwrite it
+    }
+
     target = best;
 }
 
@@ -605,17 +696,123 @@ void remove_weight_evidence(int cell_x, int cell_y)
 
 // }
 
+
+float raycast_to_arena_wall(float ox, float oy, float angle_rad)
+{
+    float x_min = -MAP_ORIGIN_X_MM;
+    float x_max = MAP_WIDTH  * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+    float y_min = -MAP_ORIGIN_Y_MM;
+    float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
+
+    float dx = cos(angle_rad);
+    float dy = sin(angle_rad);
+
+    float t_best = INFINITY;
+
+    // Check each of the 4 boundary lines, keep nearest positive-t hit
+    // that actually falls within the rectangle's other axis.
+    if (dx > 1e-6f) {
+        float t = (x_max - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    } else if (dx < -1e-6f) {
+        float t = (x_min - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    }
+    if (dy > 1e-6f) {
+        float t = (y_max - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
+    } else if (dy < -1e-6f) {
+        float t = (y_min - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
+    }
+
+    return isfinite(t_best) ? t_best : -1.0f;
+}
+
+const float WALL_CORRECTION_GAIN = 0.10f;   // start small, tune up
+const float WALL_MATCH_TOLERANCE_MM = 60.0f; // reject if measured is way off predicted
+
+static float g_correction_sum_x, g_correction_sum_y = 0;
+static int g_correction_count = 0;
+
+
+void try_wall_correction(int distance_mm, float angle_deg, int sensor_x_pos = 125)
+{
+    if (distance_mm <= 0 || distance_mm > 1000) return; // no confirmed hit
+
+    float angle = angle_deg * PI / 180.0f;
+    float sensor_x = sensor_x_pos + 90.0f * cos(angle);
+    float sensor_y = 90.0f * sin(angle);
+
+    float sensor_world_x = pose_get_x_mm() + sensor_x * g_cos_heading - sensor_y * g_sin_heading;
+    float sensor_world_y = pose_get_y_mm() + sensor_x * g_sin_heading + sensor_y * g_cos_heading;
+
+    float beam_heading = heading + angle;
+
+    float expected = raycast_to_arena_wall(sensor_world_x, sensor_world_y, beam_heading);
+    if (expected < 0) return;
+
+    float residual = distance_mm - expected;
+
+    // Gate: only trust this as a wall hit if it's close to the predicted
+    // wall distance. A big residual means something else is in the way
+    // (obstacle, robot, weight) -- not a wall, don't use it.
+    if (fabsf(residual) > WALL_MATCH_TOLERANCE_MM) return;
+
+    // Also gate on the hit actually landing near the map border, as a
+    // second sanity check using your existing cell grid.
+    int hit_cell_x = world_to_cell_x(sensor_world_x + expected * cos(beam_heading));
+    int hit_cell_y = world_to_cell_y(sensor_world_y + expected * sin(beam_heading));
+    bool near_border =
+        hit_cell_x <= 1 || hit_cell_x >= MAP_WIDTH - 2 ||
+        hit_cell_y <= 1 || hit_cell_y >= MAP_HEIGHT - 2;
+    if (!near_border) return;
+
+    g_correction_sum_x += residual * cos(beam_heading);
+    g_correction_sum_y += residual * sin(beam_heading);
+    g_correction_count++;
+}
+
+
+void map_correction()
+{
+    g_correction_sum_x = 0;
+    g_correction_sum_y = 0;
+    g_correction_count = 0;
+
+    for (int i = -3; i < 4; i += 2) {
+        try_wall_correction(dist_o_l, -40.0f + i);
+        try_wall_correction(dist_i_l, -15.0f + i);
+        try_wall_correction(dist_i_r,  15.0f + i);
+        try_wall_correction(dist_o_r,  40.0f + i);
+    }
+    try_wall_correction(ultrasound_get_left_mm(),  -90.0f, 0);
+    try_wall_correction(ultrasound_get_right_mm(),  90.0f, 0);
+
+    if (g_correction_count > 0) {
+        float dx = (g_correction_sum_x / g_correction_count) * WALL_CORRECTION_GAIN;
+        float dy = (g_correction_sum_y / g_correction_count) * WALL_CORRECTION_GAIN;
+        pose_apply_correction(dx, dy);
+    }
+}
+
+
+
 void interpret_tof()
 {
     for (int i = -3; i < 4; i += 2) {
         dist_o_l = tof_get_distance(NAV_OUTER_LEFT);
-        update_obstacle_map(dist_o_l, 40.0 + i);
+        update_obstacle_map(dist_o_l, -40.0 + i);
         dist_i_l = tof_get_distance(NAV_INNER_LEFT);
-        update_obstacle_map(dist_i_l,  15.0 + i);
+        update_obstacle_map(dist_i_l,  -15.0 + i);
         dist_i_r = tof_get_distance(NAV_INNER_RIGHT);
-        update_obstacle_map(dist_i_r, -15.0 + i);
+        update_obstacle_map(dist_i_r, 15.0 + i);
         dist_o_r = tof_get_distance(NAV_OUTER_RIGHT);
-        update_obstacle_map(dist_o_r, -40.0 + i);
+        update_obstacle_map(dist_o_r, 40.0 + i);
     }
 
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
@@ -625,15 +822,15 @@ void interpret_tof()
 
 void interpret_ultrasonic() { // multiple to get wide cone shape
     for (int i = 80; i < 101; i += 2) {
-        update_obstacle_map(ultrasound_get_left_mm(), i, 0);
-        update_obstacle_map(ultrasound_get_right_mm(), -i, 0);
+        update_obstacle_map(ultrasound_get_left_mm(), -i, 0);
+        update_obstacle_map(ultrasound_get_right_mm(), i, 0);
     }
 
 }
 
 void print_frontier_map_packed()
 {
-    Serial2.println("FRONTIER_MAP_START");
+    Serial.println("FRONTIER_MAP_START");
 
     uint8_t byte = 0;
     int bit_count = 0;
@@ -647,8 +844,8 @@ void print_frontier_map_packed()
 
             if (bit_count == 8)
             {
-                if (byte < 0x10) Serial2.print('0');
-                Serial2.print(byte, HEX);
+                if (byte < 0x10) Serial.print('0');
+                Serial.print(byte, HEX);
                 byte = 0;
                 bit_count = 0;
             }
@@ -658,17 +855,17 @@ void print_frontier_map_packed()
     if (bit_count > 0) // flush partial final byte
     {
         byte <<= (8 - bit_count);
-        if (byte < 0x10) Serial2.print('0');
-        Serial2.print(byte, HEX);
+        if (byte < 0x10) Serial.print('0');
+        Serial.print(byte, HEX);
     }
 
-    Serial2.println();
-    Serial2.println("FRONTIER_MAP_END");
+    Serial.println();
+    Serial.println("FRONTIER_MAP_END");
 }
 
 void print_obstacle_map_quantized()
 {
-    Serial2.println("OBSTACLE_MAP_START");
+    Serial.println("OBSTACLE_MAP_START");
 
     for (int y = 0; y < MAP_HEIGHT; y++)
     {
@@ -692,12 +889,12 @@ void print_obstacle_map_quantized()
 
             // encode as 4-bit two's complement, print as one hex digit
             uint8_t nibble = (uint8_t)(q & 0x0F);
-            Serial2.print(nibble, HEX);
+            Serial.print(nibble, HEX);
         }
     }
 
-    Serial2.println();
-    Serial2.println("OBSTACLE_MAP_END");
+    Serial.println();
+    Serial.println("OBSTACLE_MAP_END");
 }
 
 void send_map_data()
@@ -723,41 +920,41 @@ void send_map_data()
        
     print_frontier_map_packed();
 
-    Serial2.println("Current position");
-    Serial2.print(self_x); 
-    Serial2.print(",");
-    Serial2.print(self_y);
-    Serial2.println();
+    Serial.println("Current position");
+    Serial.print(self_x); 
+    Serial.print(",");
+    Serial.print(self_y);
+    Serial.println();
 
-    Serial2.println("TOF readings");
-    Serial2.print(dist_o_l);
-    Serial2.print(",");
-    Serial2.print(dist_i_l);
-    Serial2.print(",");
-    Serial2.print(dist_i_r);
-    Serial2.print(",");
-    Serial2.print(dist_o_r);
-    Serial2.print(",");
-    Serial2.print(tof_get_weight_left_top());
-    Serial2.print(",");
-    Serial2.print(tof_get_weight_right_top());
-    Serial2.print(",");
-    Serial2.print(tof_get_weight_left_bottom());
-    Serial2.print(",");
-    Serial2.print(tof_get_weight_right_bottom());
-    Serial2.print(",");
-    Serial2.print(tof_get_weight_middle());
-    Serial2.println();
+    Serial.println("TOF readings");
+    Serial.print(dist_o_l);
+    Serial.print(",");
+    Serial.print(dist_i_l);
+    Serial.print(",");
+    Serial.print(dist_i_r);
+    Serial.print(",");
+    Serial.print(dist_o_r);
+    Serial.print(",");
+    Serial.print(tof_get_weight_left_top());
+    Serial.print(",");
+    Serial.print(tof_get_weight_right_top());
+    Serial.print(",");
+    Serial.print(tof_get_weight_left_bottom());
+    Serial.print(",");
+    Serial.print(tof_get_weight_right_bottom());
+    Serial.print(",");
+    Serial.print(tof_get_weight_middle());
+    Serial.println();
 
-    Serial2.println("Heading");
-    Serial2.print(pose_get_heading_deg());
-    Serial2.println();
+    Serial.println("Heading");
+    Serial.print(pose_get_heading_deg());
+    Serial.println();
 
-    Serial2.println("Target");
-    Serial2.print(target.centre.x); 
-    Serial2.print(",");
-    Serial2.print(target.centre.y);
-    Serial2.println();
+    Serial.println("Target");
+    Serial.print(target.centre.x); 
+    Serial.print(",");
+    Serial.print(target.centre.y);
+    Serial.println();
 }
 
 // temp var to calc period
@@ -781,9 +978,11 @@ void map_update()
     update_self();
     interpret_tof();
     interpret_ultrasonic();
+    // map_correction();
     arena_mirroring();
     find_frontier();
-    calc_frontier_target();
+    // calc_frontier_target();
+
 
     // NavState nav = getNavState();
     // if (nav == HOMING) {
@@ -808,17 +1007,17 @@ void map_update()
 
     // calculate period time for map
 
-    uint32_t dt = micros() - t0;
-    dbg_sum_us += dt;
-    dbg_calls++;
-    if (dt > dbg_max_us) dbg_max_us = dt;
+    // uint32_t dt = micros() - t0;
+    // dbg_sum_us += dt;
+    // dbg_calls++;
+    // if (dt > dbg_max_us) dbg_max_us = dt;
 
-    if (dbg_calls % 20 == 0) {
-        debugMap.print(F("map_update avg_us="));
-        debugMap.print(dbg_sum_us / dbg_calls);
-        debugMap.print(F(" max_us="));
-        debugMap.println(dbg_max_us);
-    }
+    // if (dbg_calls % 20 == 0) {
+    //     Serial.print(F("map_update avg_us="));
+    //     Serial.print(dbg_sum_us / dbg_calls);
+    //     Serial.print(F(" max_us="));
+    //     Serial.println(dbg_max_us);
+    // }
 }
 
 

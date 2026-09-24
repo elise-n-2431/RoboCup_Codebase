@@ -31,8 +31,6 @@ const unsigned long COLOUR_PRINT_PERIOD_MS = 250;
 
 int consecutive_hits = 0;
 
-
-
 bool colour_sensor_init()
 {
     Serial.println("Starting colour sensor setup...");

@@ -167,6 +167,12 @@ debugFusedLateral += lateralDistance;
 
 }
 
+void pose_apply_correction(float dx_mm, float dy_mm)
+{
+    poseXmm += dx_mm;
+    poseYmm += dy_mm;
+}
+
 
 // ============================================================
 // GETTERS
@@ -235,8 +241,8 @@ void pose_telemetry_exe()
 
     lastTelemetryTime = millis();
 
-    pose_print_telemetry(Serial2);
-    pose_print_telemetry(Serial);
+    // pose_print_telemetry(Serial);
+    // pose_print_telemetry(Serial2);
 }
 
 void pose_print_telemetry(Stream &port)

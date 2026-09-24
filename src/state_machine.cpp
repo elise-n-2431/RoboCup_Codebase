@@ -96,8 +96,8 @@ void setStateFlag(bool* flag)
     Serial.print("FLAG,");
     Serial.println(name);
 
-    Serial2.print("FLAG,");
-    Serial2.println(name);
+    // Serial2.print("FLAG,");
+    // Serial2.println(name);
 }
 
 void resetStateFlag(bool* flag) {
@@ -384,6 +384,6 @@ void updateStateMachine() {
 }
 
 void print_state() {
-    // Serial.println(current_collect_state);
-    Serial2.println(navStateName(current_nav_state));
+    Serial.println(collectStateName(current_collect_state));
+    Serial.println(navStateName(current_nav_state));
 }

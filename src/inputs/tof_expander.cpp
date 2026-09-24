@@ -473,39 +473,39 @@ int tof_get_weight_right_bottom()
 
 
 
-void tof_print_readings(Stream &port)
+void tof_print_readings()
 {
-    port.print("NAV: ");
+    // Serial.print("NAV: ");
 
-    port.print("OL=");
-    port.print(tof_get_nav_outer_left());
+    // Serial.print("OL=");
+    // Serial.print(tof_get_nav_outer_left());
 
-    port.print("  IL=");
-    port.print(tof_get_nav_inner_left());
+    // Serial.print("  IL=");
+    // Serial.print(tof_get_nav_inner_left());
 
-    port.print("  IR=");
-    port.print(tof_get_nav_inner_right());
+    // Serial.print("  IR=");
+    // Serial.print(tof_get_nav_inner_right());
 
-    port.print("  OR=");
-    port.println(tof_get_nav_outer_right());
+    // Serial.print("  OR=");
+    // Serial.println(tof_get_nav_outer_right());
 
 
-    port.print("WEIGHT: ");
+    Serial.print("WEIGHT: ");
 
-    port.print("LT=");
-    port.print(tof_get_weight_left_top());
+    Serial.print("LT=");
+    Serial.print(tof_get_weight_left_top());
 
-    port.print("  LB=");
-    port.print(tof_get_weight_left_bottom());
+    Serial.print("  LB=");
+    Serial.print(tof_get_weight_left_bottom());
 
-    port.print("  RT=");
-    port.print(tof_get_weight_right_top());
+    Serial.print("  RT=");
+    Serial.print(tof_get_weight_right_top());
 
-    port.print("  RB=");
-    port.println(tof_get_weight_right_bottom());
+    Serial.print("  RB=");
+    Serial.print(tof_get_weight_right_bottom());
 
-    port.print("  MIDDLE =");
-    port.println(tof_get_weight_middle());
+    Serial.print("  MIDDLE =");
+    Serial.println(tof_get_weight_middle());
 }
 
 

@@ -21,6 +21,6 @@ int tof_get_weight_right_top();
 int tof_get_weight_right_bottom();
 int tof_get_weight_middle();
 
-void tof_print_readings(Stream &port);
+void tof_print_readings();
 
 #endif

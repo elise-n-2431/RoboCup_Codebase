@@ -1,12 +1,15 @@
 import serial
 import numpy as np
+# import matplotlib
+# matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
+# print(plt.get_backend())
 
 # --------------------------------------------------
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM"
+SERIAL_PORT = "COM14"
 BAUD_RATE = 115200
 
 reading_weight = False
@@ -194,6 +197,41 @@ frontier_plot = ax_obstacle.imshow(
     alpha=0.85  # tweak transparency so obstacle map still peeks through if you want
 )
 
+position_mask = np.zeros(
+    (MAP_HEIGHT, MAP_WIDTH, 4),
+    dtype=float
+)
+
+position_mask_plot = ax_obstacle.imshow(
+    position_mask,
+    origin="upper",
+    interpolation="nearest"
+)
+
+
+def update_position_mask(x, y):
+    """
+    Make exactly one map pixel white:
+    the robot's current position.
+    """
+
+    position_mask.fill(0)
+
+    # NumPy indexing is [y, x]
+    if (
+        0 <= x < MAP_WIDTH and
+        0 <= y < MAP_HEIGHT
+    ):
+        position_mask[y, x] = [
+            1.0,  # R
+            1.0,  # G
+            1.0,  # B
+            1.0   # Alpha
+        ]
+
+    position_mask_plot.set_data(position_mask)
+
+
 # weight_text = []
 # obstacle_text = []
 
@@ -238,7 +276,7 @@ position_text = fig.text(
 )
 
 heading_text = fig.text(
-    0.7,
+    0.8,
     0.99,
     "Heading: 0 degrees",
     ha="center",
@@ -389,12 +427,18 @@ try:
         if new_frontier_map is not None:
             frontier_map = new_frontier_map.astype(bool)
 
+        update_position_mask(
+            self_x,
+            self_y
+        )
+
+
         if reading_weight:
             weight_map[self_x][self_y] = 1000
             weight_plot.set_data(weight_map)
         obstacle_plot.set_data(obstacle_map)
         frontier_plot.set_data(np.ma.masked_where(~frontier_map, frontier_map))
-
+        
         position_text.set_text(
             f"Position: ({self_x}, {self_y})"
         )

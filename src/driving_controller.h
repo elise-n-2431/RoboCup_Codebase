@@ -31,7 +31,11 @@ void motor_control_set_drive_kp(float kp);
 bool motor_control_is_turning();
 bool motor_control_is_driving();
 
+void motor_control_drive_to_point(float target_x_mm, float target_y_mm, int basePower);
+bool motor_control_is_driving_to_point();
 
+void updateDriveToPointControl(float currentHeading, float currentX, float currentY);
 
+void print_motor_state();
 
 #endif
