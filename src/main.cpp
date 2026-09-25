@@ -81,10 +81,10 @@ int max_iter = 10; // was 20
 
 void loop()
 {
-    // if (digitalRead(GO_PIN) == HIGH)  {
+    if (digitalRead(GO_PIN) == HIGH)  {
     run = true;
-        // setStateFlag(&STATE_FLAGS.not_target_weight_onboard);
-    // }
+        setStateFlag(&STATE_FLAGS.not_target_weight_onboard);
+    }
 
     imu_update();
 

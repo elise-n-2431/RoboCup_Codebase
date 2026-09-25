@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM14"
+SERIAL_PORT = "COM32"
 BAUD_RATE = 115200
 
 reading_weight = False
