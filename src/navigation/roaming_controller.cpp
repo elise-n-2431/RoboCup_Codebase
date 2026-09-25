@@ -15,7 +15,7 @@
 #include "navigation/weight_detection.h"
 #include "navigation/pursuit_controller.h"
 #include "navigation/reversing_controller.h"
-
+#include "navigation/rejected_weights.h"
 
 
 enum RoamingState
@@ -352,6 +352,32 @@ static bool checkForWeight()
     {
         return false;
     }
+    float rejectedDistance = -1.0f;
+
+    if (rejected_weights_is_near(
+            pose_get_x_mm(),
+            pose_get_y_mm(),
+            rejectedDistance))
+        {
+        debugNav.print("NAV_EVENT,");
+        debugNav.print(millis());
+        debugNav.print(",DUMMY_IGNORED,");
+        debugNav.print(rejectedDistance);
+        debugNav.print(",");
+        debugNav.println(
+            weightTargetName(
+                detectedTarget
+            )
+        );
+
+        weight_detection_block_for(
+            1000
+        );
+
+        return false;
+    }
+
+
 
     debugNav.print("NAV_EVENT,");
     debugNav.print(millis());

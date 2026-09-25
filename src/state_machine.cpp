@@ -7,6 +7,7 @@
 #include "outputs/pickup_servo.h"
 #include "outputs/smart_servo.h"
 #include "debug_print.h"
+#include "navigation/rejected_weights.h"
 
 // enums and structs moved to h file
 
@@ -283,10 +284,19 @@ void updateStateMachine() {
             break;
 
         case SORTING:
-            if (STATE_FLAGS.dummy_identified) {
+            if (STATE_FLAGS.dummy_identified)
+            {
+                rejected_weights_add_current();
+
                 smartservo_arms_open();
-                reverseReturnState = ROAMING;
-                checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
+
+                reverseReturnState =
+                    ROAMING;
+
+                checkChangeNavState(
+                    REVERSING,
+                    &STATE_FLAGS.dummy_identified
+                );
             } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 

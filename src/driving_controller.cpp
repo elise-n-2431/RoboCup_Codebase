@@ -38,7 +38,7 @@ static float DRIVE_KP = 5.0f;
 static const int MAX_DRIVE_CORRECTION = 100;
 static const int MAX_POINT_CORRECTION = 260;
 
-static int driveBasePower = 300;
+static int driveBasePower = 380;
 
 static const int MIN_TURN_POWER = 270;
 static const int MAX_MOTOR_POWER = 450;
@@ -129,6 +129,18 @@ static const char* motorModeName()
     }
 }
 
+static void setMotorPower(
+    int leftPower,
+    int rightPower)
+{
+    lastLeftPower = leftPower;
+    lastRightPower = rightPower;
+
+    DC_motors_setPower(
+        leftPower,
+        rightPower
+    );
+}
 
 
 static float wrapHeading(float heading)
@@ -223,7 +235,7 @@ void motor_control_init()
 
     clearPointTarget();
 
-    DC_motors_setPower(0, 0);
+    setMotorPower(0, 0);
 }
 
 
@@ -425,7 +437,7 @@ static void updateDriveHeadingControl(float currentHeading)
     );
 
     float correction =
-        DRIVE_KP * currentError * POINT_STEER_SIGN;
+        DRIVE_KP * currentError * DRIVE_STEER_SIGN;
 
     correction = constrain(
         correction,
@@ -489,7 +501,7 @@ static void updateDriveToPointControl(
     float correction =
         DRIVE_KP *
         currentError *
-        DRIVE_STEER_SIGN;
+        POINT_STEER_SIGN;
 
     correction = constrain(
         correction,
@@ -731,7 +743,6 @@ static void printMotorTelemetry()
 }
 
 
-
 void motor_control_update()
 {
     if (controlMode == CONTROL_IDLE)
@@ -741,7 +752,8 @@ void motor_control_update()
 
     unsigned long currentTime = millis();
 
-    if (currentTime - previousTime < CONTROL_PERIOD_MS)
+    if (currentTime - previousTime <
+        CONTROL_PERIOD_MS)
     {
         return;
     }
@@ -757,50 +769,44 @@ void motor_control_update()
             currentImuHeading,
             currentTime
         );
-
-        return;
     }
-
-    if (controlMode == CONTROL_DRIVE_HEADING)
+    else if (controlMode == CONTROL_DRIVE_HEADING)
     {
         updateDriveHeadingControl(
             currentImuHeading
         );
-
-        return;
     }
-
-    if (controlMode == CONTROL_DRIVE_TO_POINT)
+    else if (controlMode == CONTROL_DRIVE_TO_POINT)
     {
-        if (getFrontClearance() < WALL_AVOID_TRIGGER_MM)
+        if (getFrontClearance() <
+            WALL_AVOID_TRIGGER_MM)
         {
-            controlMode = CONTROL_AVOID_TURN;
-            initAvoidTurn(currentImuHeading);
+            controlMode =
+                CONTROL_AVOID_TURN;
 
-            return;
+            initAvoidTurn(
+                currentImuHeading
+            );
         }
-
-        updateDriveToPointControl(
-            pose_get_heading_deg(),
-            pose_get_x_mm(),
-            pose_get_y_mm()
-        );
-
-        return;
+        else
+        {
+            updateDriveToPointControl(
+                pose_get_heading_deg(),
+                pose_get_x_mm(),
+                pose_get_y_mm()
+            );
+        }
     }
-
-    if (controlMode == CONTROL_AVOID_TURN)
+    else if (controlMode == CONTROL_AVOID_TURN)
     {
         updateAvoidTurnControl(
             currentImuHeading,
             currentTime
         );
-
-        return;
     }
+
     printMotorTelemetry();
 }
-
 
 
 void motor_control_drive_to_point(

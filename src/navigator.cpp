@@ -13,6 +13,7 @@
 #include "navigation/pursuit_controller.h"
 #include "navigation/reversing_controller.h"
 #include "navigation/homing_controller.h"
+#include "navigation/rejected_weights.h"
 
 
 // ============================================================
@@ -115,6 +116,7 @@ bool navigator_start(bool enablePickup)
     );
 
     navigator_stop();
+    rejected_weights_reset();
 
     navigatorEnabled = true;
     lastNavState = getNavState();

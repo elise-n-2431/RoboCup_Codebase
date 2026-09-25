@@ -19,11 +19,11 @@ static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 static const float PURSUIT_SCAN_STEP_DEG = 12.0f;
 static const float PURSUIT_SCAN_MAX_DEG = 48.0f;
 
-static const int WEIGHT_STOP_DISTANCE_MM = 100;
+static const int WEIGHT_STOP_DISTANCE_MM = 90;
 static const int WEIGHT_SLOW_DISTANCE_MM = 200;
 
 static const int WEIGHT_APPROACH_POWER = 360;
-static const int WEIGHT_SLOW_POWER = 300;
+static const int WEIGHT_SLOW_POWER = 280;
 
 static const unsigned long ARM_SECURE_WAIT_MS = 1000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
