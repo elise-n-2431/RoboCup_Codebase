@@ -209,7 +209,7 @@ float pose_get_heading_deg()
 
     // IMU positive rotation is clockwise.
     // Arena/pose positive rotation is counter-clockwise.
-    float heading = startPoseHeadingDeg - imuDelta;
+    float heading = startPoseHeadingDeg + imuDelta;
 
     while (heading >= 360.0f)
     {

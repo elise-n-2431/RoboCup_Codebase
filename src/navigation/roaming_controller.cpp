@@ -590,7 +590,7 @@ static void updatePriorityTarget(
             );
 
             motor_control_turn_relative(
-                -priorityHeadingError
+                priorityHeadingError
             );
 
             roamingState =
@@ -667,7 +667,7 @@ static void updatePriorityTarget(
                 debugNav.println(priorityDistance);
 
                 motor_control_turn_relative(
-                    -priorityHeadingError
+                    priorityHeadingError
                 );
 
                 roamCommandedPower = 0;

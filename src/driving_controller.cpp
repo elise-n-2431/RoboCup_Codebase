@@ -216,6 +216,7 @@ static void clearPointTarget()
 
     avoidInitialized = false;
     avoidTotalRotation = 0.0f;
+    lastPointDistance = -1.0f;
 }
 
 
@@ -331,7 +332,7 @@ static void updateTurnControl(
     // Target reached.
     if (absError <= ANGLE_TOLERANCE_DEG)
     {
-        DC_motors_setPower(0, 0);
+        setMotorPower(0, 0);
 
         fineTurnPhaseStarted = 0;
         fineTurnPowerOn = true;
@@ -392,7 +393,7 @@ static void updateTurnControl(
 
         if (!fineTurnPowerOn)
         {
-            DC_motors_setPower(0, 0);
+            setMotorPower(0, 0);
             return;
         }
 
@@ -401,7 +402,7 @@ static void updateTurnControl(
             direction *
             TURN_SIGN;
 
-        DC_motors_setPower(
+        setMotorPower(
             turnPower,
             -turnPower
         );
@@ -423,7 +424,7 @@ static void updateTurnControl(
 
     turnPower *= direction * TURN_SIGN;
 
-    DC_motors_setPower(
+    setMotorPower(
         turnPower,
         -turnPower
     );
@@ -453,7 +454,7 @@ static void updateDriveHeadingControl(float currentHeading)
         driveBasePower -
         (int)correction;
 
-    DC_motors_setPower(
+    setMotorPower(
         leftPower,
         rightPower
     );
@@ -471,10 +472,11 @@ static void updateDriveToPointControl(
     float distance =
         sqrtf(dx * dx + dy * dy);
 
+    lastPointDistance = distance;
     // We have reached this XY target.
     if (distance <= ARRIVAL_TOLERANCE_MM)
     {
-        DC_motors_setPower(0, 0);
+        setMotorPower(0, 0);
 
         pointReached = true;
         controlMode = CONTROL_IDLE;
@@ -561,7 +563,7 @@ static void updateDriveToPointControl(
         MAX_MOTOR_POWER
     );
 
-    DC_motors_setPower(
+    setMotorPower(
         leftPower,
         rightPower
     );
@@ -641,7 +643,7 @@ static void updateAvoidTurnControl(
     if (avoidTotalRotation >= AVOID_MAX_ROTATION_DEG ||
         currentTime - avoidStartedAt >= AVOID_MAX_TIME_MS)
     {
-        DC_motors_setPower(0, 0);
+        setMotorPower(0, 0);
 
         avoidInitialized = false;
         avoidTotalRotation = 0.0f;
@@ -673,7 +675,7 @@ static void updateAvoidTurnControl(
     if (avoidDirection < 0)
     {
         // LEFT arc.
-        DC_motors_setPower(
+        setMotorPower(
             innerPower,
             outerPower
         );
@@ -681,7 +683,7 @@ static void updateAvoidTurnControl(
     else
     {
         // RIGHT arc.
-        DC_motors_setPower(
+        setMotorPower(
             outerPower,
             innerPower
         );
@@ -867,7 +869,7 @@ void motor_control_stop()
 
     clearPointTarget();
 
-    DC_motors_setPower(0, 0);
+    setMotorPower(0, 0);
 
     debugMotor.println(
         "Motor control stopped"
@@ -881,7 +883,7 @@ void motor_control_reverse(int power)
 
     clearPointTarget();
 
-    DC_motors_setPower(
+    setMotorPower(
         -power,
         -power
     );
