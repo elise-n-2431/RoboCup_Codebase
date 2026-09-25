@@ -11,7 +11,7 @@
 
 
 // Pursuit tuning
-static const int WEIGHT_DETECT_DISTANCE_MM = 550;
+static const int WEIGHT_DETECT_DISTANCE_MM = 650;
 static const int WEIGHT_MIDDLE_SENSOR = 8;
 
 static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
@@ -86,25 +86,59 @@ static void resetPursuitScan()
 
 static bool commandNextPursuitScan()
 {
-    int level = (pursuitScanIndex / 2) + 1;
-    float magnitude = level * PURSUIT_SCAN_STEP_DEG;
+    int stepsPerSide =
+        (int)(
+            PURSUIT_SCAN_MAX_DEG /
+            PURSUIT_SCAN_STEP_DEG
+        );
 
-    if (magnitude > PURSUIT_SCAN_MAX_DEG)
+    if (pursuitScanIndex >=
+        stepsPerSide * 2)
     {
         return false;
     }
 
-    // Search the side that originally detected the weight first,
-    // then search the equivalent angle on the opposite side.
-    int alternatingDirection = (pursuitScanIndex % 2 == 0) ? 1 : -1;
-    int direction = pursuitPreferredDirection * alternatingDirection;
+    bool preferredSide =
+        pursuitScanIndex <
+        stepsPerSide;
 
-    float offset = direction * magnitude;
+    int level;
+
+    if (preferredSide)
+    {
+        level =
+            pursuitScanIndex + 1;
+    }
+    else
+    {
+        level =
+            pursuitScanIndex -
+            stepsPerSide + 1;
+    }
+
+    int direction =
+        preferredSide
+        ? pursuitPreferredDirection
+        : -pursuitPreferredDirection;
+
+    float offset =
+        direction *
+        level *
+        PURSUIT_SCAN_STEP_DEG;
+
     pursuitScanIndex++;
-    debugNav.print("Pursuit: scanning offset ");
+
+    debugNav.print(
+        "Pursuit: scanning offset "
+    );
     debugNav.print(offset);
     debugNav.println(" deg");
-    motor_control_turn_to(pursuitScanOriginHeading + offset);
+
+    motor_control_turn_to(
+        pursuitScanOriginHeading +
+        offset
+    );
+
     return true;
 }
 
@@ -120,7 +154,7 @@ void pursuit_start(WeightTargetSide target)
     pursuitScanIndex = 0;
     pursuitSecureStartedAt = 0;
 
-    pursuitStartedAt = 0;
+    pursuitStartedAt = millis();
 }
 
 static int pursuitClearanceValue(
@@ -154,7 +188,28 @@ static int getPursuitFrontClearance()
 }
 
 void pursuit_update()
-{
+{   
+    if (pursuitStartedAt != 0 &&
+        pursuitState != PURSUIT_SECURING &&
+        pursuitState != PURSUIT_FINISHED &&
+        millis() - pursuitStartedAt >
+            PURSUIT_TIMEOUT_MS)
+    {
+        motor_control_stop();
+
+        debugNav.println(
+            "Pursuit: timeout - target lost"
+        );
+
+        setStateFlag(
+            &STATE_FLAGS.target_lost
+        );
+
+        pursuitState =
+            PURSUIT_FINISHED;
+
+        return;
+    }
     switch (pursuitState)
     {
         case PURSUIT_START:

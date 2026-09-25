@@ -52,7 +52,7 @@ static const int ROAM_CRITICAL_MM = 90;
 static const float ROAM_AVOID_TURN_DEG = 45.0f;
 
 
-static const float PRIORITY_TARGET_ARRIVAL_MM = 250.0f;
+static const float PRIORITY_TARGET_ARRIVAL_MM = 80.0f;
 static const float PRIORITY_TARGET_TURN_THRESHOLD_DEG = 18.0f;
 static const float PRIORITY_TARGET_FINAL_ALIGN_DEG = 8.0f;
 
@@ -63,6 +63,12 @@ static const unsigned long PRIORITY_TARGET_REJOIN_DELAY_MS = 700;
 
 static const unsigned long NAV_TELEMETRY_PERIOD_MS = 200;
 static unsigned long lastNavTelemetryAt = 0;
+
+static const float PRIORITY_SEARCH_ANGLE_DEG = 12.0f;
+static const unsigned long PRIORITY_SEARCH_SETTLE_MS = 200;
+
+static int prioritySearchStage = 0;
+static unsigned long prioritySearchStageAt = 0;
 
 
 
@@ -509,13 +515,13 @@ static bool handleActiveTurn()
     return false;
 }
 
-
 static bool handlePriorityWaiting(
     bool hasPriorityTarget,
     float priorityX,
     float priorityY)
 {
-    if (roamingState != ROAM_TARGET_WAITING)
+    if (roamingState !=
+        ROAM_TARGET_WAITING)
     {
         return false;
     }
@@ -523,20 +529,131 @@ static bool handlePriorityWaiting(
     if (!hasPriorityTarget)
     {
         priorityTargetWaitStartedAt = 0;
+        prioritySearchStage = 0;
         roamingState = ROAM_START;
 
         return true;
     }
 
-    if (priorityTargetWaitStartedAt == 0)
+    // Stage 0:
+    // Give the sensors a moment while stationary.
+    if (prioritySearchStage == 0)
     {
-        priorityTargetWaitStartedAt =
-            millis();
+        if (millis() -
+                prioritySearchStageAt <
+            PRIORITY_SEARCH_SETTLE_MS)
+        {
+            return true;
+        }
+
+        motor_control_turn_relative(
+            -PRIORITY_SEARCH_ANGLE_DEG
+        );
+
+        prioritySearchStage = 1;
+
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,LEFT"
+        );
+
+        return true;
     }
 
+    // Wait for first small turn.
+    if (prioritySearchStage == 1)
+    {
+        if (motor_control_is_turning())
+        {
+            return true;
+        }
+
+        motor_control_stop();
+
+        prioritySearchStage = 2;
+        prioritySearchStageAt = millis();
+
+        return true;
+    }
+
+    // Small pause at left extreme.
+    if (prioritySearchStage == 2)
+    {
+        if (millis() -
+                prioritySearchStageAt <
+            PRIORITY_SEARCH_SETTLE_MS)
+        {
+            return true;
+        }
+
+        motor_control_turn_relative(
+            2.0f *
+            PRIORITY_SEARCH_ANGLE_DEG
+        );
+
+        prioritySearchStage = 3;
+
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,RIGHT"
+        );
+
+        return true;
+    }
+
+    // Wait for right turn.
+    if (prioritySearchStage == 3)
+    {
+        if (motor_control_is_turning())
+        {
+            return true;
+        }
+
+        motor_control_stop();
+
+        prioritySearchStage = 4;
+        prioritySearchStageAt = millis();
+
+        return true;
+    }
+
+    // Pause at right extreme.
+    if (prioritySearchStage == 4)
+    {
+        if (millis() -
+                prioritySearchStageAt <
+            PRIORITY_SEARCH_SETTLE_MS)
+        {
+            return true;
+        }
+
+        // Return to original heading.
+        motor_control_turn_relative(
+            -PRIORITY_SEARCH_ANGLE_DEG
+        );
+
+        prioritySearchStage = 5;
+
+        return true;
+    }
+
+    if (prioritySearchStage == 5)
+    {
+        if (motor_control_is_turning())
+        {
+            return true;
+        }
+
+        motor_control_stop();
+
+        prioritySearchStage = 6;
+        prioritySearchStageAt = millis();
+
+        return true;
+    }
+
+    // Final stationary look.
     if (millis() -
-            priorityTargetWaitStartedAt <
-        PRIORITY_TARGET_CONFIRM_MS)
+            prioritySearchStageAt <
+        PRIORITY_SEARCH_SETTLE_MS)
     {
         return true;
     }
@@ -551,6 +668,8 @@ static bool handlePriorityWaiting(
     priority_targets_remove(0);
 
     priorityTargetWaitStartedAt = 0;
+    prioritySearchStage = 0;
+
     roamCommandedPower = 0;
     roamCommandedHeading = NAN;
 
@@ -608,6 +727,9 @@ static void updatePriorityTarget(
 
         priorityTargetWaitStartedAt =
             millis();
+
+        prioritySearchStage = 0;
+        prioritySearchStageAt = millis();
 
         roamingState =
             ROAM_TARGET_WAITING;
@@ -725,7 +847,7 @@ static void updatePriorityTarget(
                 priorityRejoinAllowedAt)
             {
                 roamHeading =
-                    imu_get_heading() +
+                    imu_get_heading() -
                     priorityHeadingError;
             }
 
