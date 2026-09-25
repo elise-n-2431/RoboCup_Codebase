@@ -24,6 +24,7 @@ static const int WEIGHT_SLOW_DISTANCE_MM = 200;
 
 static const int WEIGHT_APPROACH_POWER = 360;
 static const int WEIGHT_SLOW_POWER = 280;
+static const int PURSUIT_WALL_ABORT_MM = 25;
 
 static const unsigned long ARM_SECURE_WAIT_MS = 1000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
@@ -120,6 +121,36 @@ void pursuit_start(WeightTargetSide target)
     pursuitSecureStartedAt = 0;
 
     pursuitStartedAt = 0;
+}
+
+static int pursuitClearanceValue(
+    int distance)
+{
+    if (distance <= 0)
+    {
+        return 1200;
+    }
+
+    return distance;
+}
+
+
+static int getPursuitFrontClearance()
+{
+    int innerLeft =
+        pursuitClearanceValue(
+            tof_get_nav_inner_left()
+        );
+
+    int innerRight =
+        pursuitClearanceValue(
+            tof_get_nav_inner_right()
+        );
+
+    return min(
+        innerLeft,
+        innerRight
+    );
 }
 
 void pursuit_update()
@@ -251,6 +282,53 @@ void pursuit_update()
             // Only react to genuinely new middle-ToF samples.
             if (!readFreshMiddleDistance(centreDistance))
             {
+                return;
+            }
+            int frontClearance =
+                getPursuitFrontClearance();
+
+            bool weightAlreadyAtEntrance =
+                centreDistance > 0 &&
+                centreDistance <=
+                    WEIGHT_STOP_DISTANCE_MM;
+
+            if (!weightAlreadyAtEntrance &&
+                frontClearance <=
+                    PURSUIT_WALL_ABORT_MM)
+            {
+                motor_control_stop();
+
+                debugNav.print(
+                    "NAV_EVENT,"
+                );
+
+                debugNav.print(
+                    millis()
+                );
+
+                debugNav.print(
+                    ",PURSUIT_WALL_ABORT,"
+                );
+
+                debugNav.print(
+                    frontClearance
+                );
+
+                debugNav.print(
+                    ",MIDDLE,"
+                );
+
+                debugNav.println(
+                    centreDistance
+                );
+
+                setStateFlag(
+                    &STATE_FLAGS.target_lost
+                );
+
+                pursuitState =
+                    PURSUIT_FINISHED;
+
                 return;
             }
 

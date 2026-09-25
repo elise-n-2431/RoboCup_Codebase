@@ -36,6 +36,8 @@ static const int CENTRE_WALL_TOLERANCE_MM = 60;
 static const int CENTRE_WEIGHT_PROTRUSION_MM = 60;
 static const int CENTRE_ONLY_DETECT_MM = 500;
 
+static const int SIDE_WALL_OFFSET_MM = 150;
+
 
 // Detection state variables
 
@@ -69,19 +71,43 @@ enum CentreObjectType
 };
 
 //Checking the wall measruements once a weight detection has been triggered to detremine if it is likely a wall
-
-static bool navSensorSupportsWall(int objectDistance, int outerLeft, int innerLeft, int innerRight, int outerRight)
+static bool navSensorSupportsWall(
+    int objectDistance,
+    int outerLeft,
+    int innerLeft,
+    int innerRight,
+    int outerRight)
 {
-    int navDistances[4] = {outerLeft, innerLeft, innerRight, outerRight};
+    int navDistances[4] = {
+        outerLeft,
+        innerLeft,
+        innerRight,
+        outerRight
+    };
 
     for (int i = 0; i < 4; i++)
     {
-        int navDistance = navDistances[i];
+        int navDistance =
+            navDistances[i];
 
-        // -1 = invalid, 0 = no return
-        if (navDistance <= 0) continue;
+        // 0 = no return
+        // -1 = invalid
+        if (navDistance <= 0)
+        {
+            continue;
+        }
 
-        if (abs(navDistance - objectDistance) <= SIDE_NAV_WALL_TOLERANCE_MM)
+        // Side weight ToFs are farther back than
+        // the navigation ToFs, so the same wall
+        // appears farther away to the weight sensor.
+        int expectedWeightDistance =
+            navDistance +
+            SIDE_WALL_OFFSET_MM;
+
+        if (abs(
+                expectedWeightDistance -
+                objectDistance)
+            <= SIDE_NAV_WALL_TOLERANCE_MM)
         {
             return true;
         }

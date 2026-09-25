@@ -1,0 +1,50 @@
+RoboCup test session
+{
+  "port": "COM14",
+  "baud": 115200,
+  "firmware_mode": "COMPETITION",
+  "initial_config": {
+    "colour": "green",
+    "home_x": 4600.0,
+    "home_y": 300.0,
+    "x": 4600.0,
+    "y": 300.0,
+    "heading": 0.0,
+    "locked": false,
+    "started": false,
+    "pickup": true
+  },
+  "initial_debug_modules": {
+    "nav": true,
+    "state": false,
+    "collection": true,
+    "pose": false,
+    "imu": false,
+    "tof": false,
+    "ultrasound": false,
+    "map": false,
+    "motor": false,
+    "colour": false
+  },
+  "initial_gains": {
+    "Turn KP": "16",
+    "Drive KP": "5",
+    "Drive Power": "280"
+  },
+  "other_base_drawing": {
+    "blue": "ne",
+    "green": "se"
+  },
+  "debug_policy": "GUI buttons control explicit firmware debug modules",
+  "recorded_at": "2026-09-25T14:04:08.223777+12:00"
+}
+Times are local receive/send times, elapsed from Start Test.
+RX is the raw decoded serial line; TX is a completed serial write.
+Firmware MARK,FAULT replies contain robot millis().
+--- CHRONOLOGICAL LOG ---
+[00:00:00.000] GUI: Start Test
+[00:00:00.000] TX: config
+[00:00:00.000] TX: targets
+[00:00:00.000] TX: debug status
+[00:00:00.000] TX: gains
+[00:00:05.312] GUI: Stop Test

@@ -499,21 +499,15 @@ static void updateDriveToPointControl(
         targetHeading,
         currentPoseHeading
     );
-
-    float correction =
+    float steer =
         DRIVE_KP *
         currentError *
         POINT_STEER_SIGN;
 
-    correction = constrain(
-        correction,
-        -MAX_POINT_CORRECTION,
-        MAX_POINT_CORRECTION
-    );
-
+    // Normal forward speed.
     int power = driveBasePower;
 
-    // Slow as we approach the target.
+    // Only slow because we are physically near the target.
     if (distance < SLOWDOWN_RADIUS_MM)
     {
         float t =
@@ -523,45 +517,43 @@ static void updateDriveToPointControl(
         power =
             MIN_DRIVE_TO_POINT_POWER +
             (int)(
-                (driveBasePower - MIN_DRIVE_TO_POINT_POWER) *
+                (driveBasePower -
+                MIN_DRIVE_TO_POINT_POWER) *
                 t
             );
     }
 
-    // If badly misaligned, reduce forward speed so the robot
-    // curves toward the point rather than charging forward.
-    float errorFactor =1.0f - (fabsf(currentError) / 90.0f);
+    // Never stop the inside track during ordinary point following.
+    // This is especially important when crossing the home-base lip.
+    static const int MIN_CURVE_POWER = 200;
 
-    if (errorFactor < 0.2f)
+    // Convert steering error into a left-right speed difference.
+    // Factor 2 preserves roughly the same turning authority as the
+    // old +/- correction arrangement.
+    int speedDifference =
+        abs((int)(2.0f * steer));
+
+    speedDifference = constrain(
+        speedDifference,
+        0,
+        power - MIN_CURVE_POWER
+    );
+
+    int leftPower = power;
+    int rightPower = power;
+
+    if (steer > 0.0f)
     {
-        errorFactor = 0.2f;
+        // Turn by slowing right track.
+        rightPower =
+            power - speedDifference;
     }
-
-    power =
-        (int)(
-            power *
-            errorFactor
-        );
-
-    int leftPower =
-        power +
-        (int)correction;
-
-    int rightPower =
-        power -
-        (int)correction;
-
-    leftPower = constrain(
-        leftPower,
-        0,
-        MAX_MOTOR_POWER
-    );
-
-    rightPower = constrain(
-        rightPower,
-        0,
-        MAX_MOTOR_POWER
-    );
+    else if (steer < 0.0f)
+    {
+        // Turn by slowing left track.
+        leftPower =
+            power - speedDifference;
+    }
 
     setMotorPower(
         leftPower,

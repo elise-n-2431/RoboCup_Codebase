@@ -18,9 +18,28 @@ using namespace std;
 
 
 const int CELL_SIZE_MM = 50;
+static constexpr int MAP_PADDING_CELLS = 2;
 
-const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
-const int MAP_HEIGHT = 49 + 4;
+static constexpr int ARENA_CELLS_X = 98;
+static constexpr int ARENA_CELLS_Y = 48;
+
+
+static constexpr int MAP_WIDTH =
+    ARENA_CELLS_X +
+    2 * MAP_PADDING_CELLS;
+
+static constexpr int MAP_HEIGHT =
+    ARENA_CELLS_Y +
+    2 * MAP_PADDING_CELLS;
+
+
+static constexpr float MAP_ORIGIN_X_MM =
+    MAP_PADDING_CELLS *
+    CELL_SIZE_MM;
+
+static constexpr float MAP_ORIGIN_Y_MM =
+    MAP_PADDING_CELLS *
+    CELL_SIZE_MM;
 
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
@@ -68,9 +87,6 @@ DMAMEM bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
 
 int self_x = 0; // define initial position in pose
 int self_y = 0;
-
-float MAP_ORIGIN_X_MM = 0;
-float MAP_ORIGIN_Y_MM = 0;
 
 float x_min = -MAP_ORIGIN_X_MM;
 float x_max = MAP_WIDTH * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
@@ -225,12 +241,26 @@ void update_self() {
 }
 
 void map_init() {
-    for (int x = 0; x < MAP_WIDTH; x++) {
-        for (int y = 0; y < MAP_HEIGHT; y++) {
+    for (int x = 0; x < MAP_WIDTH; x++)
+    {
+        for (int y = 0; y < MAP_HEIGHT; y++)
+        {
             WEIGHT_MAP[x][y] = 0;
-            OBSTACLE_MAP[x][y] = 0;
             FRONTIER_MAP[x][y] = false;
             FRONTIER_VISITED[x][y] = false;
+
+            bool outsideArena =
+                x < MAP_PADDING_CELLS ||
+                x >= MAP_WIDTH -
+                    MAP_PADDING_CELLS ||
+                y < MAP_PADDING_CELLS ||
+                y >= MAP_HEIGHT -
+                    MAP_PADDING_CELLS;
+
+            OBSTACLE_MAP[x][y] =
+                outsideArena
+                ? CONF_SCALE
+                : 0;
         }
     }
     for (int i = 0; i < n; i++) {
@@ -238,8 +268,6 @@ void map_init() {
         int y = starting_weight_estimates[i][1];
         WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
     }
-    MAP_ORIGIN_X_MM = 0.0f;
-    MAP_ORIGIN_Y_MM = 0.0f;
 
     home_x = world_to_cell_x(pose_get_x_mm());
     home_y = world_to_cell_y(pose_get_y_mm());

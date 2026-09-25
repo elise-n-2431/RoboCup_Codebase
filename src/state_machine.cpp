@@ -39,8 +39,163 @@ const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000;
 const unsigned long PICKUP_TIMEOUT_MS = 2500;           
 const unsigned long RETURN_TIMEOUT_MS = 2000;
 
-const unsigned long OPENING_TIMEOUT_MS = 2000;
+const unsigned long OPENING_TIMEOUT_MS = 6000;
+static const unsigned long DROPOFF_DRIVE_AWAY_START_MS = 3000;
+static const unsigned long DROPOFF_GATE_CLOSE_MS = 5000;
+
+static const int DROPOFF_EXIT_POWER = 430;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
+
+static const int DROPOFF_SHAKE_POWER = 320;
+
+static const unsigned long SHAKE_START_MS = 500;
+static const unsigned long SHAKE_FORWARD_1_END_MS = 680;
+static const unsigned long SHAKE_STOP_1_END_MS = 800;
+static const unsigned long SHAKE_REVERSE_END_MS = 980;
+static const unsigned long SHAKE_STOP_2_END_MS = 1100;
+static const unsigned long SHAKE_FORWARD_2_END_MS = 1280;
+
+static int dropoffShakeStage = -1;
+
+static void updateDropoffShake()
+{
+    unsigned long t =
+        timeInNavState();
+
+    int newStage = 0;
+
+    if (t < 500)
+    {
+        newStage = 0;
+    }
+    else if (t < 680)
+    {
+        newStage = 1;
+    }
+    else if (t < 800)
+    {
+        newStage = 2;
+    }
+    else if (t < 980)
+    {
+        newStage = 3;
+    }
+    else if (t < 1100)
+    {
+        newStage = 4;
+    }
+    else if (t < 1280)
+    {
+        newStage = 5;
+    }
+    else if (t <
+             DROPOFF_DRIVE_AWAY_START_MS)
+    {
+        newStage = 6;
+    }
+    else if (t <
+             DROPOFF_GATE_CLOSE_MS)
+    {
+        newStage = 7;
+    }
+    else if (t <
+             OPENING_TIMEOUT_MS)
+    {
+        newStage = 8;
+    }
+    else
+    {
+        newStage = 9;
+    }
+
+    if (newStage ==
+        dropoffShakeStage)
+    {
+        return;
+    }
+
+    dropoffShakeStage =
+        newStage;
+
+    switch (dropoffShakeStage)
+    {
+        case 0:
+            motor_control_stop();
+            break;
+
+        case 1:
+            motor_control_drive_current_heading(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,FORWARD_1"
+            );
+            break;
+
+        case 2:
+            motor_control_stop();
+            break;
+
+        case 3:
+            motor_control_reverse(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,REVERSE"
+            );
+            break;
+
+        case 4:
+            motor_control_stop();
+            break;
+
+        case 5:
+            motor_control_drive_current_heading(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,FORWARD_2"
+            );
+            break;
+
+        case 6:
+            motor_control_stop();
+            break;
+
+        case 7:
+            // Robot has already turned 180 degrees
+            // during homing, so forward should take
+            // it out of its own base.
+            motor_control_drive_current_heading(
+                DROPOFF_EXIT_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_EXIT,DRIVING"
+            );
+            break;
+
+        case 8:
+            // Keep moving while closing the gate.
+            gateClose();
+
+            motor_control_drive_current_heading(
+                DROPOFF_EXIT_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_EXIT,GATE_CLOSING"
+            );
+            break;
+
+        default:
+            motor_control_stop();
+            break;
+    }
+}
 
 unsigned long timeInNavState()
 {
@@ -178,8 +333,11 @@ void checkChangeNavState(NavState navState, bool* flag)
         reset_collection_iterations();
     }
 
-    if (navState == OPENING) gateOpen();
-    if (navState == CLOSING) gateClose();
+    if (navState == OPENING)
+    {
+        dropoffShakeStage = -1;
+        gateOpen();
+    }
 
     debugState.print("[NAV] ");
     debugState.print(navStateName(prev_nav_state));
@@ -305,9 +463,23 @@ void updateStateMachine() {
             break;
 
         case OPENING:
-            checkChangeNavState(CLOSING, &STATE_FLAGS.opening_complete);
-            break;
+        {
+            updateDropoffShake();
 
+            if (STATE_FLAGS.opening_complete)
+            {
+                checkChangeNavState(
+                    STATIONARY,
+                    &STATE_FLAGS.opening_complete
+                );
+
+                setStateFlag(
+                    &STATE_FLAGS.dropoff_complete
+                );
+            }
+
+            break;
+        }
         case CLOSING:
             if (STATE_FLAGS.closing_complete)
             {
