@@ -9,12 +9,23 @@
 #include <vector>
 using namespace std;
 #include "arena_config.h"
+#include "debug_print.h"
+#include "driving_controller.h"
 
 const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
 const int MAP_HEIGHT = 49 + 4;
 
 int CLEARANCE = 6; // based on size of robot
 int PENALTY_WEIGHT = 3;
+static Node lastPrintedWaypoint =
+{
+    -1000,
+    -1000
+};
+
+static const unsigned long DSTAR_REPAIR_INTERVAL_MS = 150;
+
+static unsigned long lastDstarRepair = 0;
 
 /* Priority Queue */
 
@@ -106,7 +117,9 @@ float k_m;
 vector<Pair> U; // custom priority queue
 float RHS[MAP_WIDTH][MAP_HEIGHT]; // next node, "beside"
 float G[MAP_WIDTH][MAP_HEIGHT];  // current shortest cost to reach start from goal
+vector<Node> changed_cells;
 bool goal_reached = false;
+bool initialized = false;
 const int INF = 65535;
 
 
@@ -198,7 +211,7 @@ Key calculate_key(Node s) { // s is self
 }
 
 
-void path_init() {
+bool path_init() {
     U.clear(); // reset U
     changed_cells.clear();
     k_m = 0.0f; // distance from start position
@@ -224,8 +237,29 @@ void path_init() {
     
     //added in
     initialized = true;
+    unsigned long startUs = micros();
+
     compute_shortest_path();
-    return g(start) < INF;
+    unsigned long elapsedUs = micros() - startUs;
+    bool routeFound = g(start) < INF;
+    debugNav.print("DSTAR_INIT,");
+    debugNav.print(start.x);
+    debugNav.print(",");
+    debugNav.print(start.y);
+    debugNav.print(",");
+    debugNav.print(goal.x);
+    debugNav.print(",");
+    debugNav.print(goal.y);
+    debugNav.print(",");
+    debugNav.print(g(start));
+    debugNav.print(",");
+    debugNav.print(elapsedUs);
+    debugNav.print(",");
+    debugNav.println(
+        routeFound ? 1 : 0
+    );
+
+    return routeFound;
 }
 
 void update_node(Node p) {
@@ -284,8 +318,6 @@ Node choose_min_neighbour() {
     return minimum;
 }
 
-bool initialized = false;
-
 void main1() {
     if (!initialized) {
         path_init();
@@ -308,6 +340,14 @@ void main2() {
     if (goal_reached) return;
 
     if (!changed_cells.empty()) {
+        //only repair empy cells every 150ms so it does htem in batches
+        if (millis() - lastDstarRepair <
+            DSTAR_REPAIR_INTERVAL_MS)
+        {
+            return;
+        }
+
+        lastDstarRepair = millis();
         k_m = k_m + heuristic(last, start);
         last = start;
         for (Node c : changed_cells) {
@@ -354,8 +394,9 @@ void path_update()
     Node newStart = {world_to_cell_x(pose_get_x_mm()),
                     world_to_cell_y(pose_get_y_mm())};
 
-    bool startChanged =
-        newStart != start;
+    bool startChanged = newStart != start;
+    
+    bool mapChanged = !changed_cells.empty();
 
     if (startChanged)
     {
@@ -406,13 +447,38 @@ void path_update()
 
         changed_cells.clear();
     }
+    
+    bool needsRepair =
+        startChanged ||
+        mapChanged ||
+        !consistent(start);
 
-    if (startChanged ||
-        !consistent(start))
+    if (needsRepair)
     {
-        compute_shortest_path();
-    }
+        unsigned long startUs = micros();
 
+        // Only stop for a map change.
+        // A normal start-cell change should usually be
+        // a very cheap incremental D* repair.
+        if (mapChanged)
+        {
+            motor_control_stop();
+        }
+
+        compute_shortest_path();
+
+        unsigned long elapsedUs =
+            micros() - startUs;
+
+        debugNav.print("DSTAR_REPLAN,");
+        debugNav.print(start.x);
+        debugNav.print(",");
+        debugNav.print(start.y);
+        debugNav.print(",");
+        debugNav.print(elapsedUs);
+        debugNav.print(",");
+        debugNav.println(g(start));
+    }
     goal_reached =
         start == goal;
 }
@@ -512,6 +578,20 @@ bool path_get_next_waypoint(float &x_mm, float &y_mm)
 
     y_mm = cell_to_world_y(waypoint.y);
 
+    if (waypoint != lastPrintedWaypoint)
+    {
+        lastPrintedWaypoint =
+            waypoint;
+
+        debugNav.print("DSTAR_WAYPOINT,");
+        debugNav.print(waypoint.x);
+        debugNav.print(",");
+        debugNav.print(waypoint.y);
+        debugNav.print(",");
+        debugNav.print(x_mm);
+        debugNav.print(",");
+        debugNav.println(y_mm);
+    }
     return true;
 }
 

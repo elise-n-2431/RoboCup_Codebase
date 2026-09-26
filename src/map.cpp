@@ -316,15 +316,6 @@ void add_free_evidence(
     bool newFree = mapValueIsFree(newValue);
 
     bool newObstacle = mapValueIsObstacle(newValue);
-
-    if (oldFree != newFree ||
-        oldObstacle != newObstacle)
-    {
-        path_notify_cell_changed(
-            cell_x,
-            cell_y
-        );
-    }
 }
 
 void update_self() {

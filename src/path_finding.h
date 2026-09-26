@@ -47,9 +47,9 @@ struct Pair {
     Key key;
 };
 
-vector<Node> changed_cells;
+extern vector<Node> changed_cells;
 
-void path_init();
+bool path_init();
 float g(Node p);
 float rhs(Node p);
 float heuristic(Node p, Node q);

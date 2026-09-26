@@ -23,7 +23,7 @@ const int HORIZONTAL_US = 950;
 const int DROPOFF_US    = 1950;
 
 const int GATE_OPEN_US   = 1300;
-const int GATE_CLOSED_US = 2150;
+const int GATE_CLOSED_US = 2200;
 
 static int currentPulse = IDLE_US;
 static int targetPulse  = IDLE_US;
