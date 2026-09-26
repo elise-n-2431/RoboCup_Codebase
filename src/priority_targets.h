@@ -43,5 +43,6 @@ void priority_targets_print(
     Stream &port
 );
 
+void priority_targets_load_starting_weights();
 
 #endif

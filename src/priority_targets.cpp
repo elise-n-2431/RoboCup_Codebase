@@ -3,7 +3,7 @@
 #include <math.h>
 
 #include "arena_config.h"
-
+#include "competition_setup.h"
 
 static PriorityTarget targets[
     MAX_PRIORITY_TARGETS
@@ -15,6 +15,21 @@ static uint8_t targetCount = 0;
 void priority_targets_clear()
 {
     targetCount = 0;
+}
+
+void priority_targets_load_starting_weights()
+{
+    priority_targets_clear();
+
+    for (int i = 0;
+         i < NUM_STARTING_WEIGHTS;
+         i++)
+    {
+        priority_targets_add(
+            STARTING_WEIGHTS[i].x,
+            STARTING_WEIGHTS[i].y
+        );
+    }
 }
 
 

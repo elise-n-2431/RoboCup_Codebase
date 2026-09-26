@@ -14,6 +14,7 @@
 #include "debug_print.h"
 #include <iostream>
 #include <queue>
+#include "path_finding.h"
 using namespace std;
 
 
@@ -24,14 +25,9 @@ static constexpr int ARENA_CELLS_X = 98;
 static constexpr int ARENA_CELLS_Y = 48;
 
 
-static constexpr int MAP_WIDTH =
-    ARENA_CELLS_X +
-    2 * MAP_PADDING_CELLS;
+static constexpr int MAP_WIDTH = 97 + 4;
 
-static constexpr int MAP_HEIGHT =
-    ARENA_CELLS_Y +
-    2 * MAP_PADDING_CELLS;
-
+static constexpr int MAP_HEIGHT = 49 + 4;
 
 static constexpr float MAP_ORIGIN_X_MM =
     MAP_PADDING_CELLS *
@@ -80,6 +76,16 @@ static int frontierCellCount = 0;
 
 const int16_t CONF_SCALE = 1000;                // 1.000 in fixed-point units
 const int16_t OBSTACLE_UNKNOWN_BAND = 100;      // |value| below this counts as "unknown" (0.100)
+
+static bool mapValueIsFree(int16_t value)
+{
+    return value < -OBSTACLE_UNKNOWN_BAND;
+}
+
+static bool mapValueIsObstacle(int16_t value)
+{
+    return value > OBSTACLE_UNKNOWN_BAND;
+}
 
 DMAMEM uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
 DMAMEM int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
@@ -203,29 +209,121 @@ int world_to_cell_y(float y_mm)
     }
 }
 
-void add_obstacle_evidence(int cell_x, int cell_y)
+bool check_free(int x, int y)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    if (x < 0 || x >= MAP_WIDTH ||
+        y < 0 || y >= MAP_HEIGHT)
     {
-        return;
+        return false;
     }
 
-    OBSTACLE_MAP[cell_x][cell_y] = CONF_SCALE;
+    return mapValueIsFree(
+        OBSTACLE_MAP[x][y]
+    );
 }
 
-
-void add_free_evidence(int cell_x, int cell_y)
+bool check_obstacle(int x, int y)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    if (x < 0 || x >= MAP_WIDTH ||
+        y < 0 || y >= MAP_HEIGHT)
+    {
+        return true;
+    }
+
+    return mapValueIsObstacle(
+        OBSTACLE_MAP[x][y]
+    );
+}
+
+float cell_to_world_x(int x)
+{
+    return
+        x * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f -
+        MAP_ORIGIN_X_MM;
+}
+
+float cell_to_world_y(int y)
+{
+    return
+        y * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f -
+        MAP_ORIGIN_Y_MM;
+}
+
+void add_obstacle_evidence(
+    int cell_x,
+    int cell_y)
+{
+    if (cell_x < 0 ||
+        cell_x >= MAP_WIDTH ||
+        cell_y < 0 ||
+        cell_y >= MAP_HEIGHT)
     {
         return;
     }
-    if (OBSTACLE_MAP[cell_x][cell_y] > 200) {
+
+    int16_t oldValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool oldFree = mapValueIsFree(oldValue);
+
+    bool oldObstacle = mapValueIsObstacle(oldValue);
+
+    OBSTACLE_MAP[cell_x][cell_y] =
+        CONF_SCALE;
+
+    // D* only needs to know when the map's
+    // traversability classification changes.
+    if (oldFree || !oldObstacle)
+    {
+        path_notify_cell_changed(
+            cell_x,
+            cell_y
+        );
+    }
+}
+
+void add_free_evidence(
+    int cell_x,
+    int cell_y)
+{
+    if (cell_x < 0 ||
+        cell_x >= MAP_WIDTH ||
+        cell_y < 0 ||
+        cell_y >= MAP_HEIGHT)
+    {
+        return;
+    }
+
+    int16_t oldValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool oldFree = mapValueIsFree(oldValue);
+
+    bool oldObstacle = mapValueIsObstacle(oldValue);
+
+    if (OBSTACLE_MAP[cell_x][cell_y] >
+        200)
+    {
         OBSTACLE_MAP[cell_x][cell_y] -= DECAY_OBSTACLE_IF_FREE;
-    } else {
+    }
+    else
+    {
         OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+    }
+
+    int16_t newValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool newFree = mapValueIsFree(newValue);
+
+    bool newObstacle = mapValueIsObstacle(newValue);
+
+    if (oldFree != newFree ||
+        oldObstacle != newObstacle)
+    {
+        path_notify_cell_changed(
+            cell_x,
+            cell_y
+        );
     }
 }
 

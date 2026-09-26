@@ -80,68 +80,10 @@ static bool handleConfig(const String& command, Stream& port)
 {
     if (command == "config") {
         printConfig(port);
-    }
-    else if (command == "config lock") {
-        arena_lock();
-        configResult(port, true);
-    }
-    else if (command == "base blue" || command == "base green") {
-        configResult(
-            port,
-            arena_set_home_colour(
-                command == "base blue"
-                    ? HomeColour::BLUE
-                    : HomeColour::GREEN
-            )
-        );
-    }
-    else if (command.startsWith("home ")) {
-        bool ok = false;
-
-        if (command == "home sw")
-            ok = arena_set_home_corner(HomeCorner::SW);
-
-        if (command == "home se")
-            ok = arena_set_home_corner(HomeCorner::SE);
-
-        if (command == "home nw")
-            ok = arena_set_home_corner(HomeCorner::NW);
-
-        if (command == "home ne")
-            ok = arena_set_home_corner(HomeCorner::NE);
-
-        //if (ok) map_init();
-        configResult(port, ok);
-    }
-    else if (command.startsWith("homepos ")) {
-        float v[2];
-
-        bool ok =
-            parseNumbers(command.c_str() + 8, v, 2) &&
-            arena_set_home_position(v[0], v[1]);
-
-        //if (ok) map_init();
-        configResult(port, ok);
-    }
-    else if (command.startsWith("startpose ")) {
-        float v[3];
-
-        bool ok =
-            parseNumbers(command.c_str() + 10, v, 3) &&
-            arena_set_start_pose(v[0], v[1], v[2]);
-
-        if (ok) {
-            pose_reset();
-            //map_init();
-        }
-
-        configResult(port, ok);
-    }
-    else {
-        return false;
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 static bool handleTargets(

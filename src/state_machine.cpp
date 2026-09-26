@@ -34,10 +34,10 @@ unsigned long timeInCollectState();
 static unsigned long navStateEnteredAt = 0;
 static unsigned long collectStateEnteredAt = 0;
 
-const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 2000;  
-const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000; 
-const unsigned long PICKUP_TIMEOUT_MS = 2500;           
-const unsigned long RETURN_TIMEOUT_MS = 2000;
+const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 900;  
+const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 500; 
+const unsigned long PICKUP_TIMEOUT_MS = 1400;           
+const unsigned long RETURN_TIMEOUT_MS = 500;
 
 const unsigned long OPENING_TIMEOUT_MS = 6000;
 static const unsigned long DROPOFF_DRIVE_AWAY_START_MS = 3000;

@@ -28,7 +28,8 @@
 #include "map.h"
 #include "arena_config.h"
 #include "debug_print.h"
-
+#include "priority_targets.h"
+#include "competition_setup.h"
 
 const byte GO_PIN = 26;
 
@@ -62,6 +63,9 @@ void setup()
     xy_init();
 
     pose_init();
+    priority_targets_load_starting_weights();
+    Serial.println("Loaded starting weight coordinates:");
+    priority_targets_print(Serial);
     //map_init();
 
 

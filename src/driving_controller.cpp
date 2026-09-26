@@ -32,15 +32,15 @@ static MotorControlMode controlMode = CONTROL_IDLE;
 // ============================================================
 
 static float TURN_KP = 16.0f;
-static float DRIVE_KP = 5.0f;
+static float DRIVE_KP = 8.0f;
 
 
 static const int MAX_DRIVE_CORRECTION = 100;
 static const int MAX_POINT_CORRECTION = 260;
 
-static int driveBasePower = 380;
+static int driveBasePower = 420;
 
-static const int MIN_TURN_POWER = 270;
+static const int MIN_TURN_POWER = 300;
 static const int MAX_MOTOR_POWER = 450;
 
 static const float ANGLE_TOLERANCE_DEG = 3.0f;
@@ -53,10 +53,10 @@ static const int POINT_STEER_SIGN = -1;
 static const unsigned long CONTROL_PERIOD_MS = 20;
 
 
-static const float FINE_TURN_ZONE_DEG = 15.0f;
+static const float FINE_TURN_ZONE_DEG = 8.0f;
 
 static const unsigned long FINE_TURN_ON_MS = 50;
-static const unsigned long FINE_TURN_OFF_MS = 70;
+static const unsigned long FINE_TURN_OFF_MS = 50;
 
 static unsigned long fineTurnPhaseStarted = 0;
 static bool fineTurnPowerOn = true;

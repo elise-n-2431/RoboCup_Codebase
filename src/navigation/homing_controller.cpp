@@ -10,6 +10,7 @@
 #include "pose.h"
 #include "arena_config.h"
 #include "debug_print.h"
+#include "path_finding.h"
 
 
 // Tuning
@@ -29,6 +30,7 @@ static const unsigned long HOME_DOCK_TIME_MS = 1000;
 enum HomingState
 {
     HOMING_START,
+    HOMING_DSTAR,
     HOMING_TURNING,
     HOMING_DRIVING,
     HOMING_AVOIDING,
@@ -90,7 +92,22 @@ void homing_start()
     lastHomeHeadingUpdate = 0;
     homeDockStart = 0;
 
-    debugNav.println("Navigator: HOMING started");
+    debugNav.println(
+        "Navigator: HOMING started"
+    );
+
+    if (path_init())
+    {
+        homingState = HOMING_DSTAR;
+
+        debugNav.println("Homing: D* route ready");
+    }
+    else
+    {
+        path_reset();
+
+        debugNav.println("Homing: no D* route - ""using existing homing");
+    }
 }
 
 bool homing_is_docking()
@@ -104,6 +121,7 @@ void homing_update()
     // Colour sensor has final authority over reaching home.
     if (STATE_FLAGS.home_reached && !homing_is_docking())
     {
+        path_reset();
         motor_control_stop();
 
         homeDockStart = millis();
@@ -175,6 +193,57 @@ void homing_update()
             break;
         }
 
+        case HOMING_DSTAR:
+        {
+            // Once close to home, hand back to the
+            // already-tested direct homing + colour docking.
+            if (homeDistance() < 350.0f)
+            {
+                path_reset();
+                motor_control_stop();
+
+                homingState = HOMING_START;
+
+                debugNav.println(
+                    "Homing: D* near home - "
+                    "switching to final approach"
+                );
+
+                break;
+            }
+
+            float waypointX;
+            float waypointY;
+
+            if (!path_get_next_waypoint(waypointX, waypointY))
+            {
+                path_reset();
+                motor_control_stop();
+
+                homingState = HOMING_START;
+
+                debugNav.println(
+                    "Homing: D* route unavailable - "
+                    "falling back"
+                );
+
+                break;
+            }
+
+            int power =
+                homeDistance() <
+                HOME_SLOW_DISTANCE_MM
+                ? HOME_SLOW_POWER
+                : HOME_POWER;
+
+            motor_control_drive_to_point(
+                waypointX,
+                waypointY,
+                power
+            );
+
+            break;
+        }
 
         case HOMING_TURNING:
         {

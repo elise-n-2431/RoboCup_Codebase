@@ -1,10 +1,20 @@
 #include "arena_config.h"
 #include <math.h>
+#include "competition_setup.h"
 
 // Existing position/heading defaults. Colour labels the sampled home base;
 // it does not substitute uncalibrated RGB thresholds for the colour sensor.
 static ArenaConfig config = {
-    HomeColour::BLUE, 300.0f, 300.0f, 300.0f, 300.0f, 0.0f, true
+    HomeColour::BLUE,
+
+    COMPETITION_HOME_X,
+    COMPETITION_HOME_Y,
+
+    COMPETITION_START_X,
+    COMPETITION_START_Y,
+    COMPETITION_START_HEADING,
+
+    true
 };
 
 static bool locked = false;

@@ -41,8 +41,8 @@ static RoamGoalType roamGoal = ROAM_GOAL_FALLBACK;
 
 
 
-static const int ROAM_POWER = 430;
-static const int ROAM_SLOW_POWER = 340;
+static const int ROAM_POWER = 450;
+static const int ROAM_SLOW_POWER = 390;
 
 static const int ROAM_FRONT_BLOCK_MM = 150;
 static const int ROAM_SIDE_BLOCK_MM = 180;
