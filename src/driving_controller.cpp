@@ -142,6 +142,13 @@ static void setMotorPower(
     );
 }
 
+void motor_control_pause()
+{
+    // Stop physical motion without destroying
+    // the current point target or avoidance state.
+    setMotorPower(0, 0);
+}
+
 
 static float wrapHeading(float heading)
 {
@@ -598,6 +605,7 @@ static void updateAvoidTurnControl(
     float currentHeading,
     unsigned long currentTime)
 {
+    static const int WALL_REVERSE_TRIGGER_MM = 80;
     if (!avoidInitialized)
     {
         initAvoidTurn(currentHeading);
@@ -615,6 +623,26 @@ static void updateAvoidTurnControl(
     avoidTotalRotation += rotationStep;
     avoidLastHeading = currentHeading;
 
+    if (getFrontClearance() <=
+    WALL_REVERSE_TRIGGER_MM)
+    {
+        setMotorPower(0, 0);
+
+        avoidInitialized = false;
+        avoidTotalRotation = 0.0f;
+
+        controlMode = CONTROL_IDLE;
+
+        debugMotor.println(
+            "Point avoidance: too close - reversing"
+        );
+
+        setStateFlag(
+            &STATE_FLAGS.reverse_triggered
+        );
+
+        return;
+    }
     // Once clearly away from the obstacle, resume the same XY target.
     if (getFrontClearance() > WALL_AVOID_CLEAR_MM)
     {

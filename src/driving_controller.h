@@ -29,6 +29,7 @@ float motor_control_get_error();
 
 void motor_control_set_kp(float kp);
 float motor_control_get_kp();
+void motor_control_pause();
 
 void motor_control_set_drive_kp(float kp);
 float motor_control_get_drive_kp();

@@ -215,6 +215,7 @@ bool path_init() {
     U.clear(); // reset U
     changed_cells.clear();
     k_m = 0.0f; // distance from start position
+    lastDstarRepair = millis();
 
     // start = {2, 1};
     // goal = {70,50};
@@ -396,7 +397,13 @@ void path_update()
 
     bool startChanged = newStart != start;
     
-    bool mapChanged = !changed_cells.empty();
+    bool mapPending =
+    !changed_cells.empty();
+
+    bool mapRepairDue =
+        mapPending &&
+        millis() - lastDstarRepair >=
+            DSTAR_REPAIR_INTERVAL_MS;
 
     if (startChanged)
     {
@@ -410,8 +417,9 @@ void path_update()
         last = start;
     }
 
-    if (!changed_cells.empty())
+    if (mapRepairDue)
     {
+        lastDstarRepair = millis();
         for (Node c :
              changed_cells)
         {
@@ -447,10 +455,10 @@ void path_update()
 
         changed_cells.clear();
     }
-    
+
     bool needsRepair =
         startChanged ||
-        mapChanged ||
+        mapRepairDue ||
         !consistent(start);
 
     if (needsRepair)
@@ -460,9 +468,9 @@ void path_update()
         // Only stop for a map change.
         // A normal start-cell change should usually be
         // a very cheap incremental D* repair.
-        if (mapChanged)
+        if (mapRepairDue)
         {
-            motor_control_stop();
+            motor_control_pause();
         }
 
         compute_shortest_path();
