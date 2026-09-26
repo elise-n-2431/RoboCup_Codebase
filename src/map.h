@@ -22,6 +22,9 @@ void find_frontier();
 void calc_frontier_target();
 float get_front_clearance_mm();
 bool check_free(int x, int y);
+int world_to_cell_x(float x_mm);
+int world_to_cell_y(float x_mm);
+
 
 
 #endif

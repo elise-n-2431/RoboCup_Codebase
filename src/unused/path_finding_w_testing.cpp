@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "path_finding.h"
-#include "map.h"
-#include "pose.h"
+// #include "map.h"
+// #include "pose.h"
 #include <queue>
 #include <cmath>
 #include <iostream>
@@ -11,8 +11,8 @@ using namespace std;
 
 const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
 const int MAP_HEIGHT = 49 + 4;
-
-int CLEARANCE = 6; // based on size of robot
+int16_t  OBSTACLE_MAP_COPY[MAP_WIDTH][MAP_HEIGHT];
+int CLEARANCE = 6;
 int PENALTY_WEIGHT = 3;
 
 /* Priority Queue */
@@ -103,10 +103,10 @@ Node goal;
 Node last;
 int k_m;
 vector<Pair> U; // custom priority queue
-float RHS[MAP_WIDTH][MAP_HEIGHT]; // next node, "beside"
+float RHS[MAP_WIDTH][MAP_HEIGHT]; // "right hand side" 
 float G[MAP_WIDTH][MAP_HEIGHT];  // current shortest cost to reach start from goal
 bool goal_reached = false;
-const int INF = 65535;
+const int INF = 65535; // fits uint16_t
 
 float g(Node p) {
     return G[p.x][p.y];
@@ -126,7 +126,7 @@ float wallPenalty(Node p) {
     float minDist = 1e9;
     for (int x = 0; x < MAP_WIDTH; x++)
         for (int y = 0; y < MAP_HEIGHT; y++) {
-            if (!check_free(x,y)) continue;
+            if (!OBSTACLE_MAP_COPY[x][y]) continue;
             float d = heuristic(p, {x, y});
             if (d < minDist) minDist = d;
         }
@@ -135,7 +135,7 @@ float wallPenalty(Node p) {
 }
 
 float cost(Node p, Node q) {
-    if (!check_free(p.x, p.y) || !check_free(q.x, q.y)) return INF;
+    if (!check_free_local(p.x, p.y) || !check_free_local(q.x, q.y)) return INF;
     return heuristic(p, q) + wallPenalty(q);
 }
 
@@ -174,13 +174,13 @@ void path_init() {
     U.clear(); // reset U
     k_m = 0; // distance from start position
 
-    // start = {2, 1};
-    // goal = {70,50};
-    start.x = world_to_cell_x(pose_get_x_mm());
-    start.y = world_to_cell_y(pose_get_y_mm());
+    start = {2, 1};
+    goal = {70,50};
+    // start.x = world_to_cell_x(pose_get_x_mm());
+    // start.y = world_to_cell_y(pose_get_y_mm());
 
-    goal.x = world_to_cell_x(2500);
-    goal.y = world_to_cell_y(2500);
+    // goal.x = world_to_cell_x(2500);
+    // goal.y = world_to_cell_y(2500);
 
     for (int x = 0; x < MAP_WIDTH; x++)
         for (int y = 0; y < MAP_HEIGHT; y++) {
@@ -282,4 +282,97 @@ void main2() {
         compute_shortest_path();
         changed_cells.clear();
     }
+}
+
+
+
+// TESTING
+
+
+bool check_free_local(int x, int y) {
+    return OBSTACLE_MAP_COPY[x][y] == 0;
+}
+
+void populate_map() {
+    srand(time(0));
+    for (int x = 0; x < MAP_WIDTH; x++)
+        for (int y = 0; y < MAP_HEIGHT; y++)
+            OBSTACLE_MAP_COPY[x][y] = 0;
+
+    // Large angled wall segments
+    int numWalls = 14;
+    for (int i = 0; i < numWalls; i++) {
+        float cx = rand() % MAP_WIDTH;
+        float cy = rand() % MAP_HEIGHT;
+        float angle = (rand() % 180) * (float)M_PI / 180.0f;
+        float length = 12 + rand() % 8;   // 12-19 cells long
+        float thickness = 3 + rand() % 3; // 3-5 cells thick
+        float dx = cos(angle), dy = sin(angle);
+        float px = -dy, py = dx; // perpendicular direction
+
+        for (float t = -length / 2; t <= length / 2; t += 0.5f) {
+            for (float w = -thickness / 2; w <= thickness / 2; w += 0.5f) {
+                int x = (int)round(cx + dx * t + px * w);
+                int y = (int)round(cy + dy * t + py * w);
+                if (x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT)
+                    OBSTACLE_MAP_COPY[x][y] = 1;
+            }
+        }
+    }
+
+    // Smaller scattered obstacles (1-3 cells each)
+    int numSmall = 30;
+    for (int i = 0; i < numSmall; i++) {
+        int x = rand() % MAP_WIDTH;
+        int y = rand() % MAP_HEIGHT;
+        OBSTACLE_MAP_COPY[x][y] = 1;
+        if (rand() % 2 && x + 1 < MAP_WIDTH) OBSTACLE_MAP_COPY[x + 1][y] = 1;
+        if (rand() % 2 && y + 1 < MAP_HEIGHT) OBSTACLE_MAP_COPY[x][y + 1] = 1;
+    }
+
+    // Keep a clear pocket around start and goal
+    for (int dx = -2; dx <= 2; dx++)
+        for (int dy = -2; dy <= 2; dy++) {
+            int sx = start.x + dx, sy = start.y + dy;
+            if (sx >= 0 && sx < MAP_WIDTH && sy >= 0 && sy < MAP_HEIGHT) OBSTACLE_MAP_COPY[sx][sy] = 0;
+            int gx = goal.x + dx, gy = goal.y + dy;
+            if (gx >= 0 && gx < MAP_WIDTH && gy >= 0 && gy < MAP_HEIGHT) OBSTACLE_MAP_COPY[gx][gy] = 0;
+        }
+}
+
+vector<Node> trail;
+
+void update_map_display() {
+    for (int y = 0; y < MAP_HEIGHT; y++) {
+        for (int x = 0; x < MAP_WIDTH; x++) {
+            bool onTrail = false;
+            for (auto &t : trail) if (t.x == x && t.y == y) onTrail = true;
+
+            if (x == start.x && y == start.y) cout << 'R';
+            else if (x == goal.x && y == goal.y) cout << 'G';
+            else if (OBSTACLE_MAP_COPY[x][y]) cout << '#';
+            else if (onTrail) cout << '*';
+            else cout << '.';
+        }
+        cout << "\n";
+    }
+    cout << "---\n";
+}
+
+int main() {
+    trail.clear();
+    populate_map();
+    main1();
+    trail.push_back(start);
+
+    int guard = 0;
+    while (!goal_reached && guard++ < 100) {
+        update_map_display();
+        main1();
+        trail.push_back(start);
+        main2();
+    }
+    update_map_display();
+    cout << (goal_reached ? "Reached goal.\n" : "Stuck / no path.\n");
+    return 0;
 }

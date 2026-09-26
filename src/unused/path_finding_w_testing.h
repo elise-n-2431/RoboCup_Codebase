@@ -2,8 +2,8 @@
 // Created by elise on 25/09/2026.
 //
 #include <stdint.h>
-#include "map.h"
-#include "pose.h"
+// #include "map.h"
+// #include "pose.h"
 #include <queue>
 #include <iostream>
 #include <algorithm>
@@ -49,6 +49,7 @@ struct Pair {
 
 vector<Node> changed_cells;
 
+
 void path_init();
 float g(Node p);
 float rhs(Node p);
@@ -62,5 +63,9 @@ void compute_shortest_path();
 Node choose_min_neighbour();
 void main1();
 void main2();
+bool check_free_local(int, int);
+void populate_map();
+void update_map_display();
+int main();
 
 #endif
