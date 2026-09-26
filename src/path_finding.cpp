@@ -93,41 +93,6 @@ void remove(Node p, vector<Pair> &arr) {
 /* Priority Queue Ends*/
 
 // D STAR LITE: searches from start node to goal node
-struct Node { // represent possible positions
-    int x;
-    int y;
-    bool operator==(const Node &other) const {
-        return (x == other.x) && (y == other.y);
-    }
-    // Edges [Edge];
-};
-
-
-struct Edge { // paths between nodes
-    Node a;
-    Node b;
-    int cost;
-    
-};
-
-struct Key {
-    int k1; // priority value
-    int k2; // backup priority for comparison with equal k1
-
-    bool operator<(const Key &other) const {
-        if (k1 != other.k1) return k1 < other.k1;
-        return k2 < other.k2;
-    }
-
-    bool operator<=(const Key &other) const {
-        return !(other < *this);
-    }
-};
-
-struct Pair {
-    Node node;
-    Key key;
-};
 
 Node start; // changes when robot moves
 Node goal;
@@ -137,7 +102,7 @@ vector<Pair> U; // custom priority queue
 uint16_t RHS[MAP_WIDTH][MAP_HEIGHT]; // "right hand side" 
 uint16_t G[MAP_WIDTH][MAP_HEIGHT];  // current shortest cost to reach start from goal
 Node S[MAP_WIDTH * MAP_HEIGHT];
-
+bool goal_reached = false;
 
 Key Keys[5];
 
@@ -150,36 +115,44 @@ int rhs(Node p) {
 }
 
 float heuristic(Node p, Node q) {
-    // distance between 2 points (manhattan)
+    // distance between 2 points (euclidean)
     return std::sqrt((p.x - q.x)^2 + (p.y - q.y)^2);
 
 }
 
-float cost(Node p, Node q) {
-    if (check_free(p.x, p.y) || check_free(q.x, q.y)) {     // check map location
+int cost(Node p, Node q) {
+    if (!check_free(p.x, p.y) || !check_free(q.x, q.y)) {     // check map location
         return infinity();
     } else {
-        return heuristic(p, q);
+        return 1;
     }
 }
 
 bool consistent(Node p) {
-    return rhs[p] == g[p];
+    return rhs(p) == g(p);
 }
 
-[Node] neighbours(Node centre) {
-    [Node] nodes = []
-    for (int i = -1; i < 2; i++) {
-        for (int j = -1; j < 2; j++) {
-            if (i != j) {
-                list.append(Node[centre.x + i][centre.y + j])
+vector<Node> neighbours(Node centre) {
+    vector<Node> nodes;
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            if (i == 0 && j == 0) {
+                continue; // skip centre
             }
+
+            Node n = {centre.x + i, centre.y + j};
+            if (n.x >= MAP_WIDTH || n.x < 0 || n.y >= MAP_HEIGHT || n.y < 0) {
+                continue;
+            } else {
+                nodes.push_back(n); // add to list
+            }
+        }
     }
-    return nodes
+    return nodes;
 }
 
 Key calculate_key(Node s) { // s is self
-    int cost_1 = std::min(G[s.x][s.y], RHS[s.x][s.y]) + heuristic(start, s) + km; // reprioritises values that have becvome locally inconsistent
+    int cost_1 = std::min(G[s.x][s.y], RHS[s.x][s.y]) + heuristic(start, s) + k_m; // reprioritises values that have becvome locally inconsistent
     int cost_2 = std::min(G[s.x][s.y], RHS[s.x][s.y]);
     Key temp {cost_1, cost_2};
     return temp;
@@ -196,11 +169,11 @@ void path_init() {
     goal.x = world_to_cell_x(2500);
     goal.y = world_to_cell_y(2500);
 
-    for (int i = 0; i < S.size(); i++) {
-        Node s = S[i];
-        RHS[s.x][s.y] = infinity;
-        G[s.x][s.y] = infinity;
-    }
+    for (int x = 0; x < MAP_WIDTH; x++)
+        for (int y = 0; y < MAP_HEIGHT; y++) {
+            RHS[x][y] = infinity;
+            G[x][y] = infinity;
+        }
     RHS[goal.x][goal.y] = 0;
     Pair goal_pair = {goal, calculate_key(goal)};
     insert(goal_pair, U);
@@ -225,56 +198,69 @@ void compute_shortest_path() {
     Pair top = getMin(U);
 
     while (top.key < calculate_key(start) || !consistent(start)) {
-        int k_old = top.key;
-        Node u = pop(U);
-        Key u_key = calculate_key(u);
+        Key k_old = top.key;
+        Pair u = pop(U);
+        if (k_old < u.key) { // label this
+            insert(u, U);
 
-        if (k_old < u_key) {
-            Pair u_pair = {u, new_key};
-            insert(u_pair, U);
-
-        } else if (g[p] > rhs[p]) {
-            G[p.x][p.y] = rhs[p];
-            for (int i = 0; )
-
-            
-            for ( all s element of Pred U???) {
-                if (s != goal) {
-                    RHS[s] = std::min()
-                    ...
-                }
+        } else if (g(u.node) > rhs(u.node)) { 
+            G[u.node.x][u.node.y] = rhs(u.node);
+            for (Node s : neighbours(u.node)) {
                 update_node(s);
             }
         } else {
-            int g_old = g(p);
-            g(p) = infinity;
-            for (all s in predeccessors of p which are also in U) {
-                if(rhs(s) == cost(s, p) + g_old) {
-                    if (s != goal) {
-                        rhs(s) = std::min() // what does this notation mean, min cost path?
-                    }
-                }
+            G[u.node.x][u.node.y] = infinity;
+            for (Node s : neighbours(u.node)) {
                 update_node(s);
-            } 
+            }
+            update_node(u.node);
         }
     }
 }
 
+Node choose_min_neighbour() {
+    Node minimum = neighbours(start)[0];
+    int min_cost = infinity;
+
+    for (Node neighbour: neighbours(start)) {
+        int n_cost = cost(start, neighbour) + g(start);
+        
+        if (min_cost > n_cost) {
+            minimum = neighbour;
+            min_cost = n_cost;
+        }
+    }
+
+    return minimum;
+}
 
 void main() {
-    Node root = start;
+    last = start;
     path_init();
     compute_shortest_path();
 
-    while (start != goal) {
-        cheapest_child = lowest cost of sucessors and cost to get to sucessors
-        root = cheapest child;
-        // if any edge costs change (use flags?)
-            k_m = k_m + heuristic(last, root)
-
+    if (start != goal) {
+        start = choose_min_neighbour();
+        // physically move the robot to this neighbour
+        goal_reached = false;
+    }else {
+        goal_reached = true;
     }
-
-
-
 }
 
+
+void main2() {
+    if (goal_reached) return;
+
+    if (!changed_cells.empty()) {
+        k_m = k_m + heuristic(last, start);
+        last = start;
+        for (Node c : changed_cells) {
+            for (Node n : neighbours(c)) {
+                update_node(n);
+            }
+        }
+        compute_shortest_path();
+        changed_cells.clear();
+    }
+}
