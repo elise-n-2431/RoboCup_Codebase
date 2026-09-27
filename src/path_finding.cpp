@@ -10,7 +10,7 @@
 using namespace std;
 #include "arena_config.h"
 #include "debug_print.h"
-// #include "driving_controller.h"
+#include "driving_controller.h"
 
 const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
 const int MAP_HEIGHT = 49 + 4;
@@ -22,7 +22,7 @@ const int MAP_HEIGHT = 49 + 4;
 
 // 50 mm cells:
 // 8 cells = 400 mm maximum lookahead.
-static const int LOOKAHEAD_MAX_CELLS = 8;
+static const int LOOKAHEAD_MAX_CELLS = 10;
 
 // Radius around the centre-line that must be obstacle-free.
 // 3 cells = 150 mm.
@@ -41,7 +41,7 @@ static Node heldLookaheadWaypoint =
 static bool heldLookaheadValid = false;
 
 
-int CLEARANCE = 6; // based on size of robot
+int CLEARANCE = 3; // based on size of robot
 int PENALTY_WEIGHT = 3;
 static Node lastPrintedWaypoint =
 {
@@ -962,7 +962,7 @@ void path_update()
         // a very cheap incremental D* repair.
         if (mapRepairDue)
         {
-            //motor_control_pause();
+            motor_control_pause();
         }
 
         compute_shortest_path();

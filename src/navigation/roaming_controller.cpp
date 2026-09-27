@@ -57,7 +57,16 @@ static const float PRIORITY_TARGET_FINAL_ALIGN_DEG = 8.0f;
 
 static const unsigned long PRIORITY_TARGET_CONFIRM_MS = 1200;
 
+// If D* cannot currently reach a priority target,
+// don't hammer the same failed target every loop.
+// Explore a frontier for a while and try again later.
+static const unsigned long PRIORITY_RETRY_DELAY_MS = 5000;
+
+static unsigned long priorityFailedAt = 0;
+static bool priorityRetryBlocked = false;
+
 static const unsigned long NAV_TELEMETRY_PERIOD_MS = 200;
+
 static unsigned long lastNavTelemetryAt = 0;
 
 static const float PRIORITY_SEARCH_ANGLE_DEG = 12.0f;
@@ -204,6 +213,22 @@ static bool startRoamDstar(
 
     if (!path_init(goalX, goalY))
     {
+        // Don't immediately retry an unreachable priority
+        // hundreds of times per second.
+        if (goalType == ROAM_GOAL_PRIORITY)
+        {
+            priorityFailedAt = millis();
+            priorityRetryBlocked = true;
+
+            debugNav.print("NAV_EVENT,");
+            debugNav.print(millis());
+            debugNav.println(",PRIORITY_RETRY_BLOCKED");
+        }
+
+        debugNav.print(
+            "NAV_EVENT,"
+        );
+
         debugNav.print(
             "NAV_EVENT,"
         );
@@ -238,6 +263,11 @@ static bool startRoamDstar(
 
     roamingState =
         ROAM_DSTAR;
+        //no longer blocked
+        if (goalType == ROAM_GOAL_PRIORITY)
+        {
+            priorityRetryBlocked = false;
+        }
 
 
     debugNav.print(
@@ -761,7 +791,8 @@ void roaming_reset()
     lastWeightCheckAt =
         millis();
 
-
+    priorityFailedAt = 0;
+    priorityRetryBlocked = false;
     priorityTargetWaitStartedAt = 0;
 
     prioritySearchStage = 0;
@@ -838,6 +869,23 @@ void roaming_update()
             priorityDistance,
             priorityHeadingError
         );
+
+        // Release the cooldown once enough time has elapsed.
+        if (priorityRetryBlocked &&
+            millis() - priorityFailedAt >=
+                PRIORITY_RETRY_DELAY_MS)
+        {
+            priorityRetryBlocked = false;
+
+            debugNav.print("NAV_EVENT,");
+            debugNav.print(millis());
+            debugNav.println(",PRIORITY_RETRY_READY");
+        }
+
+
+        bool canUsePriority =
+            hasPriorityTarget &&
+            !priorityRetryBlocked;
 
 
     // ========================================================
@@ -967,8 +1015,8 @@ void roaming_update()
             // -----------------------------------------------
             // Priority targets always beat frontiers.
             // -----------------------------------------------
-
-            if (hasPriorityTarget)
+            
+            if (canUsePriority)
             {
                 updatePriorityTarget(
                     priorityX,
@@ -1033,7 +1081,7 @@ void roaming_update()
 
             if (roamGoal ==
                     ROAM_GOAL_FRONTIER &&
-                hasPriorityTarget)
+                canUsePriority)
             {
                 path_reset();
 
@@ -1243,6 +1291,21 @@ void roaming_update()
                     waypointX,
                     waypointY))
             {
+                // A priority route which USED to work has now
+                // become unavailable. Apply the same cooldown
+                // before trying that target again.
+                if (roamGoal == ROAM_GOAL_PRIORITY)
+                {
+                    priorityFailedAt = millis();
+                    priorityRetryBlocked = true;
+
+                    debugNav.print("NAV_EVENT,");
+                    debugNav.print(millis());
+                    debugNav.println(
+                        ",PRIORITY_RETRY_BLOCKED"
+                    );
+                }
+
                 path_reset();
 
                 motor_control_stop();

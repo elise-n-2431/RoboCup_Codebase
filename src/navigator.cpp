@@ -339,6 +339,6 @@ void leaving_update() {
     if (world_to_cell_x(pose_get_x_mm()) < x_clearance) {
         setStateFlag(&STATE_FLAGS.calibrated_after_lip);
     } else {
-        DC_motors_setPower(450, 450);
+        //DC_motors_setPower(450, 450);
     }
 }

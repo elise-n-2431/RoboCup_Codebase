@@ -115,8 +115,8 @@ static void checkGo()
     Serial2.println("CONFIG,LOCKED");
 }
 
-int max_i = 200;
-int i = 0;
+// int max_i = 200;
+// int i = 0;
 
 void loop()
 {
@@ -133,12 +133,12 @@ void loop()
 
     map_update();
 
-    if (i > max_i) {
-        send_map_data();    
-        i = 0;
-    }
+    // if (i > max_i) {
+    //     send_map_data();    
+    //     i = 0;
+    // }
 
-    i ++;
+    // i ++;
 
     if (!run) {
         return;

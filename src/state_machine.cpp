@@ -426,20 +426,51 @@ void updateStateMachine() {
     
     switch (current_nav_state) {
         case STATIONARY:
-            if (STATE_FLAGS.target_weight_onboard) {
-                checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
-            } else if (STATE_FLAGS.leaving_home) {
-                resetStateFlag(&STATE_FLAGS.leaving_home);
-                checkChangeNavState(LEAVING, &STATE_FLAGS.not_target_weight_onboard);
-            } else {
-                checkChangeNavState(LEAVING, &STATE_FLAGS.not_target_weight_onboard);
+        {
+            // Enough weights onboard -> take them home.
+            if (STATE_FLAGS.target_weight_onboard)
+            {
+                checkChangeNavState(
+                    HOMING,
+                    &STATE_FLAGS.target_weight_onboard
+                );
             }
+
+            // Explicitly leaving the home base after a drop-off.
+            else if (STATE_FLAGS.leaving_home)
+            {
+                checkChangeNavState(
+                    LEAVING,
+                    &STATE_FLAGS.leaving_home
+                );
+            }
+
+            // Successful pickup but we still want more weights.
+            // Resume normal roaming/D* navigation.
+            else if (STATE_FLAGS.not_target_weight_onboard)
+            {
+                checkChangeNavState(
+                    ROAMING,
+                    &STATE_FLAGS.not_target_weight_onboard
+                );
+            }
+
             break;
+        }
+
 
         case LEAVING:
-            if (STATE_FLAGS.calibrated_after_lip) {
-                checkChangeNavState(ROAMING, &STATE_FLAGS.calibrated_after_lip);
+        {
+            if (STATE_FLAGS.calibrated_after_lip)
+            {
+                checkChangeNavState(
+                    ROAMING,
+                    &STATE_FLAGS.calibrated_after_lip
+                );
             }
+
+            break;
+        }
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);

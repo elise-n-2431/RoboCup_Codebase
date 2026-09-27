@@ -319,8 +319,7 @@ void add_free_evidence(
 
     bool newObstacle = mapValueIsObstacle(newValue);
 
-    if (oldFree != newFree ||
-        oldObstacle != newObstacle)
+    if (oldObstacle != newObstacle)
     {
         path_notify_cell_changed(
             cell_x,
@@ -356,10 +355,10 @@ void map_init() {
                 y >= MAP_HEIGHT -
                     MAP_PADDING_CELLS;
 
-            OBSTACLE_MAP[x][y] = 0;
-                 outsideArena
-                 ? CONF_SCALE
-                 : 0;
+                    OBSTACLE_MAP[x][y] =
+            outsideArena
+                ? CONF_SCALE
+                : 0;
         }
     }
     for (int i = 0; i < n; i++) {
@@ -1238,7 +1237,7 @@ void map_update()
     // Leave pose correction off until mapping itself is validated.
     // map_correction();
 
-    arena_mirroring();
+    //arena_mirroring();
 
     find_frontier();
 
@@ -1251,12 +1250,12 @@ void map_update()
     }
     printMapTelemetry();
     //used for gui print every 10 seconds
-    if (debugMap.enabled &&
-        now - lastFullMapDebugAt >=
-            FULL_MAP_DEBUG_PERIOD_MS)
-    {
-        lastFullMapDebugAt = now;
+    // if (debugMap.enabled &&
+    //     now - lastFullMapDebugAt >=
+    //         FULL_MAP_DEBUG_PERIOD_MS)
+    // {
+    //     lastFullMapDebugAt = now;
 
-        send_map_data();
-    }
+    //     send_map_data();
+    // }
 }
