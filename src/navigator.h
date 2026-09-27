@@ -12,5 +12,6 @@ bool navigator_start(bool enablePickup);
 void navigator_stop();
 
 void print_navigator_state();
+void leaving_update();
 
 #endif

@@ -804,6 +804,10 @@ void roaming_start(bool pickupEnabled)
 
 void roaming_update()
 {
+
+    if (getNavState() != ROAMING) {
+        return;
+    }
     // ========================================================
     // PHYSICAL WEIGHT DETECTION
     //

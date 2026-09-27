@@ -49,6 +49,13 @@ static Node lastPrintedWaypoint =
     -1000
 };
 
+//we want unlknwo ncells to have different costs if we are in homing or roaming so htis mode distinguishes between them 
+enum PathMode
+{
+    PATH_SAFE,
+    PATH_EXPLORE
+};
+
 static const unsigned long DSTAR_REPAIR_INTERVAL_MS = 150;
 
 static unsigned long lastDstarRepair = 0;
@@ -201,9 +208,30 @@ float wallPenalty(Node p)
         (CLEARANCE - minDist) * PENALTY_WEIGHT;
 }
 
-float cost(Node p, Node q) {
-    if (!check_free(p.x, p.y) || !check_free(q.x, q.y)) return INF;
-    return heuristic(p, q) + wallPenalty(q);
+float cost(Node p, Node q)
+{
+    // Confirmed obstacle is always forbidden.
+    if (check_obstacle(p.x, p.y) ||
+        check_obstacle(q.x, q.y))
+    {
+        return INF;
+    }
+
+    // Homing:
+    // only confirmed free cells.
+    if (pathMode == PATH_SAFE)
+    {
+        if (!check_free(p.x, p.y) ||
+            !check_free(q.x, q.y))
+        {
+            return INF;
+        }
+    }
+
+    // Roaming:
+    // free and unknown are both allowed.
+    return heuristic(p, q) +
+           wallPenalty(q);
 }
 
 bool consistent(Node p) {
@@ -244,8 +272,8 @@ bool path_init(int x_val, int y_val) {
         goal.y = world_to_cell_y(arena_get_home_y_mm());
 
     } else {
-        goal.x = x_val;
-        goal.y = y_val;
+        goal.x = world_to_cell_x(x_val);
+        goal.y = world_to_cell_x(y_val);
     }
 
     path_reset_lookahead();
