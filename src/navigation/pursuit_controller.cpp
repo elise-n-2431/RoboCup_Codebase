@@ -8,6 +8,8 @@
 #include "driving_controller.h"
 #include "state_machine.h"
 #include "debug_print.h"
+#include "path_finding.h"
+#include "pose.h"
 
 
 // Pursuit tuning
@@ -19,7 +21,7 @@ static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 static const float PURSUIT_SCAN_STEP_DEG = 15.0f;
 static const float PURSUIT_SCAN_MAX_DEG = 60.0f;
 
-static const int WEIGHT_STOP_DISTANCE_MM = 90;
+static const int WEIGHT_STOP_DISTANCE_MM = 80;
 static const int WEIGHT_SLOW_DISTANCE_MM = 200;
 
 static const int WEIGHT_APPROACH_POWER = 420;
@@ -29,6 +31,8 @@ static const int PURSUIT_WALL_ABORT_MM = 25;
 static const unsigned long ARM_SECURE_WAIT_MS = 1000;
 static const unsigned long PURSUIT_TIMEOUT_MS = 10000;
 
+int target_x_mm = 0;
+int target_y_mm = 0;
 
 enum PursuitState
 {
@@ -151,6 +155,14 @@ static int pursuitClearanceValue(
     }
 
     return distance;
+}
+
+static float targetDistance()
+{
+    float dx = get_frontier_world_x_mm() - pose_get_x_mm();
+    float dy = get_frontier_world_y_mm() - pose_get_y_mm();
+
+    return sqrtf(dx * dx + dy * dy);
 }
 
 

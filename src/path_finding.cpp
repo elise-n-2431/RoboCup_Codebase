@@ -10,7 +10,7 @@
 using namespace std;
 #include "arena_config.h"
 #include "debug_print.h"
-#include "driving_controller.h"
+// #include "driving_controller.h"
 
 const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
 const int MAP_HEIGHT = 49 + 4;
@@ -237,7 +237,17 @@ Key calculate_key(Node s) { // s is self
 }
 
 
-bool path_init() {
+bool path_init(int x_val, int y_val) {
+
+    if (x_val == 0 && y_val == 0) {
+        goal.x = world_to_cell_x(arena_get_home_x_mm()); //using actual home coorindates instead of 2500, 2500 which isnt a valid coord
+        goal.y = world_to_cell_y(arena_get_home_y_mm());
+
+    } else {
+        goal.x = x_val;
+        goal.y = y_val;
+    }
+
     path_reset_lookahead();
     U.clear(); // reset U
     changed_cells.clear();
@@ -248,9 +258,6 @@ bool path_init() {
     // goal = {70,50};
     start.x = world_to_cell_x(pose_get_x_mm());
     start.y = world_to_cell_y(pose_get_y_mm());
-
-    goal.x = world_to_cell_x(arena_get_home_x_mm()); //using actual home coorindates instead of 2500, 2500 which isnt a valid coord
-    goal.y = world_to_cell_y(arena_get_home_y_mm());
 
     last = start;
     goal_reached = false;

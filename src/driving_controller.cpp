@@ -9,6 +9,7 @@
 #include "state_machine.h"
 #include "debug_print.h"
 #include "pose.h"
+#include "navigation/reversing_controller.h"
 
 
 // ============================================================
@@ -31,8 +32,21 @@ static MotorControlMode controlMode = CONTROL_IDLE;
 // GENERAL CONTROL TUNING
 // ============================================================
 
-static float TURN_KP = 16.0f;
+static float TURN_KP = 10.0f;
+
+static float POINT_KP = 4.0f;
+
+static const int
+    MAX_POINT_SPEED_DIFFERENCE = 200;
 static float DRIVE_KP = 8.0f;
+
+static const float
+    POINT_ALIGN_ENTER_DEG = 45.0f;
+
+static const float
+    POINT_ALIGN_EXIT_DEG = 15.0f;
+
+static bool pointAligning = false;
 
 
 static const int MAX_DRIVE_CORRECTION = 100;
@@ -437,15 +451,19 @@ static void updateTurnControl(
     );
 }
 
-static void updateDriveHeadingControl(float currentHeading)
+static void updateDriveHeadingControl(
+    float currentHeading)
 {
-    currentError = headingError(
-        targetHeading,
-        currentHeading
-    );
+    currentError =
+        headingError(
+            targetHeading,
+            currentHeading
+        );
 
     float correction =
-        DRIVE_KP * currentError * DRIVE_STEER_SIGN;
+        DRIVE_KP *
+        currentError *
+        DRIVE_STEER_SIGN;
 
     correction = constrain(
         correction,
@@ -453,13 +471,39 @@ static void updateDriveHeadingControl(float currentHeading)
         MAX_DRIVE_CORRECTION
     );
 
+    // Preserve the same total differential as the
+    // old +/- correction method, but never request
+    // more than driveBasePower from the outside track.
+    int speedDifference =
+        abs(
+            (int)(2.0f * correction)
+        );
+
+    speedDifference =
+        constrain(
+            speedDifference,
+            0,
+            200
+        );
+
     int leftPower =
-        driveBasePower +
-        (int)correction;
+        driveBasePower;
 
     int rightPower =
-        driveBasePower -
-        (int)correction;
+        driveBasePower;
+
+    if (correction > 0.0f)
+    {
+        rightPower =
+            driveBasePower -
+            speedDifference;
+    }
+    else if (correction < 0.0f)
+    {
+        leftPower =
+            driveBasePower -
+            speedDifference;
+    }
 
     setMotorPower(
         leftPower,
@@ -507,9 +551,57 @@ static void updateDriveToPointControl(
         currentPoseHeading
     );
     float steer =
-        DRIVE_KP *
+        POINT_KP *
         currentError *
         POINT_STEER_SIGN;
+
+            float absPointError =
+            fabsf(currentError);
+
+
+        // If the D* target is substantially behind us,
+        // don't try to reach it using a gigantic forward arc.
+        if (!pointAligning &&
+            absPointError >
+                POINT_ALIGN_ENTER_DEG)
+        {
+            pointAligning = true;
+        }
+
+
+        if (pointAligning)
+        {
+            // Once reasonably aligned, go back to
+            // ordinary curved point following.
+            if (absPointError <=
+                POINT_ALIGN_EXIT_DEG)
+            {
+                pointAligning = false;
+            }
+            else
+            {
+                int turnPower =
+                    constrain(
+                        (int)(4.0f * absPointError),
+                        300,
+                        420
+                    );
+
+                // Same steering direction as the existing
+                // POINT_STEER_SIGN convention.
+                int direction =
+                    steer > 0.0f
+                    ? 1
+                    : -1;
+
+                setMotorPower(
+                    direction * turnPower,
+                    -direction * turnPower
+                );
+
+                return;
+            }
+        }
 
     // Normal forward speed.
     int power = driveBasePower;
@@ -543,7 +635,10 @@ static void updateDriveToPointControl(
     speedDifference = constrain(
         speedDifference,
         0,
-        power - MIN_CURVE_POWER
+        min(
+            MAX_POINT_SPEED_DIFFERENCE,
+            power - MIN_CURVE_POWER
+        )
     );
 
     int leftPower = power;
@@ -635,6 +730,10 @@ static void updateAvoidTurnControl(
 
         debugMotor.println(
             "Point avoidance: too close - reversing"
+        );
+
+        reversing_set_reason(
+            REVERSE_CRITICAL_OBSTACLE
         );
 
         setStateFlag(

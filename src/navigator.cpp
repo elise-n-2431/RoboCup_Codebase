@@ -218,10 +218,9 @@ static bool checkTurnTimeout(NavState nav)
             &STATE_FLAGS.target_lost
         );
     }
-    else if (nav == ROAMING)
-    {
-        roaming_turn_timeout();
-    }
+    // else if (nav == ROAMING)
+    // {
+    // }
     else if (nav == HOMING)
     {
         homing_start();

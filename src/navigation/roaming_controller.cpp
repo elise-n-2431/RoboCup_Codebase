@@ -11,6 +11,7 @@
 #include "pose.h"
 #include "debug_print.h"
 #include "priority_targets.h"
+#include "path_finding.h"
 
 #include "navigation/weight_detection.h"
 #include "navigation/pursuit_controller.h"
@@ -21,45 +22,40 @@
 enum RoamingState
 {
     ROAM_START,
-    ROAM_CHECKING,
-    ROAM_DRIVING,
-    ROAM_TURNING,
+    ROAM_DSTAR,
     ROAM_TARGET_TURNING,
-    ROAM_TARGET_WAITING,
-    ROAM_FRONTIER
+    ROAM_TARGET_WAITING
 };
 
 enum RoamGoalType
 {
-    ROAM_GOAL_FALLBACK,
+    ROAM_GOAL_NONE,
     ROAM_GOAL_PRIORITY,
     ROAM_GOAL_FRONTIER
 };
 
-static RoamingState roamingState = ROAM_START;
-static RoamGoalType roamGoal = ROAM_GOAL_FALLBACK;
+static RoamingState roamingState =
+    ROAM_START;
 
+static RoamGoalType roamGoal =
+    ROAM_GOAL_NONE;
 
+static const int ROAM_POWER = 430;
+static const int ROAM_SLOW_POWER = 340;
 
-static const int ROAM_POWER = 450;
-static const int ROAM_SLOW_POWER = 390;
-
-static const int ROAM_FRONT_BLOCK_MM = 150;
-static const int ROAM_SIDE_BLOCK_MM = 180;
+static const float ROAM_SLOW_DISTANCE_MM = 700.0f;
 static const int ROAM_SLOW_MM = 250;
 static const int ROAM_CRITICAL_MM = 90;
 
-static const float ROAM_AVOID_TURN_DEG = 45.0f;
+static const float FRONTIER_TARGET_ARRIVAL_MM = 120.0f;
+
+static const float ROAM_DSTAR_SLOW_DISTANCE_MM = 500.0f;
 
 
 static const float PRIORITY_TARGET_ARRIVAL_MM = 80.0f;
-static const float PRIORITY_TARGET_TURN_THRESHOLD_DEG = 18.0f;
 static const float PRIORITY_TARGET_FINAL_ALIGN_DEG = 8.0f;
 
 static const unsigned long PRIORITY_TARGET_CONFIRM_MS = 1200;
-static const unsigned long PRIORITY_TARGET_REJOIN_DELAY_MS = 700;
-
-
 
 static const unsigned long NAV_TELEMETRY_PERIOD_MS = 200;
 static unsigned long lastNavTelemetryAt = 0;
@@ -76,16 +72,11 @@ static bool roamingPickupEnabled = false;
 
 static unsigned long roamingStartedAt = 0;
 static unsigned long lastWeightCheckAt = 0;
-static unsigned long roamCheckStartedAt = 0;
 
 static unsigned long priorityTargetWaitStartedAt = 0;
-static unsigned long priorityRejoinAllowedAt = 0;
 
-static float roamHeading = 0.0f;
 static float roamCommandedHeading = NAN;
 static int roamCommandedPower = 0;
-
-static int roamTurnDirection = 1;
 
 static float roamGoalX = -1.0f;
 static float roamGoalY = -1.0f;
@@ -112,33 +103,41 @@ static int clearanceValue(int distance)
     return distance;
 }
 
-
 static const char* roamingStateName()
 {
     switch (roamingState)
     {
-        case ROAM_START: return "START";
-        case ROAM_CHECKING: return "CHECKING";
-        case ROAM_DRIVING: return "DRIVING";
-        case ROAM_TURNING: return "TURNING";
-        case ROAM_TARGET_TURNING: return "TARGET_TURNING";
-        case ROAM_TARGET_WAITING: return "TARGET_WAITING";
-        case ROAM_FRONTIER: return "FRONTIER";
-        default: return "UNKNOWN";
+        case ROAM_START:
+            return "START";
+
+        case ROAM_DSTAR:
+            return "DSTAR";
+
+        case ROAM_TARGET_TURNING:
+            return "TARGET_TURNING";
+
+        case ROAM_TARGET_WAITING:
+            return "TARGET_WAITING";
+
+        default:
+            return "UNKNOWN";
     }
 }
-
 
 static const char* roamGoalName()
 {
     switch (roamGoal)
     {
-        case ROAM_GOAL_PRIORITY: return "PRIORITY";
-        case ROAM_GOAL_FRONTIER: return "FRONTIER";
-        default: return "FALLBACK";
+        case ROAM_GOAL_PRIORITY:
+            return "PRIORITY";
+
+        case ROAM_GOAL_FRONTIER:
+            return "FRONTIER";
+
+        default:
+            return "NONE";
     }
 }
-
 
 static const char* weightTargetName(WeightTargetSide target)
 {
@@ -183,6 +182,131 @@ static bool setRoamGoal(
     return true;
 }
 
+static bool startRoamDstar(
+    RoamGoalType goalType,
+    float goalX,
+    float goalY)
+{
+    motor_control_stop();
+
+    path_reset();
+
+    roamCommandedPower = 0;
+    roamCommandedHeading = NAN;
+
+
+    setRoamGoal(
+        goalType,
+        goalX,
+        goalY
+    );
+
+
+    if (!path_init(goalX, goalY))
+    {
+        debugNav.print(
+            "NAV_EVENT,"
+        );
+
+        debugNav.print(
+            millis()
+        );
+
+        debugNav.print(
+            ",ROAM_DSTAR_INIT_FAILED,"
+        );
+
+        debugNav.println(
+            roamGoalName()
+        );
+
+
+        path_reset();
+
+        setRoamGoal(
+            ROAM_GOAL_NONE,
+            -1.0f,
+            -1.0f
+        );
+
+        roamingState =
+            ROAM_START;
+
+        return false;
+    }
+
+
+    roamingState =
+        ROAM_DSTAR;
+
+
+    debugNav.print(
+        "NAV_EVENT,"
+    );
+
+    debugNav.print(
+        millis()
+    );
+
+    debugNav.print(
+        ",ROAM_DSTAR_START,"
+    );
+
+    debugNav.print(
+        roamGoalName()
+    );
+
+    debugNav.print(",");
+
+    debugNav.print(
+        roamGoalX
+    );
+
+    debugNav.print(",");
+
+    debugNav.println(
+        roamGoalY
+    );
+
+
+    return true;
+}
+static float roamGoalDistance()
+{
+    float dx =
+        roamGoalX -
+        pose_get_x_mm();
+
+    float dy =
+        roamGoalY -
+        pose_get_y_mm();
+
+    return sqrtf(
+        dx * dx +
+        dy * dy
+    );
+}
+
+
+static float roamGoalHeadingError()
+{
+    float dx =
+        roamGoalX -
+        pose_get_x_mm();
+
+    float dy =
+        roamGoalY -
+        pose_get_y_mm();
+
+    float desiredHeading =
+        atan2f(dy, dx) *
+        180.0f / PI;
+
+    return wrap180(
+        desiredHeading -
+        pose_get_heading_deg()
+    );
+}
 
 static bool getPriorityTargetInfo(
     float &targetX,
@@ -403,118 +527,6 @@ static bool checkForWeight()
     return true;
 }
 
-
-
-static void roamingStartTurn(
-    int leftClearance,
-    int rightClearance)
-{
-    if (abs(
-            leftClearance -
-            rightClearance) > 80)
-    {
-        roamTurnDirection =
-            leftClearance >
-                    rightClearance
-                ? -1
-                : 1;
-    }
-
-    motor_control_stop();
-
-    motor_control_turn_relative(
-        roamTurnDirection *
-        ROAM_AVOID_TURN_DEG
-    );
-
-    roamingState = ROAM_TURNING;
-
-    roamCommandedPower = 0;
-    roamCommandedHeading = NAN;
-
-    priorityTargetWaitStartedAt = 0;
-
-    weight_detection_reset_side_evidence();
-
-    debugNav.print("NAV_EVENT,");
-    debugNav.print(millis());
-    debugNav.print(",ROAM_TURN,");
-    debugNav.println(
-        roamTurnDirection < 0
-            ? "LEFT"
-            : "RIGHT"
-    );
-}
-
-
-static void roamingDrive(int power)
-{
-    bool sameHeading =
-        isfinite(roamCommandedHeading) &&
-        fabsf(
-            wrap180(
-                roamHeading -
-                roamCommandedHeading
-            )
-        ) < 2.0f;
-
-    if (motor_control_is_driving() &&
-        roamCommandedPower == power &&
-        sameHeading)
-    {
-        return;
-    }
-
-    motor_control_drive_heading(
-        roamHeading,
-        power
-    );
-
-    roamCommandedPower = power;
-    roamCommandedHeading = roamHeading;
-}
-
-
-static bool handleActiveTurn()
-{
-    if (roamingState == ROAM_TARGET_TURNING)
-    {
-        if (motor_control_is_turning())
-        {
-            return true;
-        }
-
-        motor_control_stop();
-
-        roamCommandedPower = 0;
-        roamCommandedHeading = NAN;
-
-        roamCheckStartedAt = millis();
-        roamingState = ROAM_CHECKING;
-
-        return true;
-    }
-
-    if (roamingState == ROAM_TURNING)
-    {
-        if (motor_control_is_turning())
-        {
-            return true;
-        }
-
-        priorityRejoinAllowedAt =
-            millis() +
-            PRIORITY_TARGET_REJOIN_DELAY_MS;
-
-        roamCheckStartedAt = millis();
-        roamingState = ROAM_CHECKING;
-
-        return true;
-    }
-
-    return false;
-}
-
 static bool handlePriorityWaiting(
     bool hasPriorityTarget,
     float priorityX,
@@ -681,328 +693,27 @@ static bool handlePriorityWaiting(
 
 static void updatePriorityTarget(
     float priorityX,
-    float priorityY,
-    float priorityDistance,
-    float priorityHeadingError,
-    int outerLeft,
-    int outerRight,
-    int front,
-    int leftClearance,
-    int rightClearance)
+    float priorityY)
 {
-    if (priorityDistance <=
-        PRIORITY_TARGET_ARRIVAL_MM)
-    {
-        motor_control_stop();
-
-        roamCommandedPower = 0;
-        roamCommandedHeading = NAN;
-
-        if (fabsf(priorityHeadingError) >
-            PRIORITY_TARGET_FINAL_ALIGN_DEG)
-        {
-            debugNav.print("NAV_EVENT,");
-            debugNav.print(millis());
-            debugNav.print(",PRIORITY_ALIGN,");
-            debugNav.println(
-                priorityHeadingError
-            );
-
-            motor_control_turn_relative(
-                -priorityHeadingError
-            );
-
-            roamingState =
-                ROAM_TARGET_TURNING;
-
-            return;
-        }
-
-        debugNav.print("NAV_EVENT,");
-        debugNav.print(millis());
-        debugNav.print(",PRIORITY_REACHED,");
-        debugNav.print(priorityX);
-        debugNav.print(",");
-        debugNav.println(priorityY);
-
-        priorityTargetWaitStartedAt =
-            millis();
-
-        prioritySearchStage = 0;
-        prioritySearchStageAt = millis();
-
-        roamingState =
-            ROAM_TARGET_WAITING;
-
-        return;
-    }
-
-    switch (roamingState)
-    {
-        case ROAM_START:
-        {
-            motor_control_stop();
-
-            roamCommandedPower = 0;
-            roamCommandedHeading = NAN;
-
-            roamCheckStartedAt = millis();
-            roamingState = ROAM_CHECKING;
-
-            return;
-        }
-
-        case ROAM_CHECKING:
-        {
-            if (millis() -
-                    roamCheckStartedAt <
-                150)
-            {
-                return;
-            }
-
-            if (front <
-                    ROAM_FRONT_BLOCK_MM + 80 ||
-                outerLeft <
-                    ROAM_SIDE_BLOCK_MM + 30 ||
-                outerRight <
-                    ROAM_SIDE_BLOCK_MM + 30)
-            {
-                roamingStartTurn(
-                    leftClearance,
-                    rightClearance
-                );
-
-                return;
-            }
-
-            if (millis() >=
-                    priorityRejoinAllowedAt &&
-                fabsf(priorityHeadingError) >
-                    PRIORITY_TARGET_TURN_THRESHOLD_DEG)
-            {
-                debugNav.print("NAV_EVENT,");
-                debugNav.print(millis());
-                debugNav.print(",PRIORITY_TURN,");
-                debugNav.print(priorityHeadingError);
-                debugNav.print(",");
-                debugNav.println(priorityDistance);
-
-                motor_control_turn_relative(
-                    -priorityHeadingError
-                );
-
-                roamCommandedPower = 0;
-                roamCommandedHeading = NAN;
-
-                roamingState =
-                    ROAM_TARGET_TURNING;
-
-                return;
-            }
-
-            if (millis() >=
-                priorityRejoinAllowedAt)
-            {
-                roamHeading =
-                    imu_get_heading() -
-                    priorityHeadingError;
-            }
-            else
-            {
-                roamHeading =
-                    imu_get_heading();
-            }
-
-            roamCommandedPower = 0;
-            roamingState = ROAM_DRIVING;
-
-            roamingDrive(
-                front < ROAM_SLOW_MM
-                    ? ROAM_SLOW_POWER
-                    : ROAM_POWER
-            );
-
-            return;
-        }
-
-        case ROAM_DRIVING:
-        {
-            if (front <
-                    ROAM_FRONT_BLOCK_MM ||
-                outerLeft <
-                    ROAM_SIDE_BLOCK_MM ||
-                outerRight <
-                    ROAM_SIDE_BLOCK_MM)
-            {
-                roamingStartTurn(
-                    leftClearance,
-                    rightClearance
-                );
-
-                return;
-            }
-
-            if (millis() >=
-                priorityRejoinAllowedAt)
-            {
-                roamHeading =
-                    imu_get_heading() -
-                    priorityHeadingError;
-            }
-
-            roamingDrive(
-                front < ROAM_SLOW_MM
-                    ? ROAM_SLOW_POWER
-                    : ROAM_POWER
-            );
-
-            return;
-        }
-
-        default:
-        {
-            roamingState = ROAM_START;
-            return;
-        }
-    }
+    startRoamDstar(
+        ROAM_GOAL_PRIORITY,
+        priorityX,
+        priorityY
+    );
 }
-
-
 
 static void updateFrontierTarget(
     float frontierX,
     float frontierY)
 {
-    bool changed =
-        setRoamGoal(
-            ROAM_GOAL_FRONTIER,
-            frontierX,
-            frontierY
-        );
+    frontierReachedLogged =
+        false;
 
-    if (changed)
-    {
-        frontierReachedLogged = false;
-    }
-
-    roamingState = ROAM_FRONTIER;
-
-    motor_control_drive_to_point(
+    startRoamDstar(
+        ROAM_GOAL_FRONTIER,
         frontierX,
-        frontierY,
-        ROAM_POWER
+        frontierY
     );
-
-    if (motor_control_point_reached() &&
-        !frontierReachedLogged)
-    {
-        frontierReachedLogged = true;
-
-        debugNav.print("NAV_EVENT,");
-        debugNav.print(millis());
-        debugNav.print(",FRONTIER_REACHED,");
-        debugNav.print(frontierX);
-        debugNav.print(",");
-        debugNav.println(frontierY);
-    }
-}
-
-
-
-static void updateFallbackRoaming(
-    int outerLeft,
-    int outerRight,
-    int front,
-    int leftClearance,
-    int rightClearance)
-{
-    switch (roamingState)
-    {
-        case ROAM_START:
-        {
-            motor_control_stop();
-
-            roamCommandedPower = 0;
-            roamCommandedHeading = NAN;
-
-            roamCheckStartedAt = millis();
-            roamingState = ROAM_CHECKING;
-
-            return;
-        }
-
-        case ROAM_CHECKING:
-        {
-            if (millis() -
-                    roamCheckStartedAt <
-                150)
-            {
-                return;
-            }
-
-            if (front <
-                    ROAM_FRONT_BLOCK_MM + 80 ||
-                outerLeft <
-                    ROAM_SIDE_BLOCK_MM + 30 ||
-                outerRight <
-                    ROAM_SIDE_BLOCK_MM + 30)
-            {
-                roamingStartTurn(
-                    leftClearance,
-                    rightClearance
-                );
-
-                return;
-            }
-
-            roamHeading =
-                imu_get_heading();
-
-            roamCommandedPower = 0;
-            roamingState = ROAM_DRIVING;
-
-            roamingDrive(
-                front < ROAM_SLOW_MM
-                    ? ROAM_SLOW_POWER
-                    : ROAM_POWER
-            );
-
-            return;
-        }
-
-        case ROAM_DRIVING:
-        {
-            if (front <
-                    ROAM_FRONT_BLOCK_MM ||
-                outerLeft <
-                    ROAM_SIDE_BLOCK_MM ||
-                outerRight <
-                    ROAM_SIDE_BLOCK_MM)
-            {
-                roamingStartTurn(
-                    leftClearance,
-                    rightClearance
-                );
-
-                return;
-            }
-
-            roamingDrive(
-                front < ROAM_SLOW_MM
-                    ? ROAM_SLOW_POWER
-                    : ROAM_POWER
-            );
-
-            return;
-        }
-
-        default:
-        {
-            roamingState = ROAM_START;
-            return;
-        }
-    }
 }
 
 
@@ -1035,24 +746,38 @@ static bool checkCriticalObstacle(int front)
 
 void roaming_reset()
 {
-    roamingState = ROAM_START;
-    roamGoal = ROAM_GOAL_FALLBACK;
+    path_reset();
 
-    roamingStartedAt = millis();
-    lastWeightCheckAt = millis();
-    roamCheckStartedAt = 0;
+    roamingState =
+        ROAM_START;
+
+    roamGoal =
+        ROAM_GOAL_NONE;
+
+
+    roamingStartedAt =
+        millis();
+
+    lastWeightCheckAt =
+        millis();
+
 
     priorityTargetWaitStartedAt = 0;
-    priorityRejoinAllowedAt = 0;
 
-    roamHeading = 0.0f;
+    prioritySearchStage = 0;
+    prioritySearchStageAt = 0;
+
+
     roamCommandedHeading = NAN;
     roamCommandedPower = 0;
 
     roamGoalX = -1.0f;
     roamGoalY = -1.0f;
 
-    frontierReachedLogged = false;
+
+    frontierReachedLogged =
+        false;
+
 
     weight_detection_reset_side_evidence();
 }
@@ -1077,37 +802,25 @@ void roaming_start(bool pickupEnabled)
 }
 
 
-void roaming_turn_timeout()
-{
-    motor_control_stop();
-
-    roamingState = ROAM_START;
-
-    roamCommandedPower = 0;
-    roamCommandedHeading = NAN;
-
-    priorityTargetWaitStartedAt = 0;
-    priorityRejoinAllowedAt = 0;
-
-    weight_detection_reset_side_evidence();
-
-    debugNav.print("NAV_EVENT,");
-    debugNav.print(millis());
-    debugNav.println(",ROAM_TURN_TIMEOUT");
-}
-
-
 void roaming_update()
 {
-    // Physical weight detection always has first priority.
+    // ========================================================
+    // PHYSICAL WEIGHT DETECTION
+    //
+    // A weight physically seen by the robot always overrides
+    // map-based navigation.
+    // ========================================================
+
     if (checkForWeight())
     {
+        path_reset();
         return;
     }
 
-    // --------------------------------------------------------
-    // Current priority target
-    // --------------------------------------------------------
+
+    // ========================================================
+    // CURRENT PRIORITY TARGET
+    // ========================================================
 
     float priorityX = 0.0f;
     float priorityY = 0.0f;
@@ -1122,9 +835,15 @@ void roaming_update()
             priorityHeadingError
         );
 
-    // --------------------------------------------------------
-    // Current map frontier
-    // --------------------------------------------------------
+
+    // ========================================================
+    // CURRENT FRONTIER TARGET
+    //
+    // This may change as the map changes.
+    //
+    // It is only used when selecting a NEW goal.
+    // While ROAM_DSTAR is active, roamGoalX/Y stay locked.
+    // ========================================================
 
     float frontierX = -1.0f;
     float frontierY = -1.0f;
@@ -1135,14 +854,16 @@ void roaming_update()
             frontierY
         );
 
-    // --------------------------------------------------------
-    // Current clearances
-    // --------------------------------------------------------
+
+    // ========================================================
+    // LOCAL CLEARANCES
+    // ========================================================
 
     int outerLeft;
     int innerLeft;
     int innerRight;
     int outerRight;
+
     int front;
     int leftClearance;
     int rightClearance;
@@ -1157,6 +878,7 @@ void roaming_update()
         rightClearance
     );
 
+
     printRoamingTelemetry(
         front,
         leftClearance,
@@ -1165,102 +887,444 @@ void roaming_update()
         hasFrontierTarget
     );
 
-    // Finish any point-turn already in progress before changing
-    // roaming goal.
-    if (handleActiveTurn())
-    {
-        return;
-    }
 
-    // Priority target waiting is also allowed to continue while
-    // physical weight detection runs at the top of this function.
-    if (handlePriorityWaiting(
-            hasPriorityTarget,
-            priorityX,
-            priorityY))
-    {
-        return;
-    }
+    // ========================================================
+    // PRIORITY-TARGET FINAL STATES
+    //
+    // Do these before critical-obstacle checking because the
+    // weight itself may be very close to the front sensors.
+    // ========================================================
 
-    // Extremely close obstacle always gets the dedicated reverse.
-    if (checkCriticalObstacle(front))
+    if (roamingState ==
+        ROAM_TARGET_TURNING)
     {
-        return;
-    }
-
-
-    if (hasPriorityTarget)
-    {
-        if (roamGoal != ROAM_GOAL_PRIORITY)
+        if (motor_control_is_turning())
         {
-            motor_control_stop();
-
-            roamingState = ROAM_START;
-            roamCommandedPower = 0;
-            roamCommandedHeading = NAN;
+            return;
         }
 
-        setRoamGoal(
-            ROAM_GOAL_PRIORITY,
+
+        motor_control_stop();
+
+        priorityTargetWaitStartedAt =
+            millis();
+
+        prioritySearchStage = 0;
+
+        prioritySearchStageAt =
+            millis();
+
+        roamingState =
+            ROAM_TARGET_WAITING;
+
+        return;
+    }
+
+
+    if (roamingState ==
+        ROAM_TARGET_WAITING)
+    {
+        handlePriorityWaiting(
+            hasPriorityTarget,
             priorityX,
             priorityY
         );
 
-        updatePriorityTarget(
-            priorityX,
-            priorityY,
-            priorityDistance,
-            priorityHeadingError,
-            outerLeft,
-            outerRight,
-            front,
-            leftClearance,
-            rightClearance
-        );
-
         return;
     }
 
- 
-    if (hasFrontierTarget)
+
+    // ========================================================
+    // CRITICAL OBSTACLE SAFETY OVERRIDE
+    // ========================================================
+
+    if (checkCriticalObstacle(front))
     {
-        if (roamGoal != ROAM_GOAL_FRONTIER)
+        path_reset();
+        return;
+    }
+
+
+    // ========================================================
+    // MAIN ROAMING STATE MACHINE
+    // ========================================================
+
+    switch (roamingState)
+    {
+        // ====================================================
+        // SELECT A NEW GOAL
+        // ====================================================
+
+        case ROAM_START:
         {
             motor_control_stop();
 
-            roamingState = ROAM_FRONTIER;
-            roamCommandedPower = 0;
-            roamCommandedHeading = NAN;
+
+            // -----------------------------------------------
+            // Priority targets always beat frontiers.
+            // -----------------------------------------------
+
+            if (hasPriorityTarget)
+            {
+                updatePriorityTarget(
+                    priorityX,
+                    priorityY
+                );
+
+                break;
+            }
+
+
+            // -----------------------------------------------
+            // No priority target:
+            // always explore a frontier.
+            // -----------------------------------------------
+
+            if (hasFrontierTarget)
+            {
+                updateFrontierTarget(
+                    frontierX,
+                    frontierY
+                );
+
+                break;
+            }
+
+
+            // -----------------------------------------------
+            // No target and no frontier currently available.
+            //
+            // There is intentionally NO blind fallback roam.
+            // Stay stopped until mapping produces a frontier.
+            // -----------------------------------------------
+
+            setRoamGoal(
+                ROAM_GOAL_NONE,
+                -1.0f,
+                -1.0f
+            );
+
+            motor_control_stop();
+
+            break;
         }
 
-        updateFrontierTarget(
-            frontierX,
-            frontierY
-        );
 
-        return;
+        // ====================================================
+        // FOLLOW CURRENT D* ROUTE
+        //
+        // This is deliberately structured the same way as
+        // HOMING_DSTAR.
+        // ====================================================
+
+        case ROAM_DSTAR:
+        {
+            // -----------------------------------------------
+            // A priority target may interrupt frontier
+            // exploration.
+            //
+            // Once a priority target is already locked,
+            // changing frontiers are completely ignored.
+            // -----------------------------------------------
+
+            if (roamGoal ==
+                    ROAM_GOAL_FRONTIER &&
+                hasPriorityTarget)
+            {
+                path_reset();
+
+                motor_control_stop();
+
+
+                updatePriorityTarget(
+                    priorityX,
+                    priorityY
+                );
+
+                break;
+            }
+
+
+            // -----------------------------------------------
+            // If the currently locked priority target no
+            // longer exists, choose a new goal.
+            // -----------------------------------------------
+
+            if (roamGoal ==
+                    ROAM_GOAL_PRIORITY &&
+                !hasPriorityTarget)
+            {
+                path_reset();
+
+                motor_control_stop();
+
+
+                setRoamGoal(
+                    ROAM_GOAL_NONE,
+                    -1.0f,
+                    -1.0f
+                );
+
+                roamingState =
+                    ROAM_START;
+
+                break;
+            }
+
+
+            float goalDistance =
+                roamGoalDistance();
+
+
+            // ===============================================
+            // PRIORITY TARGET REACHED
+            // ===============================================
+
+            if (roamGoal ==
+                    ROAM_GOAL_PRIORITY &&
+                goalDistance <=
+                    PRIORITY_TARGET_ARRIVAL_MM)
+            {
+                path_reset();
+
+                motor_control_stop();
+
+
+                float headingError =
+                    roamGoalHeadingError();
+
+
+                // Point directly toward the expected weight
+                // before doing the existing sensor sweep.
+                if (fabsf(headingError) >
+                    PRIORITY_TARGET_FINAL_ALIGN_DEG)
+                {
+                    debugNav.print(
+                        "NAV_EVENT,"
+                    );
+
+                    debugNav.print(
+                        millis()
+                    );
+
+                    debugNav.print(
+                        ",PRIORITY_ALIGN,"
+                    );
+
+                    debugNav.println(
+                        headingError
+                    );
+
+
+                    motor_control_turn_relative(
+                        -headingError
+                    );
+
+
+                    roamingState =
+                        ROAM_TARGET_TURNING;
+
+                    break;
+                }
+
+
+                debugNav.print(
+                    "NAV_EVENT,"
+                );
+
+                debugNav.print(
+                    millis()
+                );
+
+                debugNav.print(
+                    ",PRIORITY_REACHED,"
+                );
+
+                debugNav.print(
+                    roamGoalX
+                );
+
+                debugNav.print(",");
+
+                debugNav.println(
+                    roamGoalY
+                );
+
+
+                priorityTargetWaitStartedAt =
+                    millis();
+
+                prioritySearchStage = 0;
+
+                prioritySearchStageAt =
+                    millis();
+
+                roamingState =
+                    ROAM_TARGET_WAITING;
+
+                break;
+            }
+
+
+            // ===============================================
+            // FRONTIER REACHED
+            // ===============================================
+
+            if (roamGoal ==
+                    ROAM_GOAL_FRONTIER &&
+                goalDistance <=
+                    FRONTIER_TARGET_ARRIVAL_MM)
+            {
+                path_reset();
+
+                motor_control_stop();
+
+
+                if (!frontierReachedLogged)
+                {
+                    frontierReachedLogged =
+                        true;
+
+
+                    debugNav.print(
+                        "NAV_EVENT,"
+                    );
+
+                    debugNav.print(
+                        millis()
+                    );
+
+                    debugNav.print(
+                        ",FRONTIER_REACHED,"
+                    );
+
+                    debugNav.print(
+                        roamGoalX
+                    );
+
+                    debugNav.print(",");
+
+                    debugNav.println(
+                        roamGoalY
+                    );
+                }
+
+
+                // Release this frontier.
+                // On the next update the map's latest frontier
+                // becomes the new D* goal.
+                setRoamGoal(
+                    ROAM_GOAL_NONE,
+                    -1.0f,
+                    -1.0f
+                );
+
+
+                roamingState =
+                    ROAM_START;
+
+                break;
+            }
+
+
+            // ===============================================
+            // GET D* LOOKAHEAD WAYPOINT
+            // ===============================================
+
+            float waypointX;
+            float waypointY;
+
+
+            if (!path_get_lookahead_waypoint(
+                    waypointX,
+                    waypointY))
+            {
+                path_reset();
+
+                motor_control_stop();
+
+
+                debugNav.print(
+                    "NAV_EVENT,"
+                );
+
+                debugNav.print(
+                    millis()
+                );
+
+                debugNav.print(
+                    ",ROAM_DSTAR_UNAVAILABLE,"
+                );
+
+                debugNav.println(
+                    roamGoalName()
+                );
+
+
+                // There is no blind fallback.
+                // Release the failed goal and let ROAM_START
+                // select the best currently available target.
+                setRoamGoal(
+                    ROAM_GOAL_NONE,
+                    -1.0f,
+                    -1.0f
+                );
+
+
+                roamingState =
+                    ROAM_START;
+
+                break;
+            }
+
+
+            // ===============================================
+            // DRIVE TOWARD D* LOOKAHEAD
+            // ===============================================
+
+            int power =
+                goalDistance <
+                    ROAM_DSTAR_SLOW_DISTANCE_MM
+                    ? ROAM_SLOW_POWER
+                    : ROAM_POWER;
+
+
+            motor_control_drive_to_point(
+                waypointX,
+                waypointY,
+                power
+            );
+
+
+            break;
+        }
+
+
+        // These are handled before the switch so they cannot
+        // fall through into normal D* navigation.
+        case ROAM_TARGET_TURNING:
+        case ROAM_TARGET_WAITING:
+        {
+            break;
+        }
+
+
+        default:
+        {
+            path_reset();
+
+            motor_control_stop();
+
+            setRoamGoal(
+                ROAM_GOAL_NONE,
+                -1.0f,
+                -1.0f
+            );
+
+            roamingState =
+                ROAM_START;
+
+            break;
+        }
     }
-
-    if (roamGoal != ROAM_GOAL_FALLBACK)
-    {
-        motor_control_stop();
-
-        roamingState = ROAM_START;
-        roamCommandedPower = 0;
-        roamCommandedHeading = NAN;
-
-        setRoamGoal(
-            ROAM_GOAL_FALLBACK,
-            -1.0f,
-            -1.0f
-        );
-    }
-
-    updateFallbackRoaming(
-        outerLeft,
-        outerRight,
-        front,
-        leftClearance,
-        rightClearance
-    );
 }

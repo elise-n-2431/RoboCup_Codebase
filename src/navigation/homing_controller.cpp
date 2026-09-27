@@ -110,6 +110,37 @@ void homing_start()
     }
 }
 
+
+static float homeExitHeadingError()
+{
+    const float arenaCentreX =
+        ARENA_X_MM * 0.5f;
+
+    const float arenaCentreY =
+        ARENA_Y_MM * 0.5f;
+
+    float dx =
+        arenaCentreX -
+        pose_get_x_mm();
+
+    float dy =
+        arenaCentreY -
+        pose_get_y_mm();
+
+    float desiredPoseHeading =
+        atan2f(dy, dx) *
+        180.0f / PI;
+
+    float currentPoseHeading =
+        pose_get_heading_deg();
+
+    return wrap180(
+        desiredPoseHeading -
+        currentPoseHeading
+    );
+}
+
+
 bool homing_is_docking()
 {
     return homingState == HOMING_DOCKING ||
@@ -215,7 +246,7 @@ void homing_update()
             float waypointX;
             float waypointY;
 
-            if (!path_get_next_waypoint(waypointX, waypointY))
+            if (!path_get_lookahead_waypoint(waypointX, waypointY))
             {
                 path_reset();
                 motor_control_stop();
@@ -327,9 +358,19 @@ void homing_update()
 
             motor_control_stop();
 
-            debugNav.println("Docking complete - turning 180");
+            float exitTurn = homeExitHeadingError();
 
-            motor_control_turn_relative(180.0f);
+            debugNav.print("Docking complete - exit turn = ");
+
+            debugNav.println(
+                exitTurn
+            );
+
+            // Pose positive rotation is CCW,
+            // IMU/motor relative turn positive is clockwise.
+            motor_control_turn_relative(
+                -exitTurn
+            );
 
             homingState = HOMING_DOCK_TURNING;
 
@@ -344,7 +385,7 @@ void homing_update()
                 return;
             }
 
-            debugNav.println("Home 180 turn complete");
+            debugNav.println("Home exit alignment complete");
 
             resetStateFlag(&STATE_FLAGS.home_reached);
             setStateFlag(&STATE_FLAGS.home_docked);
