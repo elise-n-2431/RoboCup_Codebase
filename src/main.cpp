@@ -64,12 +64,12 @@ void setup()
 
     pose_init();
     priority_targets_load_starting_weights();
-    Serial.println("Loaded starting weight coordinates:");
+    // Serial.println("Loaded starting weight coordinates:");
     priority_targets_print(Serial);
     //map_init();
 
 
-    Serial.println("RUN,WAITING");
+    // Serial.println("RUN,WAITING");
     Serial2.println("RUN,WAITING");
 }
 
@@ -84,7 +84,7 @@ static void checkGo()
     if (!imu_is_online() ||
         !isfinite(imu_get_heading()) ||
         !colour_sensor_capture_home()) {
-        Serial.println("ERR,GO,sensors_not_ready");
+        // Serial.println("ERR,GO,sensors_not_ready");
         Serial2.println("ERR,GO,sensors_not_ready");
         return;
     }
@@ -100,7 +100,7 @@ static void checkGo()
     map_init();
     if (!navigator_start(arena_get_config().pickupEnabled))
     {
-        Serial.println("ERR,GO,navigator_start");
+        // Serial.println("ERR,GO,navigator_start");
         Serial2.println("ERR,GO,navigator_start");
         return;
     }
@@ -108,12 +108,15 @@ static void checkGo()
     arena_begin_run();
     run = true;
 
-    Serial.println("RUN,STARTED");
+    // Serial.println("RUN,STARTED");
     Serial2.println("RUN,STARTED");
 
-    Serial.println("CONFIG,LOCKED");
+    // Serial.println("CONFIG,LOCKED");
     Serial2.println("CONFIG,LOCKED");
 }
+
+int max_i = 100;
+int i = 0;
 
 void loop()
 {
@@ -128,10 +131,19 @@ void loop()
     checkGo();
     serial_exe();
 
+    map_update();
+
+    if (i > max_i) {
+        // send_map_data();    
+        i = 0;
+    }
+
+    i ++;
+
     if (!run) {
         return;
     }
-    map_update();
+
     limit_switch_exe();
     colour_sensor_update();
 

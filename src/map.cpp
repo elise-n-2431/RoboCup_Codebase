@@ -21,12 +21,7 @@ using namespace std;
 const int CELL_SIZE_MM = 50;
 static constexpr int MAP_PADDING_CELLS = 2;
 
-static constexpr int ARENA_CELLS_X = 98;
-static constexpr int ARENA_CELLS_Y = 48;
-
-
 static constexpr int MAP_WIDTH = 97 + 4;
-
 static constexpr int MAP_HEIGHT = 49 + 4;
 
 static constexpr float MAP_ORIGIN_X_MM =
@@ -87,7 +82,7 @@ static bool mapValueIsObstacle(int16_t value)
     return value > OBSTACLE_UNKNOWN_BAND;
 }
 
-DMAMEM uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
+// DMAMEM uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
 DMAMEM int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
 DMAMEM bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
 
@@ -334,7 +329,6 @@ void map_init() {
     {
         for (int y = 0; y < MAP_HEIGHT; y++)
         {
-            WEIGHT_MAP[x][y] = 0;
             FRONTIER_MAP[x][y] = false;
             FRONTIER_VISITED[x][y] = false;
 
@@ -346,16 +340,25 @@ void map_init() {
                 y >= MAP_HEIGHT -
                     MAP_PADDING_CELLS;
 
-            OBSTACLE_MAP[x][y] =
-                outsideArena
-                ? CONF_SCALE
-                : 0;
+            OBSTACLE_MAP[x][y] = 0;
+                // outsideArena
+                // ? CONF_SCALE
+                // : 0;
         }
     }
     for (int i = 0; i < n; i++) {
         int x = starting_weight_estimates[i][0];
         int y = starting_weight_estimates[i][1];
-        WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
+        // WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
+    }
+
+    for (int x = 0; x < MAP_WIDTH; x++)
+    {
+        for (int y = 0; y < MAP_HEIGHT - 1; y++)
+        {    
+            Serial.print(OBSTACLE_MAP[x][y]);
+        }
+        Serial.println(OBSTACLE_MAP[x][MAP_HEIGHT-1]);
     }
 
     home_x = world_to_cell_x(pose_get_x_mm());
@@ -377,7 +380,7 @@ void apply_decay() {
         for (int y = 0; y < MAP_HEIGHT; y++) {
             // int32_t intermediate: max magnitude here is 1000 * 999 = 999000,
             // comfortably inside int32_t, so no overflow before the divide.
-            WEIGHT_MAP[x][y] = (uint16_t)(((int32_t)WEIGHT_MAP[x][y] * DECAY_WEIGHT_PERMILLE) / 1000);
+            // WEIGHT_MAP[x][y] = (uint16_t)(((int32_t)WEIGHT_MAP[x][y] * DECAY_WEIGHT_PERMILLE) / 1000);
 
             int16_t obs = OBSTACLE_MAP[x][y];
             if (obs > 0) {
@@ -833,132 +836,6 @@ void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 12
     }
 }
 
-void add_weight_evidence(int cell_x, int cell_y)
-{
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
-    {
-        return;
-    }
-
-    WEIGHT_MAP[cell_x][cell_y] = 1000;
-    
-    // if (dstar_active) {
-    //     updateNode(cell_x, cell_y);
-    //     std::vector<std::pair<int,int>> nb;
-    //     getNeighbors(cell_x, cell_y, nb);
-    //     for (auto& p : nb) updateNode(p.first, p.second);
-    // }
-}
-
-void remove_weight_evidence(int cell_x, int cell_y)
-{
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
-    {
-        return;
-    }
-
-    WEIGHT_MAP[cell_x][cell_y] = 0;
-
-    // if (dstar_active) {
-    //     updateNode(cell_x, cell_y);
-    //     std::vector<std::pair<int,int>> nb;
-    //     getNeighbors(cell_x, cell_y, nb);
-    //     for (auto& p : nb) updateNode(p.first, p.second);
-    // }
-}
-
-// void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm = -1)
-// {
-//     if (distance_above_mm == -1){
-//         if (distance_mm > 200)
-//         {
-//             return; // beyond middle sensor threshold, ignore
-//         }
-//     } else if (distance_mm <= 0)
-//     {
-//         return; // no weight detected
-
-//     } else if (distance_above_mm <= 0) 
-//     {
-//         if(distance_mm > 200 || distance_mm <= 0)
-//         {
-//             return; // beyond middle sensor threshold, ignore
-//         }
-//     }
-//     else if ((distance_mm - distance_above_mm) < 20)
-//     {
-//         return; // false positive - wall
-//     }
-
-//     float angle = angle_deg * PI / 180.0;
-
-//     float sensor_x = 125 + 90.0 * cos(angle);
-//     float sensor_y = 90.0 * sin(angle);
-
-//     float heading = pose_get_heading_deg() * PI / 180.0;
-
-//     float sensor_world_x =
-//         pose_get_x_mm()
-//         + sensor_x * cos(heading)
-//         - sensor_y * sin(heading);
-
-//     float sensor_world_y =
-//         pose_get_y_mm()
-//         + sensor_x * sin(heading)
-//         + sensor_y * cos(heading);
-
-//     float beam_heading = heading + angle;
-
-//     float hit_world_x =
-//         sensor_world_x
-//         + distance_mm * cos(beam_heading);
-
-//     float hit_world_y =
-//         sensor_world_y
-//         + distance_mm * sin(beam_heading);
-
-//     int hit_cell_x = world_to_cell_x(hit_world_x);
-//     int hit_cell_y = world_to_cell_y(hit_world_y);
-
-//     int number_steps = distance_mm / CELL_SIZE_MM;
-
-//     for (int i = 0; i < number_steps; i++)
-//     {
-//         float fraction = (float)i / number_steps;
-
-//         float x =
-//             sensor_world_x
-//             + (hit_world_x - sensor_world_x) * fraction;
-
-//         float y =
-//             sensor_world_y
-//             + (hit_world_y - sensor_world_y) * fraction;
-
-//         int cell_x = world_to_cell_x(x);
-//         int cell_y = world_to_cell_y(y);
-
-//         if (cell_x == hit_cell_x &&
-//             cell_y == hit_cell_y)
-//         {
-//             break;
-//         }
-
-//         if (cell_x >= 0 && cell_x < MAP_WIDTH &&
-//             cell_y >= 0 && cell_y < MAP_HEIGHT)
-//         {
-//             WEIGHT_MAP[cell_x][cell_y] = 0;
-//         }
-//     }
-
-//     add_weight_evidence(
-//         hit_cell_x,
-//         hit_cell_y
-//     );
-
-// }
-
 
 float raycast_to_arena_wall(float ox, float oy, float angle_rad)
 {
@@ -1086,6 +963,7 @@ void map_correction()
         float dx = (g_correction_sum_x / g_correction_count) * WALL_CORRECTION_GAIN;
         float dy = (g_correction_sum_y / g_correction_count) * WALL_CORRECTION_GAIN;
         pose_apply_correction(dx, dy);
+    
     }
 }
 
@@ -1355,176 +1233,5 @@ void map_update()
         lastFrontierTargetAt = now;
         calc_frontier_target();
     }
-
     printMapTelemetry();
 }
-
-
-// D Star path finding for homing
-
-
-
-// #include <set>
-// #include <map>
-
-
-// // ---- grid index / node storage --------------------------------------------
-// static inline int d_idx(int x, int y) { return y * MAP_WIDTH + x; }
-
-// struct Node {
-//     float g   = INFINITY;
-//     float rhs = INFINITY;
-// };
-
-// static Node NODES[MAP_WIDTH][MAP_HEIGHT];
-
-// // ---- key type ---------------------------------------------------------------
-// struct Key {
-//     float k1, k2;
-//     bool operator<(const Key& o) const {
-//         if (k1 != o.k1) return k1 < o.k1;
-//         return k2 < o.k2;
-//     }
-// };
-
-// // ---- priority queue: supports insert / remove / contains / pop / top-key ---
-// // (std::priority_queue can't do remove(), which updateNode() needs, so this
-// // is a std::set keyed on (key,x,y) plus a lookup map for contains/remove.)
-// struct QEntry {
-//     Key key; int x, y;
-//     bool operator<(const QEntry& o) const {
-//         if (!(key.k1 == o.key.k1 && key.k2 == o.key.k2)) return key < o.key;
-//         if (x != o.x) return x < o.x;
-//         return y < o.y;
-//     }
-// };
-
-// struct Queue {
-//     std::set<QEntry> entries;
-//     std::map<int, Key> node_key; // node index -> its current key, for contains/remove
-
-//     void insert(int x, int y, Key k) {
-//         entries.insert({k, x, y});
-//         node_key[d_idx(x, y)] = k;
-//     }
-//     void remove(int x, int y) {
-//         int i = d_idx(x, y);
-//         auto it = node_key.find(i);
-//         if (it == node_key.end()) return;
-//         entries.erase({it->second, x, y});
-//         node_key.erase(it);
-//     }
-//     bool contains(int x, int y) {
-//         return node_key.count(d_idx(x, y)) > 0;
-//     }
-//     Key topKey() {
-//         if (entries.empty()) return {INFINITY, INFINITY};
-//         return entries.begin()->key;
-//     }
-//     void pop(int& x, int& y) {
-//         auto it = entries.begin();
-//         x = it->x; y = it->y;
-//         node_key.erase(d_idx(x, y));
-//         entries.erase(it);
-//     }
-//     bool empty() { return entries.empty(); }
-// };
-
-// static Queue pq;
-// static float km = 0.0f;
-// static int last_self_x, last_self_y;
-// static bool dstar_active = false;
-
-// static inline float d_heuristic(int ax, int ay, int bx, int by) {
-//     int dx = abs(ax - bx), dy = abs(ay - by);
-//     int dmin = min(dx, dy), dmax = max(dx, dy);
-//     return dmax + 0.41421356f * dmin; // octile distance, 8-connected grid
-// }
-
-// // Cost of entering cell (x,y), derived from OBSTACLE_MAP you already maintain.
-// static inline float getCostTo(int x, int y) {
-//     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return INFINITY;
-//     int16_t v = OBSTACLE_MAP[x][y];
-//     if (v > OBSTACLE_UNKNOWN_BAND)  return INFINITY; // confirmed obstacle
-//     if (v < -OBSTACLE_UNKNOWN_BAND) return 1.0f; // confirmed free
-//     return 5.0f;                                  // unknown -- passable but discouraged
-// }
-
-// static void getNeighbors(int x, int y, std::vector<std::pair<int,int>>& out) {
-//     out.clear();
-//     for (int i = -1; i <= 1; i++)
-//         for (int j = -1; j <= 1; j++) {
-//             if (i == 0 && j == 0) continue;
-//             int nx = x + i, ny = y + j;
-//             if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT)
-//                 out.push_back({nx, ny});
-//         }
-// }
-
-// // ---- calculateKey ------------------------------------------------------------
-// Key calculateKey(int x, int y) {
-//     float m = min(NODES[x][y].g, NODES[x][y].rhs);
-//     return { m + d_heuristic(x, y, self_x, self_y) + km, m };
-// }
-
-// // ---- updateNode ---------------------------------------------------------------
-// void updateNode(int x, int y) {
-//     if (x == home_x && y == home_y) return; // start.rhs stays 0 forever
-
-//     Node& n = NODES[x][y];
-//     n.rhs = INFINITY;
-
-//     std::vector<std::pair<int,int>> preds;
-//     getNeighbors(x, y, preds);
-//     for (auto& p : preds) {
-//         float cand = NODES[p.first][p.second].g + getCostTo(x, y);
-//         if (cand < n.rhs) n.rhs = cand;
-//     }
-
-//     if (pq.contains(x, y)) pq.remove(x, y);
-//     if (n.g != n.rhs) pq.insert(x, y, calculateKey(x, y));
-// }
-
-// // ---- initialize -----------------------------------------------------------
-// void initialize() {
-//     for (int x = 0; x < MAP_WIDTH; x++)
-//         for (int y = 0; y < MAP_HEIGHT; y++) {
-//             NODES[x][y].g = INFINITY;
-//             NODES[x][y].rhs = INFINITY;
-//         }
-
-//     km = 0.0f;
-//     last_self_x = self_x;
-//     last_self_y = self_y;
-
-//     NODES[home_x][home_y].rhs = 0.0f;
-//     pq.insert(home_x, home_y, calculateKey(home_x, home_y));
-
-//     dstar_active = true;
-// }
-
-// // ---- computeShortestPath -----------------------------------------------------
-// void computeShortestPath() {
-//     while (!pq.empty() &&
-//            ((pq.topKey() < calculateKey(self_x, self_y)) ||
-//             (NODES[self_x][self_y].rhs != NODES[self_x][self_y].g))) {
-
-//         int x, y;
-//         pq.pop(x, y);
-//         Node& n = NODES[x][y];
-
-//         if (n.g > n.rhs) {
-//             n.g = n.rhs;
-//         } else {
-//             n.g = INFINITY;
-//             updateNode(x, y);
-//         }
-
-//         std::vector<std::pair<int,int>> succ;
-//         getNeighbors(x, y, succ);
-//         for (auto& s : succ) updateNode(s.first, s.second);
-//     }
-// }
-
-
-// map_period_ms = max(ceil(max_us / 1000) * 3

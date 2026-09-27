@@ -9,12 +9,12 @@ import matplotlib.pyplot as plt
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM14"
+SERIAL_PORT = "COM4"
 BAUD_RATE = 115200
 
 reading_weight = False
 
-MAP_WIDTH = 97 + 4  # 2 cells at each extrema for walls
+MAP_WIDTH = 97 + 4
 MAP_HEIGHT = 49 + 4
 
 ser = serial.Serial(

@@ -174,6 +174,12 @@ void pose_apply_correction(float dx_mm, float dy_mm)
 {
     poseXmm += dx_mm;
     poseYmm += dy_mm;
+
+    Serial.print("dx");
+    Serial.println(dx_mm);
+
+    Serial.print("dy");
+    Serial.println(dy_mm);
 }
 
 
@@ -253,7 +259,7 @@ void pose_telemetry_exe()
 
     lastTelemetryTime = millis();
 
-    pose_print_telemetry(Serial);
+    // pose_print_telemetry(Serial);
     pose_print_telemetry(Serial2);
 }
 
