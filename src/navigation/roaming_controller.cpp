@@ -23,6 +23,10 @@ enum RoamingState
 {
     ROAM_START,
     ROAM_DSTAR,
+    // D* requested a large heading change.
+    // Turn only a small amount, then replan.
+    ROAM_DSTAR_STEP_TURNING,
+
     ROAM_TARGET_TURNING,
     ROAM_TARGET_WAITING
 };
@@ -51,6 +55,13 @@ static const float FRONTIER_TARGET_ARRIVAL_MM = 120.0f;
 
 static const float ROAM_DSTAR_SLOW_DISTANCE_MM = 500.0f;
 
+// If a D* waypoint requires a very large change of heading,
+// do not immediately perform the whole point turn.
+static const float DSTAR_LARGE_TURN_DEG = 50.0f;
+
+// Rotate only this much, allow the map to update,
+// then ask D* for a fresh route.
+static const float DSTAR_TURN_STEP_DEG = 30.0f;
 
 static const float PRIORITY_TARGET_ARRIVAL_MM = 80.0f;
 static const float PRIORITY_TARGET_FINAL_ALIGN_DEG = 8.0f;
@@ -127,6 +138,9 @@ static const char* roamingStateName()
 
         case ROAM_TARGET_WAITING:
             return "TARGET_WAITING";
+
+        case ROAM_DSTAR_STEP_TURNING:
+            return "DSTAR_STEP_TURN";
 
         default:
             return "UNKNOWN";
@@ -985,6 +999,36 @@ void roaming_update()
         return;
     }
 
+    // ========================================================
+    // D* STEP TURN
+    //
+    // A large D* heading change is split into small turns.
+    // Once this 20 degree turn finishes, return to ROAM_DSTAR.
+    // The next loop will call path_get_lookahead_waypoint()
+    // again, which replans using the newly updated map.
+    // ========================================================
+
+    if (roamingState ==
+        ROAM_DSTAR_STEP_TURNING)
+    {
+        if (motor_control_is_turning())
+        {
+            return;
+        }
+
+        motor_control_stop();
+
+        debugNav.print("NAV_EVENT,");
+        debugNav.print(millis());
+        debugNav.println(
+            ",DSTAR_STEP_TURN_COMPLETE"
+        );
+
+        roamingState =
+            ROAM_DSTAR;
+
+        return;
+    }
 
     // ========================================================
     // CRITICAL OBSTACLE SAFETY OVERRIDE
@@ -1349,6 +1393,103 @@ void roaming_update()
             // DRIVE TOWARD D* LOOKAHEAD
             // ===============================================
 
+            // Work out the heading from the robot's current
+            // pose to the D* waypoint.
+            float dx =
+                waypointX -
+                pose_get_x_mm();
+
+            float dy =
+                waypointY -
+                pose_get_y_mm();
+
+
+            float desiredHeading =
+                atan2f(dy, dx) *
+                180.0f / PI;
+
+            if (desiredHeading < 0.0f)
+            {
+                desiredHeading += 360.0f;
+            }
+
+
+            // Heading error in the POSE coordinate frame.
+            float waypointHeadingError =
+                wrap180(
+                    desiredHeading -
+                    pose_get_heading_deg()
+                );
+
+
+            // ------------------------------------------------
+            // LARGE D* TURN
+            //
+            // Do not immediately point-turn 60, 70, 90 deg.
+            //
+            // Turn at most 20 degrees, then allow D* to
+            // reconsider the route using the newly updated map.
+            // ------------------------------------------------
+
+            if (fabsf(waypointHeadingError) >
+                DSTAR_LARGE_TURN_DEG)
+            {
+                motor_control_stop();
+
+
+                float turnStep =
+                    constrain(
+                        waypointHeadingError,
+                        -DSTAR_TURN_STEP_DEG,
+                        DSTAR_TURN_STEP_DEG
+                    );
+
+
+                debugNav.print(
+                    "NAV_EVENT,"
+                );
+
+                debugNav.print(
+                    millis()
+                );
+
+                debugNav.print(
+                    ",DSTAR_STEP_TURN,"
+                );
+
+                debugNav.print(
+                    waypointHeadingError
+                );
+
+                debugNav.print(",");
+
+                debugNav.println(
+                    turnStep
+                );
+
+
+                // IMPORTANT:
+                // pose heading and raw IMU heading increase in
+                // opposite directions in the current robot setup.
+                //
+                // Therefore negate the pose-frame turn.
+                motor_control_turn_relative(
+                    -turnStep
+                );
+
+
+                roamingState =
+                    ROAM_DSTAR_STEP_TURNING;
+
+
+                break;
+            }
+
+
+            // ------------------------------------------------
+            // Normal D* driving when reasonably aligned.
+            // ------------------------------------------------
+
             int power =
                 goalDistance <
                     ROAM_DSTAR_SLOW_DISTANCE_MM
@@ -1369,6 +1510,7 @@ void roaming_update()
 
         // These are handled before the switch so they cannot
         // fall through into normal D* navigation.
+        case ROAM_DSTAR_STEP_TURNING:
         case ROAM_TARGET_TURNING:
         case ROAM_TARGET_WAITING:
         {
