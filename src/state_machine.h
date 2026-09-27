@@ -7,6 +7,7 @@
 
 enum NavState {
     STATIONARY,
+    LEAVING,
     ROAMING,
     PURSUIT,
     SORTING,
@@ -43,6 +44,8 @@ struct StateFlags {
     bool target_weight_onboard = false;
     bool dummy_identified = false;
     bool metal_identified = false;
+    bool calibrated_after_lip = false;
+    bool leaving_home = true;
 
     // collection focused
     bool weight_in_entrance = false;

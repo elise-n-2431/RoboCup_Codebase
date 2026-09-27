@@ -275,6 +275,7 @@ static const char* navStateName(NavState state)
     switch (state)
     {
         case STATIONARY: return "STATIONARY";
+        case LEAVING:     return "LEAVING";
         case ROAMING:     return "ROAMING";
         case PURSUIT:     return "PURSUIT";
         case SORTING:     return "SORTING";
@@ -427,9 +428,18 @@ void updateStateMachine() {
         case STATIONARY:
             if (STATE_FLAGS.target_weight_onboard) {
                 checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
-            } else checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
+            } else if (STATE_FLAGS.leaving_home) {
+                resetStateFlag(&STATE_FLAGS.leaving_home);
+                checkChangeNavState(LEAVING, &STATE_FLAGS.not_target_weight_onboard);
+            } else {
+                checkChangeNavState(LEAVING, &STATE_FLAGS.not_target_weight_onboard);
+            }
             break;
 
+        case LEAVING:
+            if (STATE_FLAGS.calibrated_after_lip) {
+                checkChangeNavState(ROAMING, &STATE_FLAGS.calibrated_after_lip);
+            }
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
@@ -468,16 +478,9 @@ void updateStateMachine() {
 
             if (STATE_FLAGS.opening_complete)
             {
-                checkChangeNavState(
-                    STATIONARY,
-                    &STATE_FLAGS.opening_complete
-                );
-
-                setStateFlag(
-                    &STATE_FLAGS.dropoff_complete
-                );
+                checkChangeNavState(STATIONARY, &STATE_FLAGS.opening_complete);
+                setStateFlag(&STATE_FLAGS.dropoff_complete);
             }
-
             break;
         }
         case CLOSING:
@@ -485,6 +488,7 @@ void updateStateMachine() {
             {
                 checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
                 setStateFlag(&STATE_FLAGS.dropoff_complete);
+                setStateFlag(&STATE_FLAGS.leaving_home);
             }
             break;
 
