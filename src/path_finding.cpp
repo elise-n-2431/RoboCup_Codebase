@@ -15,6 +15,32 @@ using namespace std;
 const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
 const int MAP_HEIGHT = 49 + 4;
 
+
+// -----------------------------------------------------------------------------
+// D* LOOKAHEAD / PATH SMOOTHING
+// -----------------------------------------------------------------------------
+
+// 50 mm cells:
+// 8 cells = 400 mm maximum lookahead.
+static const int LOOKAHEAD_MAX_CELLS = 8;
+
+// Radius around the centre-line that must be obstacle-free.
+// 3 cells = 150 mm.
+static const int LOOKAHEAD_CLEARANCE_CELLS = 3;
+
+// Once closer than this to the held waypoint,
+// allow a new waypoint to be selected.
+static const float LOOKAHEAD_REACHED_MM = 90.0f;
+
+static Node heldLookaheadWaypoint =
+{
+    -1000,
+    -1000
+};
+
+static bool heldLookaheadValid = false;
+
+
 int CLEARANCE = 6; // based on size of robot
 int PENALTY_WEIGHT = 3;
 static Node lastPrintedWaypoint =
@@ -212,6 +238,7 @@ Key calculate_key(Node s) { // s is self
 
 
 bool path_init() {
+    path_reset_lookahead();
     U.clear(); // reset U
     changed_cells.clear();
     k_m = 0.0f; // distance from start position
@@ -384,6 +411,368 @@ void path_notify_cell_changed(
     changed_cells.push_back(cell);
 }
 
+static bool lookaheadCellSafe(Node cell)
+{
+    // Centre cell itself must be known free.
+    if (!check_free(cell.x, cell.y))
+    {
+        return false;
+    }
+
+    // Make sure the robot body will not clip
+    // an obstacle when travelling through this cell.
+    for (int dx = -LOOKAHEAD_CLEARANCE_CELLS;
+         dx <= LOOKAHEAD_CLEARANCE_CELLS;
+         dx++)
+    {
+        for (int dy = -LOOKAHEAD_CLEARANCE_CELLS;
+             dy <= LOOKAHEAD_CLEARANCE_CELLS;
+             dy++)
+        {
+            int x = cell.x + dx;
+            int y = cell.y + dy;
+
+            if (x < 0 ||
+                x >= MAP_WIDTH ||
+                y < 0 ||
+                y >= MAP_HEIGHT)
+            {
+                return false;
+            }
+
+            // Circular rather than square clearance area.
+            if (dx * dx + dy * dy >
+                LOOKAHEAD_CLEARANCE_CELLS *
+                LOOKAHEAD_CLEARANCE_CELLS)
+            {
+                continue;
+            }
+
+            if (check_obstacle(x, y))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+static bool lookaheadLineSafe(
+    Node from,
+    Node to)
+{
+    int x0 = from.x;
+    int y0 = from.y;
+
+    int x1 = to.x;
+    int y1 = to.y;
+
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+
+    int err = dx - dy;
+
+    while (true)
+    {
+        Node cell = {x0, y0};
+
+        // Don't reject purely because the robot's
+        // current cell has some map oddity.
+        // Start checking after the initial cell.
+        if (!(cell == from))
+        {
+            if (!lookaheadCellSafe(cell))
+            {
+                return false;
+            }
+        }
+
+        if (x0 == x1 &&
+            y0 == y1)
+        {
+            break;
+        }
+
+        int e2 = 2 * err;
+
+        if (e2 > -dy)
+        {
+            err -= dy;
+            x0 += sx;
+        }
+
+        if (e2 < dx)
+        {
+            err += dx;
+            y0 += sy;
+        }
+    }
+
+    return true;
+}
+
+static int buildLookaheadPath(
+    Node *path,
+    int maxNodes)
+{
+    if (maxNodes <= 0)
+    {
+        return 0;
+    }
+
+    Node cursor = start;
+
+    int count = 0;
+
+    for (int i = 0;
+         i < maxNodes;
+         i++)
+    {
+        Node next;
+
+        if (!bestNeighbourFrom(
+                cursor,
+                next))
+        {
+            break;
+        }
+
+        path[count] = next;
+        count++;
+
+        cursor = next;
+
+        if (cursor == goal)
+        {
+            break;
+        }
+    }
+
+    return count;
+}
+
+static bool selectLookaheadWaypoint(
+    const Node *route,
+    int routeLength,
+    Node &waypoint)
+{
+    if (routeLength <= 0)
+    {
+        return false;
+    }
+
+    // Start from the furthest D* point and
+    // work backwards until we find one that
+    // can safely be driven to directly.
+    for (int i = routeLength - 1;
+         i >= 0;
+         i--)
+    {
+        if (lookaheadLineSafe(
+                start,
+                route[i]))
+        {
+            waypoint = route[i];
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static float distanceToLookaheadWaypoint(
+    Node waypoint)
+{
+    float waypointX =
+        cell_to_world_x(waypoint.x);
+
+    float waypointY =
+        cell_to_world_y(waypoint.y);
+
+    float dx =
+        waypointX - pose_get_x_mm();
+
+    float dy =
+        waypointY - pose_get_y_mm();
+
+    return sqrtf(
+        dx * dx +
+        dy * dy
+    );
+}
+static bool waypointStillOnRoute(
+    Node waypoint,
+    const Node *route,
+    int routeLength)
+{
+    for (int i = 0;
+         i < routeLength;
+         i++)
+    {
+        if (route[i] == waypoint)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool path_get_lookahead_waypoint(
+    float &x_mm,
+    float &y_mm)
+{
+    if (!initialized)
+    {
+        return false;
+    }
+
+    // Keep normal D* Lite repair behaviour.
+    path_update();
+
+    if (start == goal ||
+        g(start) >= INF)
+    {
+        heldLookaheadValid = false;
+        return false;
+    }
+
+    Node route[LOOKAHEAD_MAX_CELLS];
+
+    int routeLength =
+        buildLookaheadPath(
+            route,
+            LOOKAHEAD_MAX_CELLS
+        );
+
+    if (routeLength <= 0)
+    {
+        heldLookaheadValid = false;
+        return false;
+    }
+
+
+    // ------------------------------------------------
+    // Try to keep the existing waypoint.
+    // ------------------------------------------------
+
+    if (heldLookaheadValid)
+    {
+        float distance =
+            distanceToLookaheadWaypoint(
+                heldLookaheadWaypoint
+            );
+
+        bool stillOnRoute =
+            waypointStillOnRoute(
+                heldLookaheadWaypoint,
+                route,
+                routeLength
+            );
+
+        bool stillSafe =
+            lookaheadLineSafe(
+                start,
+                heldLookaheadWaypoint
+            );
+
+        if (distance > LOOKAHEAD_REACHED_MM &&
+            stillOnRoute &&
+            stillSafe)
+        {
+            x_mm =
+                cell_to_world_x(
+                    heldLookaheadWaypoint.x
+                );
+
+            y_mm =
+                cell_to_world_y(
+                    heldLookaheadWaypoint.y
+                );
+
+            return true;
+        }
+    }
+
+
+    // ------------------------------------------------
+    // Existing waypoint is no longer useful.
+    // Pick a new furthest-visible D* point.
+    // ------------------------------------------------
+
+    Node newWaypoint;
+
+    if (!selectLookaheadWaypoint(
+            route,
+            routeLength,
+            newWaypoint))
+    {
+        heldLookaheadValid = false;
+        return false;
+    }
+
+    heldLookaheadWaypoint =
+        newWaypoint;
+
+    heldLookaheadValid = true;
+
+    x_mm =
+        cell_to_world_x(
+            heldLookaheadWaypoint.x
+        );
+
+    y_mm =
+        cell_to_world_y(
+            heldLookaheadWaypoint.y
+        );
+
+
+    debugNav.print(
+        "DSTAR_LOOKAHEAD,"
+    );
+
+    debugNav.print(
+        heldLookaheadWaypoint.x
+    );
+
+    debugNav.print(",");
+
+    debugNav.print(
+        heldLookaheadWaypoint.y
+    );
+
+    debugNav.print(",");
+
+    debugNav.print(x_mm);
+
+    debugNav.print(",");
+
+    debugNav.print(y_mm);
+
+    debugNav.print(",");
+
+    debugNav.println(routeLength);
+
+
+    return true;
+}
+
+void path_reset_lookahead()
+{
+    heldLookaheadWaypoint =
+    {
+        -1000,
+        -1000
+    };
+
+    heldLookaheadValid = false;
+}
+
+
 
 void path_update()
 {
@@ -470,7 +859,7 @@ void path_update()
         // a very cheap incremental D* repair.
         if (mapRepairDue)
         {
-            motor_control_pause();
+            //motor_control_pause();
         }
 
         compute_shortest_path();
@@ -605,7 +994,8 @@ bool path_get_next_waypoint(float &x_mm, float &y_mm)
 
 
 void path_reset()
-{
+{   
+    path_reset_lookahead();
     initialized = false;
     goal_reached = false;
     changed_cells.clear();

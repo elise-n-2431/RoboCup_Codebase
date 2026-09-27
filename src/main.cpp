@@ -115,7 +115,7 @@ static void checkGo()
     Serial2.println("CONFIG,LOCKED");
 }
 
-int max_i = 100;
+int max_i = 200;
 int i = 0;
 
 void loop()
@@ -125,7 +125,7 @@ void loop()
     tof_update();
     ultrasound_exe();
     pose_update();
-    pose_telemetry_exe();
+    // pose_telemetry_exe();
 
     // Lock before processing queued commands when GO is pressed.
     checkGo();
@@ -134,7 +134,7 @@ void loop()
     map_update();
 
     if (i > max_i) {
-        // send_map_data();    
+        send_map_data();    
         i = 0;
     }
 

@@ -61,9 +61,17 @@ void update_node(Node p);
 void compute_shortest_path();
 Node choose_min_neighbour();
 
+static bool bestNeighbourFrom(Node from, Node &best);
+
 void path_notify_cell_changed(int x, int y);
 void path_update();
 bool path_get_next_waypoint(float &x_mm, float &y_mm);
+
+bool path_get_lookahead_waypoint(
+    float &x_mm,
+    float &y_mm);
+
+void path_reset_lookahead();
 
 void path_reset();
 void main1();

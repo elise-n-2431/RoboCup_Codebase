@@ -1060,7 +1060,7 @@ bool get_frontier_target(float &x_mm, float &y_mm)
 
 void print_frontier_map_packed()
 {
-    Serial.println("FRONTIER_MAP_START");
+    Serial2.println("FRONTIER_MAP_START");
 
     uint8_t byte = 0;
     int bit_count = 0;
@@ -1074,8 +1074,8 @@ void print_frontier_map_packed()
 
             if (bit_count == 8)
             {
-                if (byte < 0x10) Serial.print('0');
-                Serial.print(byte, HEX);
+                if (byte < 0x10) Serial2.print('0');
+                Serial2.print(byte, HEX);
                 byte = 0;
                 bit_count = 0;
             }
@@ -1085,17 +1085,17 @@ void print_frontier_map_packed()
     if (bit_count > 0) // flush partial final byte
     {
         byte <<= (8 - bit_count);
-        if (byte < 0x10) Serial.print('0');
-        Serial.print(byte, HEX);
+        if (byte < 0x10) Serial2.print('0');
+        Serial2.print(byte, HEX);
     }
 
-    Serial.println();
-    Serial.println("FRONTIER_MAP_END");
+    Serial2.println();
+    Serial2.println("FRONTIER_MAP_END");
 }
 
 void print_obstacle_map_quantized()
 {
-    Serial.println("OBSTACLE_MAP_START");
+    Serial2.println("OBSTACLE_MAP_START");
 
     for (int y = 0; y < MAP_HEIGHT; y++)
     {
@@ -1119,12 +1119,12 @@ void print_obstacle_map_quantized()
 
             // encode as 4-bit two's complement, print as one hex digit
             uint8_t nibble = (uint8_t)(q & 0x0F);
-            Serial.print(nibble, HEX);
+            Serial2.print(nibble, HEX);
         }
     }
 
-    Serial.println();
-    Serial.println("OBSTACLE_MAP_END");
+    Serial2.println();
+    Serial2.println("OBSTACLE_MAP_END");
 }
 
 void send_map_data()
@@ -1150,41 +1150,41 @@ void send_map_data()
        
     print_frontier_map_packed();
 
-    Serial.println("Current position");
-    Serial.print(self_x); 
-    Serial.print(",");
-    Serial.print(self_y);
-    Serial.println();
+    Serial2.println("Current position");
+    Serial2.print(self_x); 
+    Serial2.print(",");
+    Serial2.print(self_y);
+    Serial2.println();
 
-    Serial.println("TOF readings");
-    Serial.print(dist_o_l);
-    Serial.print(",");
-    Serial.print(dist_i_l);
-    Serial.print(",");
-    Serial.print(dist_i_r);
-    Serial.print(",");
-    Serial.print(dist_o_r);
-    Serial.print(",");
-    Serial.print(tof_get_weight_left_top());
-    Serial.print(",");
-    Serial.print(tof_get_weight_right_top());
-    Serial.print(",");
-    Serial.print(tof_get_weight_left_bottom());
-    Serial.print(",");
-    Serial.print(tof_get_weight_right_bottom());
-    Serial.print(",");
-    Serial.print(tof_get_weight_middle());
-    Serial.println();
+    Serial2.println("TOF readings");
+    Serial2.print(dist_o_l);
+    Serial2.print(",");
+    Serial2.print(dist_i_l);
+    Serial2.print(",");
+    Serial2.print(dist_i_r);
+    Serial2.print(",");
+    Serial2.print(dist_o_r);
+    Serial2.print(",");
+    Serial2.print(tof_get_weight_left_top());
+    Serial2.print(",");
+    Serial2.print(tof_get_weight_right_top());
+    Serial2.print(",");
+    Serial2.print(tof_get_weight_left_bottom());
+    Serial2.print(",");
+    Serial2.print(tof_get_weight_right_bottom());
+    Serial2.print(",");
+    Serial2.print(tof_get_weight_middle());
+    Serial2.println();
 
-    Serial.println("Heading");
-    Serial.print(pose_get_heading_deg());
-    Serial.println();
+    Serial2.println("Heading");
+    Serial2.print(pose_get_heading_deg());
+    Serial2.println();
 
-    Serial.println("Target");
-    Serial.print(target.centre.x); 
-    Serial.print(",");
-    Serial.print(target.centre.y);
-    Serial.println();
+    Serial2.println("Target");
+    Serial2.print(target.centre.x); 
+    Serial2.print(",");
+    Serial2.print(target.centre.y);
+    Serial2.println();
 }
 
 // temp var to calc period
