@@ -27,7 +27,6 @@ static float heading = 0.0;
 static float pitch   = 0.0;
 static float roll    = 0.0;
 
-
 // Calibration scores:
 // 0 = uncalibrated
 // 3 = fully calibrated
@@ -499,4 +498,6 @@ void imu_update_heading_filter(
             heading_samples[1],
             heading_samples[2]
         );
+    
+    
 }
