@@ -32,8 +32,8 @@ static const int SIDE_NAV_WALL_TOLERANCE_MM = 120;
 
 static const int INNER_WALL_AGREEMENT_MM = 120;
 static const int CENTRE_WALL_OFFSET_MM = 150;
-static const int CENTRE_WALL_TOLERANCE_MM = 60;
-static const int CENTRE_WEIGHT_PROTRUSION_MM = 60;
+static const int CENTRE_WALL_TOLERANCE_MM = 80;
+static const int CENTRE_WEIGHT_PROTRUSION_MM = 100;
 static const int CENTRE_ONLY_DETECT_MM = 500;
 
 static const int SIDE_WALL_OFFSET_MM = 150;

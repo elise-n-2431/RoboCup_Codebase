@@ -26,7 +26,7 @@ static const int LOOKAHEAD_MAX_CELLS = 10;
 
 // Radius around the centre-line that must be obstacle-free.
 // 3 cells = 150 mm.
-static const int LOOKAHEAD_CLEARANCE_CELLS = 3;
+static const int LOOKAHEAD_CLEARANCE_CELLS = 2;
 
 // Once closer than this to the held waypoint,
 // allow a new waypoint to be selected.
@@ -668,9 +668,9 @@ static bool selectLookaheadWaypoint(
         return false;
     }
 
-    // Start from the furthest D* point and
-    // work backwards until we find one that
-    // can safely be driven to directly.
+
+    // Prefer the furthest route point which can
+    // safely be driven to directly.
     for (int i = routeLength - 1;
          i >= 0;
          i--)
@@ -683,6 +683,40 @@ static bool selectLookaheadWaypoint(
             return true;
         }
     }
+
+
+    // ----------------------------------------------------
+    // Smoothing failed, but D* itself still has a route.
+    //
+    // Do NOT throw the entire route away just because we
+    // cannot safely shortcut several cells.
+    //
+    // Follow the immediate D* neighbour instead.
+    // ----------------------------------------------------
+
+    if (!check_obstacle(
+            route[0].x,
+            route[0].y))
+    {
+        waypoint = route[0];
+
+        debugNav.print(
+            "DSTAR_LOOKAHEAD_FALLBACK,"
+        );
+
+        debugNav.print(
+            waypoint.x
+        );
+
+        debugNav.print(",");
+
+        debugNav.println(
+            waypoint.y
+        );
+
+        return true;
+    }
+
 
     return false;
 }
