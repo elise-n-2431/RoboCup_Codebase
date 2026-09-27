@@ -65,6 +65,117 @@ static unsigned long lastDstarRepair = 0;
 static unsigned long
     lastRouteDebugAt = 0;
 
+
+/* Priority Queue */
+
+int parent(int i) { return (i - 1) / 2; }
+
+int leftChild(int i) { return 2 * i + 1; }
+
+int rightChild(int i) { return 2 * i + 2; }
+
+void shiftUp(int i, vector<Pair> &arr) {
+    while (i > 0 && arr[i].key < arr[parent(i)].key) {
+        swap(arr[parent(i)], arr[i]);
+        i = parent(i);
+    }
+}
+
+void shiftDown(int i, vector<Pair> &arr, int size) {
+    int minIndex = i;
+    int l = leftChild(i);
+    if (l < size && arr[l].key < arr[minIndex].key) minIndex = l;
+    int r = rightChild(i);
+    if (r < size && arr[r].key < arr[minIndex].key) minIndex = r;
+
+    if (i != minIndex) {
+        swap(arr[i], arr[minIndex]);
+        shiftDown(minIndex, arr, size);
+    }
+}
+
+void insert(Pair p, vector<Pair> &arr) {
+    arr.push_back(p);
+    shiftUp(arr.size() - 1, arr);
+}
+
+Pair pop(vector<Pair> &arr) {
+    int size = arr.size();
+    Pair result = arr[0];
+    arr[0] = arr[size - 1];
+    arr.pop_back();
+    shiftDown(0, arr, arr.size());
+    return result;
+}
+
+Pair getMin(vector<Pair> &arr) {
+    return arr[0];
+}
+
+bool contains(Node p, vector<Pair> &arr) {
+    for (int i = 0; i < arr.size(); i++) {
+        if (arr[i].node == p) return true;
+    }
+    return false;
+}
+
+int findIndex(Node p, vector<Pair> &arr) {
+    for (int i = 0; i < arr.size(); i++) {
+        if (arr[i].node == p) return i;
+    }
+    return -1; // not found
+}
+
+void update(Node p, Key newKey, vector<Pair> &arr) {
+    int i = findIndex(p, arr);
+    Key oldKey = arr[i].key;
+    arr[i].key = newKey;
+    if (newKey < oldKey) shiftUp(i, arr);
+    else shiftDown(i, arr, arr.size());
+}
+
+void remove(Node p, vector<Pair> &arr) {
+    int i = findIndex(p, arr);
+    int last = arr.size() - 1;
+    arr[i] = arr[last];
+    arr.pop_back();
+    if (i < (int)arr.size()) {
+        shiftUp(i, arr);
+        shiftDown(i, arr, arr.size());
+    }
+}
+
+/* Priority Queue Ends*/
+
+// D STAR LITE: searches from start node to goal node
+
+Node start; // changes when robot moves
+Node goal;
+Node last;
+float k_m;
+vector<Pair> U; // custom priority queue
+float RHS[MAP_WIDTH][MAP_HEIGHT]; // next node, "beside"
+float G[MAP_WIDTH][MAP_HEIGHT];  // current shortest cost to reach start from goal
+vector<Node> changed_cells;
+bool goal_reached = false;
+bool initialized = false;
+const int INF = 65535;
+
+
+float g(Node p) {
+    return G[p.x][p.y];
+}
+
+float rhs(Node p) {
+    return RHS[p.x][p.y];
+}
+
+float heuristic(Node p, Node q) {
+    // distance between 2 points (euclidean)
+    return sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y));
+
+}
+
 static void debugDstarStatus(
     const char *reason)
 {
@@ -225,115 +336,6 @@ static void debugGoalArea()
     );
 }
 
-/* Priority Queue */
-
-int parent(int i) { return (i - 1) / 2; }
-
-int leftChild(int i) { return 2 * i + 1; }
-
-int rightChild(int i) { return 2 * i + 2; }
-
-void shiftUp(int i, vector<Pair> &arr) {
-    while (i > 0 && arr[i].key < arr[parent(i)].key) {
-        swap(arr[parent(i)], arr[i]);
-        i = parent(i);
-    }
-}
-
-void shiftDown(int i, vector<Pair> &arr, int size) {
-    int minIndex = i;
-    int l = leftChild(i);
-    if (l < size && arr[l].key < arr[minIndex].key) minIndex = l;
-    int r = rightChild(i);
-    if (r < size && arr[r].key < arr[minIndex].key) minIndex = r;
-
-    if (i != minIndex) {
-        swap(arr[i], arr[minIndex]);
-        shiftDown(minIndex, arr, size);
-    }
-}
-
-void insert(Pair p, vector<Pair> &arr) {
-    arr.push_back(p);
-    shiftUp(arr.size() - 1, arr);
-}
-
-Pair pop(vector<Pair> &arr) {
-    int size = arr.size();
-    Pair result = arr[0];
-    arr[0] = arr[size - 1];
-    arr.pop_back();
-    shiftDown(0, arr, arr.size());
-    return result;
-}
-
-Pair getMin(vector<Pair> &arr) {
-    return arr[0];
-}
-
-bool contains(Node p, vector<Pair> &arr) {
-    for (int i = 0; i < arr.size(); i++) {
-        if (arr[i].node == p) return true;
-    }
-    return false;
-}
-
-int findIndex(Node p, vector<Pair> &arr) {
-    for (int i = 0; i < arr.size(); i++) {
-        if (arr[i].node == p) return i;
-    }
-    return -1; // not found
-}
-
-void update(Node p, Key newKey, vector<Pair> &arr) {
-    int i = findIndex(p, arr);
-    Key oldKey = arr[i].key;
-    arr[i].key = newKey;
-    if (newKey < oldKey) shiftUp(i, arr);
-    else shiftDown(i, arr, arr.size());
-}
-
-void remove(Node p, vector<Pair> &arr) {
-    int i = findIndex(p, arr);
-    int last = arr.size() - 1;
-    arr[i] = arr[last];
-    arr.pop_back();
-    if (i < (int)arr.size()) {
-        shiftUp(i, arr);
-        shiftDown(i, arr, arr.size());
-    }
-}
-
-/* Priority Queue Ends*/
-
-// D STAR LITE: searches from start node to goal node
-
-Node start; // changes when robot moves
-Node goal;
-Node last;
-float k_m;
-vector<Pair> U; // custom priority queue
-float RHS[MAP_WIDTH][MAP_HEIGHT]; // next node, "beside"
-float G[MAP_WIDTH][MAP_HEIGHT];  // current shortest cost to reach start from goal
-vector<Node> changed_cells;
-bool goal_reached = false;
-bool initialized = false;
-const int INF = 65535;
-
-
-float g(Node p) {
-    return G[p.x][p.y];
-}
-
-float rhs(Node p) {
-    return RHS[p.x][p.y];
-}
-
-float heuristic(Node p, Node q) {
-    // distance between 2 points (euclidean)
-    return sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y));
-
-}
 
 float wallPenalty(Node p)
 {

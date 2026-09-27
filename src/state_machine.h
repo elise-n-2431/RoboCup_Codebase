@@ -45,7 +45,7 @@ struct StateFlags {
     bool dummy_identified = false;
     bool metal_identified = false;
     bool calibrated_after_lip = false;
-    bool leaving_home = true;
+    bool leaving_home = false;
 
     // collection focused
     bool weight_in_entrance = false;
