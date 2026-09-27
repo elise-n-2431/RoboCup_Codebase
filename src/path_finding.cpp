@@ -62,6 +62,168 @@ static PathMode pathMode =
 static const unsigned long DSTAR_REPAIR_INTERVAL_MS = 150;
 
 static unsigned long lastDstarRepair = 0;
+static unsigned long
+    lastRouteDebugAt = 0;
+
+static void debugDstarStatus(
+    const char *reason)
+{
+    if (!debugNav.enabled)
+    {
+        return;
+    }
+
+    debugNav.print("DSTAR_STATUS,");
+    debugNav.print(reason);
+
+    debugNav.print(",START,");
+    debugNav.print(start.x);
+    debugNav.print(",");
+    debugNav.print(start.y);
+
+    debugNav.print(",GOAL,");
+    debugNav.print(goal.x);
+    debugNav.print(",");
+    debugNav.print(goal.y);
+
+    debugNav.print(",G,");
+    debugNav.print(g(start));
+
+    debugNav.print(",RHS,");
+    debugNav.print(rhs(start));
+
+    debugNav.print(",START_OBS,");
+    debugNav.print(
+        check_obstacle(
+            start.x,
+            start.y
+        ) ? 1 : 0
+    );
+
+    debugNav.print(",GOAL_OBS,");
+    debugNav.print(
+        check_obstacle(
+            goal.x,
+            goal.y
+        ) ? 1 : 0
+    );
+
+    debugNav.print(",START_FREE,");
+    debugNav.print(
+        check_free(
+            start.x,
+            start.y
+        ) ? 1 : 0
+    );
+
+    debugNav.print(",GOAL_FREE,");
+    debugNav.print(
+        check_free(
+            goal.x,
+            goal.y
+        ) ? 1 : 0
+    );
+
+    debugNav.print(",QUEUE,");
+    debugNav.print(U.size());
+
+    debugNav.print(",CHANGED,");
+    debugNav.print(
+        changed_cells.size()
+    );
+
+    debugNav.print(",MODE,");
+    debugNav.println(
+        pathMode == PATH_EXPLORE
+            ? "EXPLORE"
+            : "SAFE"
+    );
+}
+
+static char debugCellType(
+    int x,
+    int y)
+{
+    if (x < 0 ||
+        x >= MAP_WIDTH ||
+        y < 0 ||
+        y >= MAP_HEIGHT)
+    {
+        return 'X';
+    }
+
+    if (x == goal.x &&
+        y == goal.y)
+    {
+        return 'G';
+    }
+
+    if (x == start.x &&
+        y == start.y)
+    {
+        return 'S';
+    }
+
+    if (check_obstacle(x, y))
+    {
+        return '#';
+    }
+
+    if (check_free(x, y))
+    {
+        return '.';
+    }
+
+    return '?';
+}
+
+
+static void debugGoalArea()
+{
+    if (!debugNav.enabled)
+    {
+        return;
+    }
+
+    debugNav.println(
+        "DSTAR_GOAL_AREA_START"
+    );
+
+    const int radius = 5;
+
+    for (int dy = radius;
+         dy >= -radius;
+         dy--)
+    {
+        debugNav.print(
+            "DSTAR_GOAL_ROW,"
+        );
+
+        debugNav.print(
+            goal.y + dy
+        );
+
+        debugNav.print(",");
+
+        for (int dx = -radius;
+             dx <= radius;
+             dx++)
+        {
+            debugNav.print(
+                debugCellType(
+                    goal.x + dx,
+                    goal.y + dy
+                )
+            );
+        }
+
+        debugNav.println();
+    }
+
+    debugNav.println(
+        "DSTAR_GOAL_AREA_END"
+    );
+}
 
 /* Priority Queue */
 
@@ -770,7 +932,48 @@ bool path_get_lookahead_waypoint(
 
     // Keep normal D* Lite repair behaviour.
     path_update();
+    if (g(start) >= INF)
+    {
+        debugDstarStatus(
+            "G_START_INF"
+        );
 
+        debugGoalArea();
+        debugNav.print(
+            "DSTAR_NO_ROUTE,"
+        );
+
+        debugNav.print(
+            start.x
+        );
+
+        debugNav.print(",");
+
+        debugNav.print(
+            start.y
+        );
+
+        debugNav.print(",GOAL,");
+
+        debugNav.print(
+            goal.x
+        );
+
+        debugNav.print(",");
+
+        debugNav.print(
+            goal.y
+        );
+
+        debugNav.print(",GOAL_OBSTACLE,");
+
+        debugNav.println(
+            check_obstacle(
+                goal.x,
+                goal.y
+            ) ? 1 : 0
+        );
+    }
     if (start == goal ||
         g(start) >= INF)
     {
@@ -785,6 +988,39 @@ bool path_get_lookahead_waypoint(
             route,
             LOOKAHEAD_MAX_CELLS
         );
+    if (debugNav.enabled &&
+    millis() - lastRouteDebugAt >=
+        1000)
+    {
+        lastRouteDebugAt = millis();
+
+        debugNav.print(
+            "DSTAR_ROUTE,"
+        );
+
+        debugNav.print(
+            routeLength
+        );
+
+        for (int i = 0;
+            i < routeLength;
+            i++)
+        {
+            debugNav.print(",");
+
+            debugNav.print(
+                route[i].x
+            );
+
+            debugNav.print(":");
+
+            debugNav.print(
+                route[i].y
+            );
+        }
+
+        debugNav.println();
+    }
 
     if (routeLength <= 0)
     {
@@ -946,6 +1182,16 @@ void path_update()
     if (mapRepairDue)
     {
         lastDstarRepair = millis();
+        debugNav.print(
+            "DSTAR_CHANGED_COUNT,"
+        );
+
+        debugNav.println(
+            changed_cells.size()
+        );
+
+
+        int debugCount = 0;
         for (Node c :
              changed_cells)
         {
@@ -1033,6 +1279,74 @@ static bool bestNeighbourFrom(Node from, Node &best)
             bestCost = candidate;
             best = neighbour;
             found = true;
+        }
+    }
+
+
+    if (!found ||
+    bestCost >= INF)
+    {
+        debugNav.print(
+            "DSTAR_NO_NEIGHBOUR,"
+        );
+
+        debugNav.print(from.x);
+        debugNav.print(",");
+        debugNav.println(from.y);
+
+
+        for (Node neighbour :
+            neighbours(from))
+        {
+            float edgeCost =
+                cost(
+                    from,
+                    neighbour
+                );
+
+            debugNav.print(
+                "DSTAR_NEIGHBOUR,"
+            );
+
+            debugNav.print(
+                neighbour.x
+            );
+
+            debugNav.print(",");
+
+            debugNav.print(
+                neighbour.y
+            );
+
+            debugNav.print(",OBS,");
+
+            debugNav.print(
+                check_obstacle(
+                    neighbour.x,
+                    neighbour.y
+                ) ? 1 : 0
+            );
+
+            debugNav.print(",FREE,");
+
+            debugNav.print(
+                check_free(
+                    neighbour.x,
+                    neighbour.y
+                ) ? 1 : 0
+            );
+
+            debugNav.print(",EDGE,");
+
+            debugNav.print(
+                edgeCost
+            );
+
+            debugNav.print(",G,");
+
+            debugNav.println(
+                g(neighbour)
+            );
         }
     }
 
