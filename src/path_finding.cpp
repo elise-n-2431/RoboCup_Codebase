@@ -56,6 +56,9 @@ enum PathMode
     PATH_EXPLORE
 };
 
+static PathMode pathMode =
+    PATH_SAFE;
+
 static const unsigned long DSTAR_REPAIR_INTERVAL_MS = 150;
 
 static unsigned long lastDstarRepair = 0;
@@ -267,13 +270,44 @@ Key calculate_key(Node s) { // s is self
 
 bool path_init(int x_val, int y_val) {
 
+    bool customGoal =
+        !(x_val == 0 &&
+          y_val == 0);
+
+    // Home uses only confirmed-safe space.
+    // Priority/frontier roaming may cross unknown space.
+    pathMode = customGoal ? PATH_EXPLORE : PATH_SAFE;
+    if (!customGoal)
+    {
+        goal.x =
+            world_to_cell_x(
+                arena_get_home_x_mm()
+            );
+
+        goal.y =
+            world_to_cell_y(
+                arena_get_home_y_mm()
+            );
+    }
+    else
+    {
+        goal.x =
+            world_to_cell_x(
+                x_val
+            );
+
+        goal.y =
+            world_to_cell_y(
+                y_val
+            );
+    }
     if (x_val == 0 && y_val == 0) {
         goal.x = world_to_cell_x(arena_get_home_x_mm()); //using actual home coorindates instead of 2500, 2500 which isnt a valid coord
         goal.y = world_to_cell_y(arena_get_home_y_mm());
 
     } else {
         goal.x = world_to_cell_x(x_val);
-        goal.y = world_to_cell_x(y_val);
+        goal.y = world_to_cell_y(y_val);
     }
 
     path_reset_lookahead();
@@ -446,26 +480,55 @@ void path_notify_cell_changed(
     changed_cells.push_back(cell);
 }
 
-static bool lookaheadCellSafe(Node cell)
+
+static bool lookaheadCellSafe(
+    Node cell)
 {
-    // Centre cell itself must be known free.
-    if (!check_free(cell.x, cell.y))
+    // A confirmed obstacle is never safe,
+    // regardless of navigation mode.
+    if (check_obstacle(
+            cell.x,
+            cell.y))
     {
         return false;
     }
 
+
+    // Homing only follows confirmed-free space.
+    //
+    // During exploration, unknown cells are allowed:
+    // the robot assumes they are traversable until
+    // its sensors discover otherwise.
+    if (pathMode ==
+            PATH_SAFE &&
+        !check_free(
+            cell.x,
+            cell.y))
+    {
+        return false;
+    }
+
+
     // Make sure the robot body will not clip
-    // an obstacle when travelling through this cell.
-    for (int dx = -LOOKAHEAD_CLEARANCE_CELLS;
-         dx <= LOOKAHEAD_CLEARANCE_CELLS;
+    // any confirmed obstacle around this cell.
+    for (int dx =
+            -LOOKAHEAD_CLEARANCE_CELLS;
+         dx <=
+            LOOKAHEAD_CLEARANCE_CELLS;
          dx++)
     {
-        for (int dy = -LOOKAHEAD_CLEARANCE_CELLS;
-             dy <= LOOKAHEAD_CLEARANCE_CELLS;
+        for (int dy =
+                -LOOKAHEAD_CLEARANCE_CELLS;
+             dy <=
+                LOOKAHEAD_CLEARANCE_CELLS;
              dy++)
         {
-            int x = cell.x + dx;
-            int y = cell.y + dy;
+            int x =
+                cell.x + dx;
+
+            int y =
+                cell.y + dy;
+
 
             if (x < 0 ||
                 x >= MAP_WIDTH ||
@@ -475,20 +538,25 @@ static bool lookaheadCellSafe(Node cell)
                 return false;
             }
 
-            // Circular rather than square clearance area.
-            if (dx * dx + dy * dy >
+
+            if (dx * dx +
+                    dy * dy >
                 LOOKAHEAD_CLEARANCE_CELLS *
-                LOOKAHEAD_CLEARANCE_CELLS)
+                    LOOKAHEAD_CLEARANCE_CELLS)
             {
                 continue;
             }
 
-            if (check_obstacle(x, y))
+
+            if (check_obstacle(
+                    x,
+                    y))
             {
                 return false;
             }
         }
     }
+
 
     return true;
 }

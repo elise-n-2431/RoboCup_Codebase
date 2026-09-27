@@ -18,6 +18,13 @@
 using namespace std;
 
 
+//for printing to the gui
+static const unsigned long
+    FULL_MAP_DEBUG_PERIOD_MS = 10000;
+
+static unsigned long
+    lastFullMapDebugAt = 0;
+
 const int CELL_SIZE_MM = 50;
 static constexpr int MAP_PADDING_CELLS = 2;
 
@@ -311,6 +318,15 @@ void add_free_evidence(
     bool newFree = mapValueIsFree(newValue);
 
     bool newObstacle = mapValueIsObstacle(newValue);
+
+    if (oldFree != newFree ||
+        oldObstacle != newObstacle)
+    {
+        path_notify_cell_changed(
+            cell_x,
+            cell_y
+        );
+    }
 }
 
 void update_self() {
@@ -341,9 +357,9 @@ void map_init() {
                     MAP_PADDING_CELLS;
 
             OBSTACLE_MAP[x][y] = 0;
-                // outsideArena
-                // ? CONF_SCALE
-                // : 0;
+                 outsideArena
+                 ? CONF_SCALE
+                 : 0;
         }
     }
     for (int i = 0; i < n; i++) {
@@ -1234,4 +1250,13 @@ void map_update()
         calc_frontier_target();
     }
     printMapTelemetry();
+    //used for gui print every 10 seconds
+    if (debugMap.enabled &&
+        now - lastFullMapDebugAt >=
+            FULL_MAP_DEBUG_PERIOD_MS)
+    {
+        lastFullMapDebugAt = now;
+
+        send_map_data();
+    }
 }
