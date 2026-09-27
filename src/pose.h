@@ -20,5 +20,7 @@ float pose_get_heading_deg();
 void pose_telemetry_exe();
 void pose_print(Stream &port);
 
+void pose_apply_correction(float dx_mm, float dy_mm);
+
 
 #endif

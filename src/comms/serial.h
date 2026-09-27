@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 
-
 enum RobotCommand
 {
     CMD_NONE,
@@ -12,10 +11,7 @@ enum RobotCommand
     CLOSE_GATE
 };
 
-
 void serial_init();
-
-RobotCommand serial_exe();
-
+void serial_exe();
 
 #endif

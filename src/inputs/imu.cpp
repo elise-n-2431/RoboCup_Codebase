@@ -7,6 +7,7 @@
 #include <utility/imumaths.h>
 
 #include "imu.h"
+#include "debug_print.h"
 #include <math.h>
 
 // IMU OBJECT
@@ -25,7 +26,6 @@ static bool imuOnline = false;
 static float heading = 0.0;
 static float pitch   = 0.0;
 static float roll    = 0.0;
-
 
 // Calibration scores:
 // 0 = uncalibrated
@@ -261,6 +261,21 @@ void imu_update()
     {
         saveCalibration();
     }
+    static unsigned long lastImuDebugAt = 0;
+
+    if (millis() - lastImuDebugAt >= 200)
+    {
+        lastImuDebugAt = millis();
+
+        debugImu.print("IMU: heading=");
+        debugImu.print(imu_get_heading());
+
+        debugImu.print(" pitch=");
+        debugImu.print(pitch);
+
+        debugImu.print(" roll=");
+        debugImu.println(roll);
+    }
 }
 
 
@@ -483,4 +498,6 @@ void imu_update_heading_filter(
             heading_samples[1],
             heading_samples[2]
         );
+    
+    
 }

@@ -6,6 +6,8 @@
 #include "driving_controller.h"
 #include "outputs/pickup_servo.h"
 #include "outputs/smart_servo.h"
+#include "debug_print.h"
+#include "navigation/rejected_weights.h"
 
 // enums and structs moved to h file
 
@@ -32,13 +34,168 @@ unsigned long timeInCollectState();
 static unsigned long navStateEnteredAt = 0;
 static unsigned long collectStateEnteredAt = 0;
 
-const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 2000;  
-const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 2000; 
-const unsigned long PICKUP_TIMEOUT_MS = 2000;           
-const unsigned long RETURN_TIMEOUT_MS = 2000;
+const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 900;  
+const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 500; 
+const unsigned long PICKUP_TIMEOUT_MS = 1400;           
+const unsigned long RETURN_TIMEOUT_MS = 500;
 
-const unsigned long OPENING_TIMEOUT_MS = 2000;
+const unsigned long OPENING_TIMEOUT_MS = 6000;
+static const unsigned long DROPOFF_DRIVE_AWAY_START_MS = 3000;
+static const unsigned long DROPOFF_GATE_CLOSE_MS = 5000;
+
+static const int DROPOFF_EXIT_POWER = 430;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
+
+static const int DROPOFF_SHAKE_POWER = 320;
+
+static const unsigned long SHAKE_START_MS = 500;
+static const unsigned long SHAKE_FORWARD_1_END_MS = 680;
+static const unsigned long SHAKE_STOP_1_END_MS = 800;
+static const unsigned long SHAKE_REVERSE_END_MS = 980;
+static const unsigned long SHAKE_STOP_2_END_MS = 1100;
+static const unsigned long SHAKE_FORWARD_2_END_MS = 1280;
+
+static int dropoffShakeStage = -1;
+
+static void updateDropoffShake()
+{
+    unsigned long t =
+        timeInNavState();
+
+    int newStage = 0;
+
+    if (t < 500)
+    {
+        newStage = 0;
+    }
+    else if (t < 680)
+    {
+        newStage = 1;
+    }
+    else if (t < 800)
+    {
+        newStage = 2;
+    }
+    else if (t < 980)
+    {
+        newStage = 3;
+    }
+    else if (t < 1100)
+    {
+        newStage = 4;
+    }
+    else if (t < 1280)
+    {
+        newStage = 5;
+    }
+    else if (t <
+             DROPOFF_DRIVE_AWAY_START_MS)
+    {
+        newStage = 6;
+    }
+    else if (t <
+             DROPOFF_GATE_CLOSE_MS)
+    {
+        newStage = 7;
+    }
+    else if (t <
+             OPENING_TIMEOUT_MS)
+    {
+        newStage = 8;
+    }
+    else
+    {
+        newStage = 9;
+    }
+
+    if (newStage ==
+        dropoffShakeStage)
+    {
+        return;
+    }
+
+    dropoffShakeStage =
+        newStage;
+
+    switch (dropoffShakeStage)
+    {
+        case 0:
+            motor_control_stop();
+            break;
+
+        case 1:
+            motor_control_drive_current_heading(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,FORWARD_1"
+            );
+            break;
+
+        case 2:
+            motor_control_stop();
+            break;
+
+        case 3:
+            motor_control_reverse(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,REVERSE"
+            );
+            break;
+
+        case 4:
+            motor_control_stop();
+            break;
+
+        case 5:
+            motor_control_drive_current_heading(
+                DROPOFF_SHAKE_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_SHAKE,FORWARD_2"
+            );
+            break;
+
+        case 6:
+            motor_control_stop();
+            break;
+
+        case 7:
+            // Robot has already turned 180 degrees
+            // during homing, so forward should take
+            // it out of its own base.
+            motor_control_drive_current_heading(
+                DROPOFF_EXIT_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_EXIT,DRIVING"
+            );
+            break;
+
+        case 8:
+            // Keep moving while closing the gate.
+            gateClose();
+
+            motor_control_drive_current_heading(
+                DROPOFF_EXIT_POWER
+            );
+
+            debugState.println(
+                "DROPOFF_EXIT,GATE_CLOSING"
+            );
+            break;
+
+        default:
+            motor_control_stop();
+            break;
+    }
+}
 
 unsigned long timeInNavState()
 {
@@ -95,8 +252,8 @@ void setStateFlag(bool* flag)
     Serial.print("FLAG,");
     Serial.println(name);
 
-    Serial2.print("FLAG,");
-    Serial2.println(name);
+    // Serial2.print("FLAG,");
+    // Serial2.println(name);
 }
 
 void resetStateFlag(bool* flag) {
@@ -118,6 +275,7 @@ static const char* navStateName(NavState state)
     switch (state)
     {
         case STATIONARY: return "STATIONARY";
+        case LEAVING:     return "LEAVING";
         case ROAMING:     return "ROAMING";
         case PURSUIT:     return "PURSUIT";
         case SORTING:     return "SORTING";
@@ -176,13 +334,16 @@ void checkChangeNavState(NavState navState, bool* flag)
         reset_collection_iterations();
     }
 
-    if (navState == OPENING) gateOpen();
-    if (navState == CLOSING) gateClose();
+    if (navState == OPENING)
+    {
+        dropoffShakeStage = -1;
+        gateOpen();
+    }
 
-    Serial2.print("[NAV] ");
-    Serial2.print(navStateName(prev_nav_state));
-    Serial2.print(" -> ");
-    Serial2.println(navStateName(current_nav_state));
+    debugState.print("[NAV] ");
+    debugState.print(navStateName(prev_nav_state));
+    debugState.print(" -> ");
+    debugState.println(navStateName(current_nav_state));
 }
 
 void checkChangeCollectState(CollectState collectState, bool* flag) {
@@ -197,10 +358,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
         *flag = false;
         collectStateEnteredAt = millis();
 
-        Serial2.print("[COLLECT] ");
-        Serial2.print(collectStateName(prev_collect_state));
-        Serial2.print(" -> ");
-        Serial2.println(collectStateName(current_collect_state));
+        debugState.print("[COLLECT] ");
+        debugState.print(collectStateName(prev_collect_state));
+        debugState.print(" -> ");
+        debugState.println(collectStateName(current_collect_state));
     }
 }
 
@@ -265,11 +426,51 @@ void updateStateMachine() {
     
     switch (current_nav_state) {
         case STATIONARY:
-            if (STATE_FLAGS.target_weight_onboard) {
-                checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
-            } else checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
-            break;
+        {
+            // Enough weights onboard -> take them home.
+            if (STATE_FLAGS.target_weight_onboard)
+            {
+                checkChangeNavState(
+                    HOMING,
+                    &STATE_FLAGS.target_weight_onboard
+                );
+            }
 
+            // Explicitly leaving the home base after a drop-off.
+            else if (STATE_FLAGS.leaving_home)
+            {
+                checkChangeNavState(
+                    LEAVING,
+                    &STATE_FLAGS.leaving_home
+                );
+            }
+
+            // Successful pickup but we still want more weights.
+            // Resume normal roaming/D* navigation.
+            else if (STATE_FLAGS.not_target_weight_onboard)
+            {
+                checkChangeNavState(
+                    ROAMING,
+                    &STATE_FLAGS.not_target_weight_onboard
+                );
+            }
+
+            break;
+        }
+
+
+        case LEAVING:
+        {
+            if (STATE_FLAGS.calibrated_after_lip)
+            {
+                checkChangeNavState(
+                    ROAMING,
+                    &STATE_FLAGS.calibrated_after_lip
+                );
+            }
+
+            break;
+        }
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
@@ -282,10 +483,19 @@ void updateStateMachine() {
             break;
 
         case SORTING:
-            if (STATE_FLAGS.dummy_identified) {
+            if (STATE_FLAGS.dummy_identified)
+            {
+                rejected_weights_add_current();
+
                 smartservo_arms_open();
-                reverseReturnState = ROAMING;
-                checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
+
+                reverseReturnState =
+                    ROAMING;
+
+                checkChangeNavState(
+                    REVERSING,
+                    &STATE_FLAGS.dummy_identified
+                );
             } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 
@@ -294,14 +504,22 @@ void updateStateMachine() {
             break;
 
         case OPENING:
-            checkChangeNavState(CLOSING, &STATE_FLAGS.opening_complete);
-            break;
+        {
+            updateDropoffShake();
 
+            if (STATE_FLAGS.opening_complete)
+            {
+                checkChangeNavState(STATIONARY, &STATE_FLAGS.opening_complete);
+                setStateFlag(&STATE_FLAGS.dropoff_complete);
+            }
+            break;
+        }
         case CLOSING:
             if (STATE_FLAGS.closing_complete)
             {
                 checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
                 setStateFlag(&STATE_FLAGS.dropoff_complete);
+                setStateFlag(&STATE_FLAGS.leaving_home);
             }
             break;
 
@@ -383,6 +601,6 @@ void updateStateMachine() {
 }
 
 void print_state() {
-    // Serial.println(current_collect_state);
-    Serial2.println(navStateName(current_nav_state));
+    Serial.println(collectStateName(current_collect_state));
+    Serial.println(navStateName(current_nav_state));
 }

@@ -1,13 +1,52 @@
 #include "logic_engine.h"
 #include "state_machine.h"
+#include "priority_targets.h"
+#include "pose.h"
+#include "debug_print.h"
 
 int current_weights = 0;
 int current_iterations = 0;
 
 
 
-void increment_weights() {
-    current_weights ++;
+void increment_weights()
+{
+    current_weights++;
+
+
+    debugState.print(
+        "WEIGHTS_ONBOARD,"
+    );
+
+    debugState.println(
+        current_weights
+    );
+
+
+    bool targetRemoved =
+        priority_targets_remove_nearest(
+            pose_get_x_mm(),
+            pose_get_y_mm(),
+            700.0f
+        );
+
+
+    debugState.print(
+        "PRIORITY_TARGET_REMOVED,"
+    );
+
+    debugState.println(
+        targetRemoved ? 1 : 0
+    );
+
+
+    priority_targets_print(
+        Serial
+    );
+
+    priority_targets_print(
+        Serial2
+    );
 }
 
 void reset_weights()

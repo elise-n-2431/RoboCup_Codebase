@@ -7,7 +7,8 @@
 #include "inputs/imu.h"
 #include "inputs/tof_expander.h"
 #include "inputs/xy_sensor.h"
-
+#include "arena_config.h"
+#include "debug_print.h"
 
 // ============================================================
 // POSE
@@ -20,7 +21,8 @@ static float poseYmm = 0.0;
 // IMU heading when pose was reset.
 // This makes position coordinates relative to the robot's
 // starting direction rather than magnetic north.
-static float startHeadingDeg = 0.0;
+static float startImuHeadingDeg = 0.0f;
+static float startPoseHeadingDeg = 0.0f;
 
 
 static long previousLeftCount = 0;
@@ -30,7 +32,7 @@ static const unsigned long TELEMETRY_PERIOD_MS = 100;
 static unsigned long lastTelemetryTime = 0;
 static bool telemetryEnabled = true;
 
-static const float XY_FUSION_WEIGHT = 0.0f;
+static const float XY_FUSION_WEIGHT = 0.00f;
 
 void pose_init()
 {
@@ -40,20 +42,20 @@ void pose_init()
 
 void pose_reset()
 {
-    poseXmm = 300.0;
-    poseYmm = 300.0;
+    const ArenaConfig& config = arena_get_config();
 
+    poseXmm = config.startX;
+    poseYmm = config.startY;
 
-    startHeadingDeg =
-        imu_get_heading();
+    startImuHeadingDeg = imu_get_heading();
 
+    startPoseHeadingDeg = config.startHeading;
 
-    previousLeftCount =
-        encoders_get_left_count();
+    previousLeftCount = encoders_get_left_count();
+    previousRightCount = encoders_get_right_count();
 
-    previousRightCount =
-        encoders_get_right_count();
-
+    float unusedForward, unusedLateral;
+    get_xy_delta_mm(unusedForward, unusedLateral);
 }
 
 
@@ -96,10 +98,7 @@ void pose_update()
     float lateralDistance = XY_FUSION_WEIGHT * xyLateral;
 
 
-    float headingDeg = imu_get_heading() - startHeadingDeg;
-
-    while (headingDeg >= 360.0f) headingDeg -= 360.0f;
-    while (headingDeg < 0.0f)    headingDeg += 360.0f;
+    float headingDeg = pose_get_heading_deg();
 
     float headingRad = headingDeg * PI / 180.0f;
 
@@ -112,28 +111,75 @@ void pose_update()
     poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
     poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);
 
-    static unsigned long lastPoseDebug = 0;
+    static float debugEncoderForward = 0.0f;
+static float debugXYForward = 0.0f;
+static float debugXYLateral = 0.0f;
+static float debugFusedForward = 0.0f;
+static float debugFusedLateral = 0.0f;
+
+static unsigned long lastPoseDebug = 0;
+
+
+debugEncoderForward += encoderForward;
+debugXYForward += xyForward;
+debugXYLateral += xyLateral;
+
+debugFusedForward += forwardDistance;
+debugFusedLateral += lateralDistance;
+
 
     if (millis() - lastPoseDebug >= 250)
     {
         lastPoseDebug = millis();
 
-        Serial2.print("POSE ENC: dL=");
-        Serial2.print(deltaLeftCount);
 
-        Serial2.print(" dR=");
-        Serial2.print(deltaRightCount);
+        debugPose.print("POSE MOTION: ENC_F=");
+        debugPose.print(debugEncoderForward);
 
-        Serial2.print(" leftMM=");
-        Serial2.print(leftDistance);
+        debugPose.print(" XY_F=");
+        debugPose.print(debugXYForward);
 
-        Serial2.print(" rightMM=");
-        Serial2.print(rightDistance);
+        debugPose.print(" XY_L=");
+        debugPose.print(debugXYLateral);
 
-        Serial2.print(" forward=");
-        Serial2.println(encoderForward);
+        debugPose.print(" FUSED_F=");
+        debugPose.print(debugFusedForward);
+
+        debugPose.print(" FUSED_L=");
+        debugPose.print(debugFusedLateral);
+
+        debugPose.print(" W=");
+        debugPose.print(XY_FUSION_WEIGHT);
+
+        debugPose.print(" POS=(");
+        debugPose.print(poseXmm);
+        debugPose.print(",");
+        debugPose.print(poseYmm);
+
+        debugPose.print(") H=");
+        debugPose.println(pose_get_heading_deg());
+
+
+        // Reset comparison window.
+        debugEncoderForward = 0.0f;
+        debugXYForward = 0.0f;
+        debugXYLateral = 0.0f;
+        debugFusedForward = 0.0f;
+        debugFusedLateral = 0.0f;
     }
 
+}
+
+void pose_apply_correction(float dx_mm, float dy_mm)
+{
+    poseXmm += dx_mm;
+    poseYmm += dy_mm;
+
+    Serial.print("dx");
+    Serial.println(dx_mm);
+
+    Serial.print("dy");
+    Serial.println(dy_mm);
 }
 
 
@@ -155,22 +201,31 @@ float pose_get_y_mm()
 
 float pose_get_heading_deg()
 {
-    float heading =
-        imu_get_heading()
-        - startHeadingDeg;
+    float imuDelta = imu_get_heading() - startImuHeadingDeg;
 
-
-    while (heading >= 360.0)
+    while (imuDelta > 180.0f)
     {
-        heading -= 360.0;
+        imuDelta -= 360.0f;
     }
 
-
-    while (heading < 0.0)
+    while (imuDelta < -180.0f)
     {
-        heading += 360.0;
+        imuDelta += 360.0f;
     }
 
+    // IMU positive rotation is clockwise.
+    // Arena/pose positive rotation is counter-clockwise.
+    float heading = startPoseHeadingDeg - imuDelta;
+
+    while (heading >= 360.0f)
+    {
+        heading -= 360.0f;
+    }
+
+    while (heading < 0.0f)
+    {
+        heading += 360.0f;
+    }
 
     return heading;
 }
@@ -204,8 +259,8 @@ void pose_telemetry_exe()
 
     lastTelemetryTime = millis();
 
-    pose_print_telemetry(Serial);
-    pose_print_telemetry(Serial2);
+    // pose_print_telemetry(Serial);
+    // pose_print_telemetry(Serial2);
 }
 
 void pose_print_telemetry(Stream &port)

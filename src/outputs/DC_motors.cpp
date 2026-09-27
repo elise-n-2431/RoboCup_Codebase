@@ -202,7 +202,8 @@ void DC_motors_init()
 }
 
 void print_DC_power() {
-    Serial2.print(leftMotorPower);
-    Serial2.print(' ');
-    Serial2.println(rightMotorPower);
+    Serial.print("LEFT: ");
+    Serial.print(leftMotorPower);
+    Serial.print("RIGHT: ");
+    Serial.println(rightMotorPower);
 }

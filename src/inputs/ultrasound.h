@@ -9,4 +9,5 @@ void ultrasound_exe();
 float ultrasound_get_left_mm();
 float ultrasound_get_right_mm();
 
+void ultrasound_print();
 #endif

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <HardwareSerial.h>
+#include "map.h"
 #include "pose.h"
 #include <list>
 #include <cstdint>
@@ -9,15 +10,34 @@
 #include <numeric> // for std::accumulate
 #include "inputs/ultrasound.h"
 #include "state_machine.h"
+#include "arena_config.h"
+#include "debug_print.h"
 #include <iostream>
 #include <queue>
+#include "path_finding.h"
 using namespace std;
 
 
-const int CELL_SIZE_MM = 50;
+//for printing to the gui
+static const unsigned long
+    FULL_MAP_DEBUG_PERIOD_MS = 10000;
 
-const int MAP_WIDTH = 97 + 4; // 2 cells at each extrema for walls
-const int MAP_HEIGHT = 49 + 4;
+static unsigned long
+    lastFullMapDebugAt = 0;
+
+const int CELL_SIZE_MM = 50;
+static constexpr int MAP_PADDING_CELLS = 2;
+
+static constexpr int MAP_WIDTH = 97 + 4;
+static constexpr int MAP_HEIGHT = 49 + 4;
+
+static constexpr float MAP_ORIGIN_X_MM =
+    MAP_PADDING_CELLS *
+    CELL_SIZE_MM;
+
+static constexpr float MAP_ORIGIN_Y_MM =
+    MAP_PADDING_CELLS *
+    CELL_SIZE_MM;
 
 // Navigation sensors
 const int NAV_OUTER_LEFT  = 6;
@@ -37,6 +57,16 @@ int dist_o_r = 0;
 int dist_i_l = 0;
 int dist_i_r = 0;
 
+static const unsigned long MAP_UPDATE_PERIOD_MS = 100;
+static const unsigned long FRONTIER_TARGET_PERIOD_MS = 250;
+static const unsigned long MAP_TELEMETRY_PERIOD_MS = 250;
+
+static unsigned long lastMapUpdateAt = 0;
+static unsigned long lastFrontierTargetAt = 0;
+static unsigned long lastMapTelemetryAt = 0;
+
+static int frontierCellCount = 0;
+
 // --- Fixed-point confidence values ---------------------------------------
 // Both maps store confidence as int16_t / uint16_t scaled by CONF_SCALE,
 // i.e. "1000" means 1.000, "250" means 0.250, etc. -- 3 decimal places of
@@ -49,15 +79,27 @@ int dist_i_r = 0;
 const int16_t CONF_SCALE = 1000;                // 1.000 in fixed-point units
 const int16_t OBSTACLE_UNKNOWN_BAND = 100;      // |value| below this counts as "unknown" (0.100)
 
-uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
-int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
-bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
+static bool mapValueIsFree(int16_t value)
+{
+    return value < -OBSTACLE_UNKNOWN_BAND;
+}
+
+static bool mapValueIsObstacle(int16_t value)
+{
+    return value > OBSTACLE_UNKNOWN_BAND;
+}
+
+// DMAMEM uint16_t WEIGHT_MAP[MAP_WIDTH][MAP_HEIGHT]; 
+DMAMEM int16_t  OBSTACLE_MAP[MAP_WIDTH][MAP_HEIGHT];   // +-32768, but we only use +-1000
+DMAMEM bool FRONTIER_MAP[MAP_WIDTH][MAP_HEIGHT];    // 0/1, 1=frontier
 
 int self_x = 0; // define initial position in pose
 int self_y = 0;
 
-float MAP_ORIGIN_X_MM = 0;
-float MAP_ORIGIN_Y_MM = 0;
+float x_min = -MAP_ORIGIN_X_MM;
+float x_max = MAP_WIDTH * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+float y_min = -MAP_ORIGIN_Y_MM;
+float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
 
 int home_x = 0;
 int home_y = 0;
@@ -67,7 +109,7 @@ static float g_cos_heading, g_sin_heading, heading;
 std::vector<std::vector<int>> FRONTIER_GROUPS_X;
 std::vector<std::vector<int>> FRONTIER_GROUPS_Y;
 
-bool FRONTIER_VISITED[MAP_WIDTH][MAP_HEIGHT];
+DMAMEM bool FRONTIER_VISITED[MAP_WIDTH][MAP_HEIGHT];
 
 struct FrontierCentre {
     int x;
@@ -82,6 +124,7 @@ struct FrontierTarget {
 };
 
 FrontierTarget target;
+
 
 const int n = 3; // number of starting weight estimates
 int starting_weight_estimates[n][2] = {{4, 5}, {7, 9}, {30, 30}};
@@ -104,6 +147,39 @@ int get_frontier_y() {
     return target.centre.y;
 }
 
+float get_frontier_world_x_mm()
+{
+    return (target.centre.x * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_X_MM;
+}
+
+float get_frontier_world_y_mm()
+{
+    return (target.centre.y * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_Y_MM;
+}
+
+float get_front_clearance_mm()
+{
+    // smallest of the two inner (most forward-facing) sensors
+    int temp_o_l  = dist_o_l;
+    int temp_i_l  = dist_i_l;
+    int temp_i_r  = dist_i_r;
+    int temp_o_r  = dist_o_r;
+
+
+    if (temp_o_l <= 0)  temp_o_l  = 1000;
+    if (temp_i_l <= 0)  temp_i_l  = 1000;
+    if (temp_i_r <= 0)  temp_i_r  = 1000;
+    if (temp_o_r <= 0)  temp_o_r  = 1000;
+
+    return (float)std::min({temp_o_l, temp_i_l, temp_i_r, temp_o_r});
+}
+
+void print_target() {
+    Serial.print("TARGET: ");
+    Serial.print(target.centre.x);
+    Serial.print(" ");
+    Serial.println(target.centre.y);
+}
 
 int world_to_cell_x(float x_mm)
 {
@@ -113,7 +189,7 @@ int world_to_cell_x(float x_mm)
     if (coord < 0) {
         return 0;
     } else if (coord >= MAP_WIDTH) {
-        return MAP_WIDTH;
+        return MAP_WIDTH - 1;
     } else {
         return coord;
     }
@@ -129,35 +205,126 @@ int world_to_cell_y(float y_mm)
     if (coord < 0) {
         return 0;
     } else if (coord >= MAP_HEIGHT) {
-        return MAP_HEIGHT;
+        return MAP_HEIGHT - 1;
     } else {
         return coord;
     }
 }
 
-void add_obstacle_evidence(int cell_x, int cell_y)
+bool check_free(int x, int y)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    if (x < 0 || x >= MAP_WIDTH ||
+        y < 0 || y >= MAP_HEIGHT)
     {
-        return;
+        return false;
     }
 
-    OBSTACLE_MAP[cell_x][cell_y] = CONF_SCALE;
+    return mapValueIsFree(
+        OBSTACLE_MAP[x][y]
+    );
 }
 
-
-void add_free_evidence(int cell_x, int cell_y)
+bool check_obstacle(int x, int y)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
+    if (x < 0 || x >= MAP_WIDTH ||
+        y < 0 || y >= MAP_HEIGHT)
+    {
+        return true;
+    }
+
+    return mapValueIsObstacle(
+        OBSTACLE_MAP[x][y]
+    );
+}
+
+float cell_to_world_x(int x)
+{
+    return
+        x * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f -
+        MAP_ORIGIN_X_MM;
+}
+
+float cell_to_world_y(int y)
+{
+    return
+        y * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f -
+        MAP_ORIGIN_Y_MM;
+}
+
+void add_obstacle_evidence(
+    int cell_x,
+    int cell_y)
+{
+    if (cell_x < 0 ||
+        cell_x >= MAP_WIDTH ||
+        cell_y < 0 ||
+        cell_y >= MAP_HEIGHT)
     {
         return;
     }
-    if (OBSTACLE_MAP[cell_x][cell_y] > 200) {
+
+    int16_t oldValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool oldFree = mapValueIsFree(oldValue);
+
+    bool oldObstacle = mapValueIsObstacle(oldValue);
+
+    OBSTACLE_MAP[cell_x][cell_y] =
+        CONF_SCALE;
+
+    // D* only needs to know when the map's
+    // traversability classification changes.
+    if (oldFree || !oldObstacle)
+    {
+        path_notify_cell_changed(
+            cell_x,
+            cell_y
+        );
+    }
+}
+
+void add_free_evidence(
+    int cell_x,
+    int cell_y)
+{
+    if (cell_x < 0 ||
+        cell_x >= MAP_WIDTH ||
+        cell_y < 0 ||
+        cell_y >= MAP_HEIGHT)
+    {
+        return;
+    }
+
+    int16_t oldValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool oldFree = mapValueIsFree(oldValue);
+
+    bool oldObstacle = mapValueIsObstacle(oldValue);
+
+    if (OBSTACLE_MAP[cell_x][cell_y] >
+        200)
+    {
         OBSTACLE_MAP[cell_x][cell_y] -= DECAY_OBSTACLE_IF_FREE;
-    } else {
+    }
+    else
+    {
         OBSTACLE_MAP[cell_x][cell_y] = -CONF_SCALE;
+    }
+
+    int16_t newValue = OBSTACLE_MAP[cell_x][cell_y];
+
+    bool newFree = mapValueIsFree(newValue);
+
+    bool newObstacle = mapValueIsObstacle(newValue);
+
+    if (oldObstacle != newObstacle)
+    {
+        path_notify_cell_changed(
+            cell_x,
+            cell_y
+        );
     }
 }
 
@@ -173,22 +340,54 @@ void update_self() {
 }
 
 void map_init() {
-    for (int x = 0; x < MAP_WIDTH; x++) {
-        for (int y = 0; y < MAP_HEIGHT; y++) {
-            WEIGHT_MAP[x][y] = 0;
-            OBSTACLE_MAP[x][y] = 0;
+    for (int x = 0; x < MAP_WIDTH; x++)
+    {
+        for (int y = 0; y < MAP_HEIGHT; y++)
+        {
+            FRONTIER_MAP[x][y] = false;
+            FRONTIER_VISITED[x][y] = false;
+
+            bool outsideArena =
+                x < MAP_PADDING_CELLS ||
+                x >= MAP_WIDTH -
+                    MAP_PADDING_CELLS ||
+                y < MAP_PADDING_CELLS ||
+                y >= MAP_HEIGHT -
+                    MAP_PADDING_CELLS;
+
+                    OBSTACLE_MAP[x][y] =
+            outsideArena
+                ? CONF_SCALE
+                : 0;
         }
     }
     for (int i = 0; i < n; i++) {
         int x = starting_weight_estimates[i][0];
         int y = starting_weight_estimates[i][1];
-        WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
+        // WEIGHT_MAP[x][y] = CONF_SCALE; // full confidence (1.000), not raw "1"
     }
-    MAP_ORIGIN_X_MM = pose_get_x_mm();
-    MAP_ORIGIN_Y_MM = pose_get_y_mm();
+
+    for (int x = 0; x < MAP_WIDTH; x++)
+    {
+        for (int y = 0; y < MAP_HEIGHT - 1; y++)
+        {    
+            Serial.print(OBSTACLE_MAP[x][y]);
+        }
+        Serial.println(OBSTACLE_MAP[x][MAP_HEIGHT-1]);
+    }
 
     home_x = world_to_cell_x(pose_get_x_mm());
     home_y = world_to_cell_y(pose_get_y_mm());
+    self_x = world_to_cell_x(pose_get_x_mm());
+    self_y = world_to_cell_y(pose_get_y_mm());
+
+    FRONTIER_GROUPS_X.clear();
+    FRONTIER_GROUPS_Y.clear();
+    target = {};
+    lastMapUpdateAt = 0;
+    lastFrontierTargetAt = 0;
+    lastMapTelemetryAt = 0;
+    frontierCellCount = 0;
 }
 
 void apply_decay() {
@@ -196,7 +395,7 @@ void apply_decay() {
         for (int y = 0; y < MAP_HEIGHT; y++) {
             // int32_t intermediate: max magnitude here is 1000 * 999 = 999000,
             // comfortably inside int32_t, so no overflow before the divide.
-            WEIGHT_MAP[x][y] = (uint16_t)(((int32_t)WEIGHT_MAP[x][y] * DECAY_WEIGHT_PERMILLE) / 1000);
+            // WEIGHT_MAP[x][y] = (uint16_t)(((int32_t)WEIGHT_MAP[x][y] * DECAY_WEIGHT_PERMILLE) / 1000);
 
             int16_t obs = OBSTACLE_MAP[x][y];
             if (obs > 0) {
@@ -241,41 +440,71 @@ void arena_mirroring()
 //     }
 // }
 
-void find_frontier() {
-    for (int x = 1; x < MAP_WIDTH - 1; x++)
+// Robot footprint is stamped as a 5x5 block in update_self() (-2..2),
+// so use the same radius here: a frontier cell isn't valid as a
+// target if any cell within OBSTACLE_CLEARANCE_CELLS of it is a
+// confirmed obstacle -- the robot's body wouldn't fit there anyway.
+const int OBSTACLE_CLEARANCE_CELLS = 2;
+
+bool cell_too_close_to_obstacle(int x, int y)
+{
+    for (int i = -OBSTACLE_CLEARANCE_CELLS; i <= OBSTACLE_CLEARANCE_CELLS; i++)
     {
-        for (int y = 1; y < MAP_HEIGHT - 1; y++)
+        for (int j = -OBSTACLE_CLEARANCE_CELLS; j <= OBSTACLE_CLEARANCE_CELLS; j++)
+        {
+            int nx = x + i;
+            int ny = y + j;
+
+            if (nx < 0 || nx >= MAP_WIDTH || ny < 0 || ny >= MAP_HEIGHT) continue;
+
+            if (OBSTACLE_MAP[nx][ny] > OBSTACLE_UNKNOWN_BAND)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void find_frontier() {
+    frontierCellCount = 0;
+    for (int x = 6; x < MAP_WIDTH - 1; x++)
+    {
+        for (int y = 6; y < MAP_HEIGHT - 1; y++)
         {
             if (OBSTACLE_MAP[x][y] > OBSTACLE_UNKNOWN_BAND || OBSTACLE_MAP[x][y] < -OBSTACLE_UNKNOWN_BAND)
             {
                 FRONTIER_MAP[x][y] = false;
             }
-            else if(self_x != x && self_y != y){ // unexplored space
+            else if (!(self_x == x && self_y == y)){ // unexplored space
                 FRONTIER_MAP[x][y] = false;
 
+                bool hasFreeNeighbor = false;
                 for (int i = -1; i <= 1; i++) {
                     for (int j = -1; j <= 1; j++) {
                         if (!(i == 0 && j == 0)) {
                             if (OBSTACLE_MAP[x + i][y + j] < -OBSTACLE_UNKNOWN_BAND) {
-                                FRONTIER_MAP[x][y] = true;
+                                hasFreeNeighbor = true;
                             }
                         }
                     }
+                }
+
+                if (hasFreeNeighbor && !cell_too_close_to_obstacle(x, y))
+                {
+                    FRONTIER_MAP[x][y] = true;
+                    frontierCellCount++;
                 }
             }
         }
     }
 
-    // --------------------------------------------------
-    // Group adjacent frontier cells (8-connectivity)
-    // --------------------------------------------------
-
     FRONTIER_GROUPS_X.clear();
     FRONTIER_GROUPS_Y.clear();
     memset(FRONTIER_VISITED, 0, sizeof(FRONTIER_VISITED));
 
-    static int16_t stack_x[MAP_WIDTH * MAP_HEIGHT];
-    static int16_t stack_y[MAP_WIDTH * MAP_HEIGHT];
+    DMAMEM static int16_t stack_x[MAP_WIDTH * MAP_HEIGHT];
+    DMAMEM static int16_t stack_y[MAP_WIDTH * MAP_HEIGHT];
 
     for (int x = 1; x < MAP_WIDTH - 1; x++)
     {
@@ -330,8 +559,8 @@ void find_frontier() {
 }
 
 float cost(float distance, int size, float orientation) {
-    float c1 = 1.0f;
-    float c2 = 1.0f;
+    float c1 = 0.5f;
+    float c2 = 3.0f;
     float c3 = 1.0f;
     return c1 * distance - c2 * size + c3 * fabsf(orientation);
 }
@@ -351,14 +580,35 @@ FrontierCentre get_frontier_centre(int group_index)
     return centre;
 }
 
+const float FRONTIER_SWITCH_MARGIN = 15.0f;  // tune: new candidate must beat
+                                               // current target by this much
+
 void calc_frontier_target() {
-    FrontierTarget best;
+    FrontierTarget best = {};
+
     best.valid = false;
+    best.group_index = -1;
+    best.centre.x = -1;
+    best.centre.y = -1;
     best.cost = INFINITY;
+
+    bool oldValid = target.valid;
+    int oldX = target.centre.x;
+    int oldY = target.centre.y;
+
+    float current_target_cost = INFINITY;
+
 
     for (int i = 0; i < (int)FRONTIER_GROUPS_X.size(); i++) {
         int size = FRONTIER_GROUPS_X[i].size();
         FrontierCentre centre = get_frontier_centre(i);
+
+        // Is this group roughly the same physical target we're already
+        // driving to? Compare centres, not group index (index isn't stable).
+
+        float cdx = (centre.x - target.centre.x) * CELL_SIZE_MM;
+        float cdy = (centre.y - target.centre.y) * CELL_SIZE_MM;
+        bool isCurrentTarget = target.valid && (cdx*cdx + cdy*cdy) < (150*150);
 
         float dx = centre.x - self_x;
         float dy = centre.y - self_y;
@@ -367,11 +617,12 @@ void calc_frontier_target() {
         float xy_orientation = atan2f(dy, dx);
         float heading = pose_get_heading_deg() * PI / 180.0f;
         float relative_orientation = xy_orientation - heading;
-
         while (relative_orientation > PI)  relative_orientation -= 2.0f * PI;
         while (relative_orientation < -PI) relative_orientation += 2.0f * PI;
 
         float frontier_cost = cost(sqrd_distance, size, relative_orientation);
+
+        if (isCurrentTarget) current_target_cost = frontier_cost;
 
         if (frontier_cost < best.cost) {
             best.valid = true;
@@ -380,7 +631,138 @@ void calc_frontier_target() {
             best.cost = frontier_cost;
         }
     }
+
+    // Only switch away from the current target if the new best is
+    // meaningfully better -- not just marginally, which is what
+    // causes flicker between near-tied candidates.
+    if (target.valid && current_target_cost < INFINITY &&
+        best.cost > current_target_cost - FRONTIER_SWITCH_MARGIN)
+    {
+        return; // keep current target, don't overwrite it
+    }
+
     target = best;
+    bool targetChanged = (oldValid != target.valid || (target.valid && (oldX != target.centre.x ||
+         oldY != target.centre.y)));
+    if (targetChanged)
+    {
+        debugMap.print("MAP_EVENT,");
+        debugMap.print(millis());
+
+        if (!target.valid)
+        {
+            debugMap.println(",FRONTIER_NONE");
+        }
+        else
+        {
+            float targetX;
+            float targetY;
+
+            get_frontier_target(
+                targetX,
+                targetY
+            );
+
+            debugMap.print(",FRONTIER_TARGET,");
+            debugMap.print(target.centre.x);
+            debugMap.print(",");
+            debugMap.print(target.centre.y);
+            debugMap.print(",");
+            debugMap.print(targetX);
+            debugMap.print(",");
+            debugMap.print(targetY);
+            debugMap.print(",");
+            debugMap.print(target.cost);
+            debugMap.print(",");
+            debugMap.println(
+                FRONTIER_GROUPS_X.size()
+            );
+        }
+    }
+}
+
+
+static void printMapTelemetry()
+{
+    if (!debugMap.enabled)
+    {
+        return;
+    }
+
+    if (millis() - lastMapTelemetryAt <
+        MAP_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
+
+    lastMapTelemetryAt = millis();
+
+    float targetX = -1.0f;
+    float targetY = -1.0f;
+
+    bool targetValid =
+        get_frontier_target(
+            targetX,
+            targetY
+        );
+
+    debugMap.print("MAP,");
+    debugMap.print(millis());
+
+    debugMap.print(",");
+    debugMap.print(self_x);
+
+    debugMap.print(",");
+    debugMap.print(self_y);
+
+    debugMap.print(",");
+    debugMap.print(pose_get_x_mm());
+
+    debugMap.print(",");
+    debugMap.print(pose_get_y_mm());
+
+    debugMap.print(",");
+    debugMap.print(pose_get_heading_deg());
+
+    debugMap.print(",");
+    debugMap.print(frontierCellCount);
+
+    debugMap.print(",");
+    debugMap.print(
+        FRONTIER_GROUPS_X.size()
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid ? 1 : 0
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid
+            ? target.centre.x
+            : -1
+    );
+
+    debugMap.print(",");
+    debugMap.print(
+        targetValid
+            ? target.centre.y
+            : -1
+    );
+
+    debugMap.print(",");
+    debugMap.print(targetX);
+
+    debugMap.print(",");
+    debugMap.print(targetY);
+
+    debugMap.print(",");
+    debugMap.println(
+        targetValid
+            ? target.cost
+            : -1.0f
+    );
 }
 
 void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 125)
@@ -469,157 +851,227 @@ void update_obstacle_map(int distance_mm, float angle_deg, int sensor_x_pos = 12
     }
 }
 
-void add_weight_evidence(int cell_x, int cell_y)
+
+float raycast_to_arena_wall(float ox, float oy, float angle_rad)
 {
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
-    {
-        return;
+    float x_min = -MAP_ORIGIN_X_MM;
+    float x_max = MAP_WIDTH  * CELL_SIZE_MM - MAP_ORIGIN_X_MM;
+    float y_min = -MAP_ORIGIN_Y_MM;
+    float y_max = MAP_HEIGHT * CELL_SIZE_MM - MAP_ORIGIN_Y_MM;
+
+    float dx = cos(angle_rad);
+    float dy = sin(angle_rad);
+
+    float t_best = INFINITY;
+
+    // Check each of the 4 boundary lines, keep nearest positive-t hit
+    // that actually falls within the rectangle's other axis.
+    if (dx > 1e-6f) {
+        float t = (x_max - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    } else if (dx < -1e-6f) {
+        float t = (x_min - ox) / dx;
+        float y = oy + t * dy;
+        if (t > 0 && y >= y_min && y <= y_max) t_best = min(t_best, t);
+    }
+    if (dy > 1e-6f) {
+        float t = (y_max - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
+    } else if (dy < -1e-6f) {
+        float t = (y_min - oy) / dy;
+        float x = ox + t * dx;
+        if (t > 0 && x >= x_min && x <= x_max) t_best = min(t_best, t);
     }
 
-    WEIGHT_MAP[cell_x][cell_y] = 1000;
+    return isfinite(t_best) ? t_best : -1.0f;
+}
+
+const float WALL_CORRECTION_GAIN = 0.10f;   // start small, tune up
+const float WALL_MATCH_TOLERANCE_MM = 60.0f; // reject if measured is way off predicted
+
+static float g_correction_sum_x, g_correction_sum_y = 0;
+static int g_correction_count = 0;
+
+
+void try_wall_correction(int distance_mm, float angle_deg, int sensor_x_pos = 125)
+{
+    if (distance_mm <= 0 || distance_mm > 1000) return; // no confirmed hit
+
+    float angle = angle_deg * PI / 180.0f;
+    float sensor_x = sensor_x_pos + 90.0f * cos(angle);
+    float sensor_y = 90.0f * sin(angle);
+
+    float sensor_world_x = pose_get_x_mm() + sensor_x * g_cos_heading - sensor_y * g_sin_heading;
+    float sensor_world_y = pose_get_y_mm() + sensor_x * g_sin_heading + sensor_y * g_cos_heading;
+
+    float beam_heading = heading + angle;
+
+    float expected = raycast_to_arena_wall(sensor_world_x, sensor_world_y, beam_heading);
+    if (expected < 0) return;
+
+    float residual = distance_mm - expected;
+
+    // Gate: only trust this as a wall hit if it's close to the predicted
+    // wall distance. A big residual means something else is in the way
+    // (obstacle, robot, weight) -- not a wall, don't use it.
+    if (fabsf(residual) > WALL_MATCH_TOLERANCE_MM) return;
+
+    // Also gate on the hit actually landing near the map border, as a
+    // second sanity check using your existing cell grid.
+    int hit_cell_x = world_to_cell_x(sensor_world_x + expected * cos(beam_heading));
+    int hit_cell_y = world_to_cell_y(sensor_world_y + expected * sin(beam_heading));
+    bool near_border =
+        hit_cell_x <= 1 || hit_cell_x >= MAP_WIDTH - 2 ||
+        hit_cell_y <= 1 || hit_cell_y >= MAP_HEIGHT - 2;
+    if (!near_border) return;
+
+    g_correction_sum_x += residual * cos(beam_heading);
+    g_correction_sum_y += residual * sin(beam_heading);
+    g_correction_count++;
+}
+
+
+void map_correction()
+{
+    g_correction_sum_x = 0;
+    g_correction_sum_y = 0;
+    g_correction_count = 0;
+
+    for (int i = -3; i < 4; i += 2)
+    {
+        try_wall_correction(
+            dist_o_l,
+            40.0f + i
+        );
+
+        try_wall_correction(
+            dist_i_l,
+            15.0f + i
+        );
+
+        try_wall_correction(
+            dist_i_r,
+            -15.0f + i
+        );
+
+        try_wall_correction(
+            dist_o_r,
+            -40.0f + i
+        );
+    }
+
+    try_wall_correction(
+        ultrasound_get_left_mm(),
+        90.0f,
+        0
+    );
+
+    try_wall_correction(
+        ultrasound_get_right_mm(),
+        -90.0f,
+        0
+    );
+
+    if (g_correction_count > 0) {
+        float dx = (g_correction_sum_x / g_correction_count) * WALL_CORRECTION_GAIN;
+        float dy = (g_correction_sum_y / g_correction_count) * WALL_CORRECTION_GAIN;
+        pose_apply_correction(dx, dy);
     
-    // if (dstar_active) {
-    //     updateNode(cell_x, cell_y);
-    //     std::vector<std::pair<int,int>> nb;
-    //     getNeighbors(cell_x, cell_y, nb);
-    //     for (auto& p : nb) updateNode(p.first, p.second);
-    // }
-}
-
-void remove_weight_evidence(int cell_x, int cell_y)
-{
-    if (cell_x < 0 || cell_x >= MAP_WIDTH ||
-        cell_y < 0 || cell_y >= MAP_HEIGHT)
-    {
-        return;
     }
-
-    WEIGHT_MAP[cell_x][cell_y] = 0;
-
-    // if (dstar_active) {
-    //     updateNode(cell_x, cell_y);
-    //     std::vector<std::pair<int,int>> nb;
-    //     getNeighbors(cell_x, cell_y, nb);
-    //     for (auto& p : nb) updateNode(p.first, p.second);
-    // }
 }
 
-// void update_weight_map(int distance_mm, float angle_deg, int distance_above_mm = -1)
-// {
-//     if (distance_above_mm == -1){
-//         if (distance_mm > 200)
-//         {
-//             return; // beyond middle sensor threshold, ignore
-//         }
-//     } else if (distance_mm <= 0)
-//     {
-//         return; // no weight detected
 
-//     } else if (distance_above_mm <= 0) 
-//     {
-//         if(distance_mm > 200 || distance_mm <= 0)
-//         {
-//             return; // beyond middle sensor threshold, ignore
-//         }
-//     }
-//     else if ((distance_mm - distance_above_mm) < 20)
-//     {
-//         return; // false positive - wall
-//     }
 
-//     float angle = angle_deg * PI / 180.0;
-
-//     float sensor_x = 125 + 90.0 * cos(angle);
-//     float sensor_y = 90.0 * sin(angle);
-
-//     float heading = pose_get_heading_deg() * PI / 180.0;
-
-//     float sensor_world_x =
-//         pose_get_x_mm()
-//         + sensor_x * cos(heading)
-//         - sensor_y * sin(heading);
-
-//     float sensor_world_y =
-//         pose_get_y_mm()
-//         + sensor_x * sin(heading)
-//         + sensor_y * cos(heading);
-
-//     float beam_heading = heading + angle;
-
-//     float hit_world_x =
-//         sensor_world_x
-//         + distance_mm * cos(beam_heading);
-
-//     float hit_world_y =
-//         sensor_world_y
-//         + distance_mm * sin(beam_heading);
-
-//     int hit_cell_x = world_to_cell_x(hit_world_x);
-//     int hit_cell_y = world_to_cell_y(hit_world_y);
-
-//     int number_steps = distance_mm / CELL_SIZE_MM;
-
-//     for (int i = 0; i < number_steps; i++)
-//     {
-//         float fraction = (float)i / number_steps;
-
-//         float x =
-//             sensor_world_x
-//             + (hit_world_x - sensor_world_x) * fraction;
-
-//         float y =
-//             sensor_world_y
-//             + (hit_world_y - sensor_world_y) * fraction;
-
-//         int cell_x = world_to_cell_x(x);
-//         int cell_y = world_to_cell_y(y);
-
-//         if (cell_x == hit_cell_x &&
-//             cell_y == hit_cell_y)
-//         {
-//             break;
-//         }
-
-//         if (cell_x >= 0 && cell_x < MAP_WIDTH &&
-//             cell_y >= 0 && cell_y < MAP_HEIGHT)
-//         {
-//             WEIGHT_MAP[cell_x][cell_y] = 0;
-//         }
-//     }
-
-//     add_weight_evidence(
-//         hit_cell_x,
-//         hit_cell_y
-//     );
-
-// }
 
 void interpret_tof()
 {
-    for (int i = -3; i < 4; i += 2) {
-        dist_o_l = tof_get_distance(NAV_OUTER_LEFT);
-        update_obstacle_map(dist_o_l, 40.0 + i);
-        dist_i_l = tof_get_distance(NAV_INNER_LEFT);
-        update_obstacle_map(dist_i_l,  15.0 + i);
-        dist_i_r = tof_get_distance(NAV_INNER_RIGHT);
-        update_obstacle_map(dist_i_r, -15.0 + i);
-        dist_o_r = tof_get_distance(NAV_OUTER_RIGHT);
-        update_obstacle_map(dist_o_r, -40.0 + i);
-    }
+    for (int i = -3; i < 4; i += 2)
+    {
+        dist_o_l =
+            tof_get_distance(
+                NAV_OUTER_LEFT
+            );
 
+        update_obstacle_map(
+            dist_o_l,
+            40.0f + i
+        );
+
+        dist_i_l =
+            tof_get_distance(
+                NAV_INNER_LEFT
+            );
+
+        update_obstacle_map(
+            dist_i_l,
+            15.0f + i
+        );
+
+        dist_i_r =
+            tof_get_distance(
+                NAV_INNER_RIGHT
+            );
+
+        update_obstacle_map(
+            dist_i_r,
+            -15.0f + i
+        );
+
+        dist_o_r =
+            tof_get_distance(
+                NAV_OUTER_RIGHT
+            );
+
+        update_obstacle_map(
+            dist_o_r,
+            -40.0f + i
+        );
+    }
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));
     // update_weight_map(tof_get_distance(WEIGHT_RIGHT_BOTTOM), 15.0, tof_get_distance(WEIGHT_RIGHT_TOP));
     // update_weight_map(tof_get_distance(WEIGHT_MIDDLE), 0.0);
 }
 
-void interpret_ultrasonic() { // multiple to get wide cone shape
-    for (int i = 80; i < 101; i += 2) {
-        update_obstacle_map(ultrasound_get_left_mm(), i, 0);
-        update_obstacle_map(ultrasound_get_right_mm(), -i, 0);
+void interpret_ultrasonic() //multiple to get cone shape
+{
+    for (int i = 80; i < 101; i += 2)
+    {
+        update_obstacle_map(
+            ultrasound_get_left_mm(),
+            i,
+            0
+        );
+
+        update_obstacle_map(
+            ultrasound_get_right_mm(),
+            -i,
+            0
+        );
+    }
+}
+
+bool get_frontier_target(float &x_mm, float &y_mm)
+{
+    if (!target.valid)
+    {
+        return false;
     }
 
+    x_mm =
+        (target.centre.x * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f) -
+        MAP_ORIGIN_X_MM;
+
+    y_mm =
+        (target.centre.y * CELL_SIZE_MM +
+        CELL_SIZE_MM / 2.0f) -
+        MAP_ORIGIN_Y_MM;
+
+    return true;
 }
+
 
 void print_frontier_map_packed()
 {
@@ -759,224 +1211,51 @@ bool homing_init = false;
 
 void map_update()
 {
-    uint32_t t0 = micros();
+    unsigned long now = millis();
 
+    if (now - lastMapUpdateAt <
+        MAP_UPDATE_PERIOD_MS)
+    {
+        return;
+    }
 
+    lastMapUpdateAt = now;
 
-    heading = pose_get_heading_deg() * PI / 180.0f;
+    heading =
+        pose_get_heading_deg() *
+        PI / 180.0f;
+
     g_cos_heading = cosf(heading);
     g_sin_heading = sinf(heading);
 
     apply_decay();
     update_self();
+
     interpret_tof();
     interpret_ultrasonic();
-    arena_mirroring();
+
+    // Leave pose correction off until mapping itself is validated.
+    // map_correction();
+
+    //arena_mirroring();
+
     find_frontier();
-    calc_frontier_target();
 
-    // NavState nav = getNavState();
-    // if (nav == HOMING) {
-    //     if (!homing_init) {
-    //         initialize();
-    //         computeShortestPath();
-    //         homing_init = true;
-    //     } else {
-    //         if (self_x != last_self_x || self_y != last_self_y) {
-    //             km += d_heuristic(last_self_x, last_self_y, self_x, self_y);
-    //             last_self_x = self_x;
-    //             last_self_y = self_y;
-    //         }
-    //         computeShortestPath();
-    //     }
-    // }
-
-
-
-    // print_weight_map();
-
-
-    // calculate period time for map
-
-    uint32_t dt = micros() - t0;
-    dbg_sum_us += dt;
-    dbg_calls++;
-    if (dt > dbg_max_us) dbg_max_us = dt;
-
-    if (dbg_calls % 20 == 0) {
-        Serial.print(F("map_update avg_us="));
-        Serial.print(dbg_sum_us / dbg_calls);
-        Serial.print(F(" max_us="));
-        Serial.println(dbg_max_us);
+    if (lastFrontierTargetAt == 0 ||
+        now - lastFrontierTargetAt >=
+            FRONTIER_TARGET_PERIOD_MS)
+    {
+        lastFrontierTargetAt = now;
+        calc_frontier_target();
     }
+    printMapTelemetry();
+    //used for gui print every 10 seconds
+    // if (debugMap.enabled &&
+    //     now - lastFullMapDebugAt >=
+    //         FULL_MAP_DEBUG_PERIOD_MS)
+    // {
+    //     lastFullMapDebugAt = now;
+
+    //     send_map_data();
+    // }
 }
-
-
-// D Star path finding for homing
-
-
-
-// #include <set>
-// #include <map>
-
-
-// // ---- grid index / node storage --------------------------------------------
-// static inline int d_idx(int x, int y) { return y * MAP_WIDTH + x; }
-
-// struct Node {
-//     float g   = INFINITY;
-//     float rhs = INFINITY;
-// };
-
-// static Node NODES[MAP_WIDTH][MAP_HEIGHT];
-
-// // ---- key type ---------------------------------------------------------------
-// struct Key {
-//     float k1, k2;
-//     bool operator<(const Key& o) const {
-//         if (k1 != o.k1) return k1 < o.k1;
-//         return k2 < o.k2;
-//     }
-// };
-
-// // ---- priority queue: supports insert / remove / contains / pop / top-key ---
-// // (std::priority_queue can't do remove(), which updateNode() needs, so this
-// // is a std::set keyed on (key,x,y) plus a lookup map for contains/remove.)
-// struct QEntry {
-//     Key key; int x, y;
-//     bool operator<(const QEntry& o) const {
-//         if (!(key.k1 == o.key.k1 && key.k2 == o.key.k2)) return key < o.key;
-//         if (x != o.x) return x < o.x;
-//         return y < o.y;
-//     }
-// };
-
-// struct Queue {
-//     std::set<QEntry> entries;
-//     std::map<int, Key> node_key; // node index -> its current key, for contains/remove
-
-//     void insert(int x, int y, Key k) {
-//         entries.insert({k, x, y});
-//         node_key[d_idx(x, y)] = k;
-//     }
-//     void remove(int x, int y) {
-//         int i = d_idx(x, y);
-//         auto it = node_key.find(i);
-//         if (it == node_key.end()) return;
-//         entries.erase({it->second, x, y});
-//         node_key.erase(it);
-//     }
-//     bool contains(int x, int y) {
-//         return node_key.count(d_idx(x, y)) > 0;
-//     }
-//     Key topKey() {
-//         if (entries.empty()) return {INFINITY, INFINITY};
-//         return entries.begin()->key;
-//     }
-//     void pop(int& x, int& y) {
-//         auto it = entries.begin();
-//         x = it->x; y = it->y;
-//         node_key.erase(d_idx(x, y));
-//         entries.erase(it);
-//     }
-//     bool empty() { return entries.empty(); }
-// };
-
-// static Queue pq;
-// static float km = 0.0f;
-// static int last_self_x, last_self_y;
-// static bool dstar_active = false;
-
-// static inline float d_heuristic(int ax, int ay, int bx, int by) {
-//     int dx = abs(ax - bx), dy = abs(ay - by);
-//     int dmin = min(dx, dy), dmax = max(dx, dy);
-//     return dmax + 0.41421356f * dmin; // octile distance, 8-connected grid
-// }
-
-// // Cost of entering cell (x,y), derived from OBSTACLE_MAP you already maintain.
-// static inline float getCostTo(int x, int y) {
-//     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return INFINITY;
-//     int16_t v = OBSTACLE_MAP[x][y];
-//     if (v > OBSTACLE_UNKNOWN_BAND)  return INFINITY; // confirmed obstacle
-//     if (v < -OBSTACLE_UNKNOWN_BAND) return 1.0f; // confirmed free
-//     return 5.0f;                                  // unknown -- passable but discouraged
-// }
-
-// static void getNeighbors(int x, int y, std::vector<std::pair<int,int>>& out) {
-//     out.clear();
-//     for (int i = -1; i <= 1; i++)
-//         for (int j = -1; j <= 1; j++) {
-//             if (i == 0 && j == 0) continue;
-//             int nx = x + i, ny = y + j;
-//             if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT)
-//                 out.push_back({nx, ny});
-//         }
-// }
-
-// // ---- calculateKey ------------------------------------------------------------
-// Key calculateKey(int x, int y) {
-//     float m = min(NODES[x][y].g, NODES[x][y].rhs);
-//     return { m + d_heuristic(x, y, self_x, self_y) + km, m };
-// }
-
-// // ---- updateNode ---------------------------------------------------------------
-// void updateNode(int x, int y) {
-//     if (x == home_x && y == home_y) return; // start.rhs stays 0 forever
-
-//     Node& n = NODES[x][y];
-//     n.rhs = INFINITY;
-
-//     std::vector<std::pair<int,int>> preds;
-//     getNeighbors(x, y, preds);
-//     for (auto& p : preds) {
-//         float cand = NODES[p.first][p.second].g + getCostTo(x, y);
-//         if (cand < n.rhs) n.rhs = cand;
-//     }
-
-//     if (pq.contains(x, y)) pq.remove(x, y);
-//     if (n.g != n.rhs) pq.insert(x, y, calculateKey(x, y));
-// }
-
-// // ---- initialize -----------------------------------------------------------
-// void initialize() {
-//     for (int x = 0; x < MAP_WIDTH; x++)
-//         for (int y = 0; y < MAP_HEIGHT; y++) {
-//             NODES[x][y].g = INFINITY;
-//             NODES[x][y].rhs = INFINITY;
-//         }
-
-//     km = 0.0f;
-//     last_self_x = self_x;
-//     last_self_y = self_y;
-
-//     NODES[home_x][home_y].rhs = 0.0f;
-//     pq.insert(home_x, home_y, calculateKey(home_x, home_y));
-
-//     dstar_active = true;
-// }
-
-// // ---- computeShortestPath -----------------------------------------------------
-// void computeShortestPath() {
-//     while (!pq.empty() &&
-//            ((pq.topKey() < calculateKey(self_x, self_y)) ||
-//             (NODES[self_x][self_y].rhs != NODES[self_x][self_y].g))) {
-
-//         int x, y;
-//         pq.pop(x, y);
-//         Node& n = NODES[x][y];
-
-//         if (n.g > n.rhs) {
-//             n.g = n.rhs;
-//         } else {
-//             n.g = INFINITY;
-//             updateNode(x, y);
-//         }
-
-//         std::vector<std::pair<int,int>> succ;
-//         getNeighbors(x, y, succ);
-//         for (auto& s : succ) updateNode(s.first, s.second);
-//     }
-// }
-
-
-// map_period_ms = max(ceil(max_us / 1000) * 3

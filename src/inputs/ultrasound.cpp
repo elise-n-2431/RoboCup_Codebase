@@ -291,3 +291,9 @@ float ultrasound_get_right_mm()
     return right_distance_mm;
 }
 
+void ultrasound_print() {
+    Serial.print("LEFT: ");
+    Serial.print(left_distance_mm);
+    Serial.print(", RIGHT: ");
+    Serial.println(right_distance_mm);
+}
