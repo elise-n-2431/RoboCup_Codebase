@@ -7,5 +7,6 @@
 
 void proximity_init();
 void proximity_exe();
+void print_proximity();
 
 #endif

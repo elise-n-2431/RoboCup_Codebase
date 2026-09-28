@@ -23,11 +23,13 @@ static HerkulexServo* rightArmServo = nullptr;
 static uint8_t smartServoId = 0;
 
 
-static const uint16_t LEFT_ARM_OPEN_POSITION   = 220;
-static const uint16_t LEFT_ARM_CLOSED_POSITION = 400;
+static const uint16_t LEFT_ARM_OPEN_POSITION   = 250;
+static const uint16_t LEFT_ARM_CLOSED_POSITION = 360; 
 
 static const uint16_t RIGHT_ARM_OPEN_POSITION   = 940;
-static const uint16_t RIGHT_ARM_CLOSED_POSITION = 750;
+static const uint16_t RIGHT_ARM_CLOSED_POSITION = 740; 
+static const uint16_t RIGHT_ARM_CLOSED_POSITION_2 = 680; 
+
 
 static const uint8_t ARM_PLAYTIME = 80;
 
@@ -40,6 +42,8 @@ bool smartservo_init()
     Serial1.begin(SERVO_BAUD);
 
     delay(100);
+
+
 
     leftArmServo = new HerkulexServo(
         herkulexBus,
@@ -57,8 +61,15 @@ bool smartservo_init()
     Serial.print("Right arm servo ID: ");
     Serial.println(RIGHT_ARM_ID);
 
-    // smartservo_arms_open();
-    smartservo_arms_close();
+    smartservo_arms_open();
+    // smartservo_arms_close();
+    // delay(1000);
+
+    // rightArmServo->setPosition(
+    //     RIGHT_ARM_CLOSED_POSITION_2,
+    //     ARM_PLAYTIME
+    // );
+    
 
     return true;
 }

@@ -143,6 +143,9 @@ void loop()
 
     i ++;
 
+    print_proximity();
+
+
     if (!run) {
         return;
     }
