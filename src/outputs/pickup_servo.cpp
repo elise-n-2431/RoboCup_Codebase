@@ -30,9 +30,9 @@ static int targetPulse  = IDLE_US;
 
 static int servoStepUs = 5;
 
-const int SLOW_STEP_US   = 50;
-const int MEDIUM_STEP_US = 60;
-const int FAST_STEP_US   = 70;
+const int SLOW_STEP_US   = 70;
+const int MEDIUM_STEP_US = 80;
+const int FAST_STEP_US   = 90;
 
 const unsigned long SERVO_UPDATE_MS = 10;
 
