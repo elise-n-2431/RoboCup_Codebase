@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # Serial
 # --------------------------------------------------
 
-SERIAL_PORT = "COM32"
+SERIAL_PORT = "COM8"
 BAUD_RATE = 115200
 
 reading_weight = False
@@ -156,7 +156,7 @@ if reading_weight:
 
     weight_plot = ax_weight.imshow(
         weight_map,
-        origin="upper",
+        origin="lower",
         interpolation="nearest",
         vmin=0,
         vmax=1000
@@ -176,7 +176,7 @@ else:
 
 obstacle_plot = ax_obstacle.imshow(
     obstacle_map,
-    origin="upper",
+    origin="lower",
     interpolation="nearest",
     vmin=-7,
     vmax=7
@@ -189,7 +189,7 @@ frontier_cmap = ListedColormap(["#00e5ff"])  # pick any color you like
 
 frontier_plot = ax_obstacle.imshow(
     np.ma.masked_where(~frontier_map, frontier_map),
-    origin="upper",
+    origin="lower",
     interpolation="nearest",
     cmap=frontier_cmap,
     vmin=0,
@@ -204,7 +204,7 @@ position_mask = np.zeros(
 
 position_mask_plot = ax_obstacle.imshow(
     position_mask,
-    origin="upper",
+    origin="lower",
     interpolation="nearest"
 )
 

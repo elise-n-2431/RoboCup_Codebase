@@ -63,6 +63,8 @@ void setup()
     xy_init();
 
     pose_init();
+    map_init();
+
     priority_targets_load_starting_weights();
     // Serial.println("Loaded starting weight coordinates:");
     priority_targets_print(Serial);
@@ -97,7 +99,8 @@ static void checkGo()
     // robot physically starts inside its configured home base.
     
     pose_reset();
-    map_init();
+    // arena_set_start_pose(300, 300, 0);
+
     if (!navigator_start(arena_get_config().pickupEnabled))
     {
         // Serial.println("ERR,GO,navigator_start");
@@ -115,8 +118,8 @@ static void checkGo()
     Serial2.println("CONFIG,LOCKED");
 }
 
-// int max_i = 200;
-// int i = 0;
+int max_i = 100;
+int i = 0;
 
 void loop()
 {
@@ -133,12 +136,12 @@ void loop()
 
     map_update();
 
-    // if (i > max_i) {
-    //     send_map_data();    
-    //     i = 0;
-    // }
+    if (i > max_i) {
+        send_map_data();    
+        i = 0;
+    }
 
-    // i ++;
+    i ++;
 
     if (!run) {
         return;

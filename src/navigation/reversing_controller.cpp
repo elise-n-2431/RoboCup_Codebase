@@ -20,7 +20,7 @@ static const int CRITICAL_REVERSE_POWER = 250;
 static const unsigned long CRITICAL_REVERSE_TIME_MS = 300;
 
 static const float REVERSE_ESCAPE_TURN_DEG = 60.0f;
-static const float CRITICAL_ESCAPE_TURN_DEG = 90.0f;
+static const float CRITICAL_ESCAPE_TURN_DEG = 70.0f;
 
 static const unsigned long WEIGHT_RETRIGGER_BLOCK_MS = 1500;
 
