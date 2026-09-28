@@ -33,11 +33,13 @@ unsigned long timeInCollectState();
 
 static unsigned long navStateEnteredAt = 0;
 static unsigned long collectStateEnteredAt = 0;
+static unsigned long timeAtStart = 0;
 
 const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 900;  
 const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 500; 
 const unsigned long PICKUP_TIMEOUT_MS = 1400;           
 const unsigned long RETURN_TIMEOUT_MS = 500;
+const unsigned long HOMING_TIME_MS = 75000;
 
 const unsigned long OPENING_TIMEOUT_MS = 6000;
 static const unsigned long DROPOFF_DRIVE_AWAY_START_MS = 3000;
@@ -207,6 +209,15 @@ unsigned long timeInCollectState()
     return millis() - collectStateEnteredAt;
 }
 
+unsigned long total_time()
+{
+    return millis() - timeAtStart;
+}
+
+void set_time_at_start() {
+    timeAtStart = millis();
+}
+
 //prinout for the gui 
 static const char* stateFlagName(bool* flag)
 {
@@ -222,6 +233,7 @@ static const char* stateFlagName(bool* flag)
     if (flag == &STATE_FLAGS.target_weight_onboard) return "target_weight_onboard";
     if (flag == &STATE_FLAGS.dummy_identified) return "dummy_identified";
     if (flag == &STATE_FLAGS.metal_identified) return "metal_identified";
+    if (flag == &STATE_FLAGS.home_time) return "home_time";
 
     if (flag == &STATE_FLAGS.weight_in_entrance) return "weight_in_entrance";
     if (flag == &STATE_FLAGS.magnet_hit) return "magnet_hit";
@@ -275,7 +287,6 @@ static const char* navStateName(NavState state)
     switch (state)
     {
         case STATIONARY: return "STATIONARY";
-        case LEAVING:     return "LEAVING";
         case ROAMING:     return "ROAMING";
         case PURSUIT:     return "PURSUIT";
         case SORTING:     return "SORTING";
@@ -367,6 +378,10 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
 
 void check_timers() { 
     // Handles time delays in between states, raises flags when time has elapsed
+
+    if (total_time() >= HOMING_TIME_MS) {
+        setStateFlag(&STATE_FLAGS.home_time);
+    }
     
     switch (current_collect_state) { 
         case LOWERING_VERT: 
@@ -423,6 +438,11 @@ void updateStateMachine() {
         reverseReturnState = current_nav_state;
         checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
     }
+
+    if (current_nav_state != COLLECTING && current_nav_state != SORTING) {
+        // switch regardless of nav state, once finished collecting
+        checkChangeNavState(HOMING, &STATE_FLAGS.home_time);
+    }
     
     switch (current_nav_state) {
         case STATIONARY:
@@ -430,43 +450,14 @@ void updateStateMachine() {
             // Enough weights onboard -> take them home.
             if (STATE_FLAGS.target_weight_onboard)
             {
-                checkChangeNavState(
-                    HOMING,
-                    &STATE_FLAGS.target_weight_onboard
-                );
-            }
-
-            // Explicitly leaving the home base after a drop-off.
-            else if (STATE_FLAGS.leaving_home)
-            {
-                checkChangeNavState(
-                    LEAVING,
-                    &STATE_FLAGS.leaving_home
-                );
+                checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
             }
 
             // Successful pickup but we still want more weights.
             // Resume normal roaming/D* navigation.
             else if (STATE_FLAGS.not_target_weight_onboard)
             {
-                checkChangeNavState(
-                    ROAMING,
-                    &STATE_FLAGS.not_target_weight_onboard
-                );
-            }
-
-            break;
-        }
-
-
-        case LEAVING:
-        {
-            if (STATE_FLAGS.calibrated_after_lip)
-            {
-                checkChangeNavState(
-                    ROAMING,
-                    &STATE_FLAGS.calibrated_after_lip
-                );
+                checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
             }
 
             break;
@@ -474,6 +465,9 @@ void updateStateMachine() {
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
+            if (STATE_FLAGS.one_plus_onboard) {
+                checkChangeNavState(HOMING, &STATE_FLAGS.home_reached);
+            }
             break;
 
         case PURSUIT:
@@ -483,19 +477,15 @@ void updateStateMachine() {
             break;
 
         case SORTING:
-            if (STATE_FLAGS.dummy_identified)
+            if (STATE_FLAGS.dummy_identified || STATE_FLAGS.home_reached) // don't pickup weights at home
             {
                 rejected_weights_add_current();
 
                 smartservo_arms_open();
 
-                reverseReturnState =
-                    ROAMING;
+                reverseReturnState = ROAMING;
 
-                checkChangeNavState(
-                    REVERSING,
-                    &STATE_FLAGS.dummy_identified
-                );
+                checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
             } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 
@@ -514,12 +504,12 @@ void updateStateMachine() {
             }
             break;
         }
+
         case CLOSING:
             if (STATE_FLAGS.closing_complete)
             {
                 checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
                 setStateFlag(&STATE_FLAGS.dropoff_complete);
-                setStateFlag(&STATE_FLAGS.leaving_home);
             }
             break;
 

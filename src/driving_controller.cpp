@@ -197,6 +197,7 @@ static int clearanceValue(int distance)
     return distance;
 }
 
+int clearance_diff = 10;
 
 static int getFrontClearance()
 {
@@ -204,29 +205,32 @@ static int getFrontClearance()
     int innerLeft = clearanceValue(tof_get_nav_inner_left());
     int innerRight = clearanceValue(tof_get_nav_inner_right());
     int outerRight = clearanceValue(tof_get_nav_outer_right());
+    int topLeft = clearanceValue(tof_get_weight_left_top()) + clearance_diff;
+    int topRight = clearanceValue(tof_get_weight_right_top()) + clearance_diff;
 
     return min(
-        min(outerLeft, innerLeft),
-        min(innerRight, outerRight)
+        min(min(outerLeft, innerLeft),
+        min(innerRight, outerRight)),
+        min(topLeft, topRight)
     );
 }
 
 
 static int getLeftClearance()
 {
-    return min(
+    return min(min(
         clearanceValue(tof_get_nav_outer_left()),
-        clearanceValue(tof_get_nav_inner_left())
-    );
+        clearanceValue(tof_get_nav_inner_left())),
+        clearanceValue(tof_get_weight_left_top()) + clearance_diff);
 }
 
 
 static int getRightClearance()
 {
-    return min(
+    return min(min(
         clearanceValue(tof_get_nav_inner_right()),
-        clearanceValue(tof_get_nav_outer_right())
-    );
+        clearanceValue(tof_get_nav_outer_right())),
+        clearanceValue(tof_get_weight_right_top()));
 }
 
 

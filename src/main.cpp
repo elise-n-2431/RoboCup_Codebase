@@ -47,6 +47,8 @@ void setup()
     imu_init();
     tof_init();
     limit_switch_init();
+
+
     proximity_init();
 
     motor_control_init();
@@ -110,6 +112,7 @@ static void checkGo()
 
     arena_begin_run();
     run = true;
+    set_time_at_start(); // for state timer (homing at 1.45min, off at 2min)
 
     // Serial.println("RUN,STARTED");
     Serial2.println("RUN,STARTED");
