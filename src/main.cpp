@@ -137,7 +137,7 @@ void loop()
     map_update();
 
     if (i > max_i) {
-        send_map_data();    
+        // send_map_data();    
         i = 0;
     }
 

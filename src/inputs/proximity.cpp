@@ -9,7 +9,7 @@ const byte PROX_PIN = 20;
 const int CONSECUTIVE_HITS = 8;
 int count_metal = 0;
 int count_dummy = 0;
-
+int cutoff_var = 500;
 
 void proximity_init() {
   pinMode(PROX_PIN, INPUT);
@@ -25,7 +25,7 @@ void proximity_exe()
         return;
     }
 
-    if (analogRead(PROX_PIN) < 500)
+    if (analogRead(PROX_PIN) < cutoff_var)
     {
         count_metal++;
         count_dummy = 0;
@@ -56,3 +56,7 @@ void proximity_exe()
     }
 }
 
+void print_proximity() {
+    Serial.println(analogRead(PROX_PIN) < cutoff_var);
+    Serial.println(analogRead(PROX_PIN));
+}
