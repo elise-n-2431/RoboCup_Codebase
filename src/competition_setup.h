@@ -9,7 +9,7 @@ enum StartingBase
 
 
 constexpr StartingBase STARTING_BASE =
-    LOWER_BASE;
+    UPPER_BASE;
 
 
 
@@ -22,8 +22,12 @@ struct StartingWeight
 
 static const StartingWeight STARTING_WEIGHTS[] =
 {
-    {1200.0f, 1200.0f },
-    {1800.0f,1200.0f}
+    {1200.0f, 2100.0f },
+    {2000.0f, 1200.0f},
+    {2800.0f, 2100.0f},
+    {3000.0f,1200.0f},
+    {4000.0f, 1200.0f},
+    {4500.0f,2100.0f}
 
 };
 

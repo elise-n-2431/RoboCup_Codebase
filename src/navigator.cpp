@@ -19,6 +19,7 @@
 #include "pose.h"
 #include "inputs/tof_expander.h"
 #include "outputs/DC_motors.h"
+#include "inputs/encoders.h"
 
 // ============================================================
 // NAVIGATOR STATE
@@ -32,6 +33,24 @@ static NavState lastNavState = STATIONARY;
 static unsigned long turnStartedAt = 0;
 
 static const unsigned long NAV_TURN_TIMEOUT_MS = 8000;
+
+static const unsigned long
+    NAV_STUCK_TIMEOUT_MS = 20000;
+
+static unsigned long
+    lastPhysicalMotionAt = 0;
+
+static float
+    lastPhysicalLeftMm = 0.0f;
+
+static float
+    lastPhysicalRightMm = 0.0f;
+
+static float
+    lastPhysicalHeading = 0.0f;
+
+static NavState
+    motionWatchState = STATIONARY;
 
 
 // ============================================================
@@ -234,6 +253,160 @@ static bool checkTurnTimeout(NavState nav)
 }
 
 
+static float headingChange(
+    float a,
+    float b)
+{
+    float diff =
+        fabsf(a - b);
+
+    if (diff > 180.0f)
+    {
+        diff =
+            360.0f - diff;
+    }
+
+    return diff;
+}
+
+
+static void resetMotionWatchdog(
+    NavState nav)
+{
+    lastPhysicalMotionAt =
+        millis();
+
+    lastPhysicalLeftMm =
+        encoders_get_left_distance_mm();
+
+    lastPhysicalRightMm =
+        encoders_get_right_distance_mm();
+
+    lastPhysicalHeading =
+        imu_get_heading();
+
+    motionWatchState =
+        nav;
+}
+
+
+static bool checkMotionWatchdog(
+    NavState nav)
+{
+    // Only watchdog states in which the chassis
+    // should eventually be doing something.
+    if (nav != ROAMING &&
+        nav != PURSUIT &&
+        nav != HOMING)
+    {
+        resetMotionWatchdog(nav);
+        return false;
+    }
+
+    // Don't back away after successfully docking at home.
+    if (nav == HOMING &&
+        homing_is_docking())
+    {
+        resetMotionWatchdog(nav);
+        return false;
+    }
+
+    // New navigation state = start a fresh timer.
+    if (nav != motionWatchState ||
+        lastPhysicalMotionAt == 0)
+    {
+        resetMotionWatchdog(nav);
+        return false;
+    }
+
+    float leftMm =
+        encoders_get_left_distance_mm();
+
+    float rightMm =
+        encoders_get_right_distance_mm();
+
+    float heading =
+        imu_get_heading();
+
+    bool encoderMoved =
+        fabsf(
+            leftMm -
+            lastPhysicalLeftMm
+        ) >= 25.0f
+        ||
+        fabsf(
+            rightMm -
+            lastPhysicalRightMm
+        ) >= 25.0f;
+
+    bool headingMoved =
+        headingChange(
+            heading,
+            lastPhysicalHeading
+        ) >= 5.0f;
+
+    // Any genuine physical movement means the
+    // navigation system is alive.
+    if (encoderMoved ||
+        headingMoved)
+    {
+        resetMotionWatchdog(nav);
+        return false;
+    }
+
+    if (millis() -
+            lastPhysicalMotionAt <
+        NAV_STUCK_TIMEOUT_MS)
+    {
+        return false;
+    }
+
+    // =================================================
+    // NOTHING PHYSICALLY MOVED FOR 20 SECONDS
+    // =================================================
+
+    debugNav.print(
+        "NAV_EVENT,"
+    );
+
+    debugNav.print(
+        millis()
+    );
+
+    debugNav.print(
+        ",STUCK_WATCHDOG,"
+    );
+
+    debugNav.println(
+        getNavStateName()
+    );
+
+    motor_control_stop();
+
+    // If pursuit got stuck, abandon that weight before
+    // escaping so we don't immediately resume bad pursuit.
+    if (nav == PURSUIT)
+    {
+        setStateFlag(
+            &STATE_FLAGS.target_lost
+        );
+    }
+
+    reversing_set_reason(
+        REVERSE_NORMAL
+    );
+
+    setStateFlag(
+        &STATE_FLAGS.reverse_triggered
+    );
+
+    // Prevent it firing repeatedly while the state machine
+    // is transitioning into REVERSING.
+    resetMotionWatchdog(nav);
+
+    return true;
+}
+
 // ============================================================
 // MAIN NAVIGATOR
 // ============================================================
@@ -262,6 +435,11 @@ void navigator_exe()
 
         navigator_stop();
 
+        return;
+    }
+
+    if (checkMotionWatchdog(nav))
+    {
         return;
     }
 

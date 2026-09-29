@@ -66,6 +66,13 @@ static const float OPEN_SPACE_MAX_DISTANCE_MM = 1000.0f;
 static const float OPEN_SPACE_PREVIOUS_EXCLUSION_MM = 300.0f;
 static const unsigned long OPEN_SPACE_RETRY_MS = 1000;
 
+
+static const unsigned long
+    FRONTIER_RETRY_BLOCK_MS = 3000;
+
+static unsigned long
+    frontierRetryBlockedUntil = 0;
+
 // Rotate only this much, allow the map to update,
 // then ask D* for a fresh route.
 static const float DSTAR_TURN_STEP_DEG = 30.0f;
@@ -1256,16 +1263,17 @@ void roaming_update()
             // always explore a frontier.
             // -----------------------------------------------
 
-            if (hasFrontierTarget)
-            {
-                updateFrontierTarget(
-                    frontierX,
-                    frontierY
-                );
+        if (hasFrontierTarget &&
+            millis() >=
+                frontierRetryBlockedUntil)
+        {
+            updateFrontierTarget(
+                frontierX,
+                frontierY
+            );
 
-                break;
-            }
-
+            break;
+        }
 
             // -----------------------------------------------
             // No target and no frontier currently available.
