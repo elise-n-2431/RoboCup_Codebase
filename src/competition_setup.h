@@ -22,12 +22,8 @@ struct StartingWeight
 
 static const StartingWeight STARTING_WEIGHTS[] =
 {
-     /*{2100.0f, 1500.0f },
-     {2450.0f, 1500.0f},
-    {600.0f, 1500.0f},
-    {2100.0f, 2400.0f },
-     {2450.0f, 2400.0f},
-    {600.0f, 2400.0f}*/
+    {1800.0f, 2100.0f },
+    {1200.0f,1200.0f}
 };
 
 

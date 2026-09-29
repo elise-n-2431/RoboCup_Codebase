@@ -35,5 +35,6 @@ void readClearances(
 
 void checkToFI2CHealth();
 bool allToFsInvalid();
+bool resetToFSensors();
 
 #endif
