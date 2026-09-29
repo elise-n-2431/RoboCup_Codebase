@@ -37,7 +37,7 @@ static const int GEO_CENTRE_SAMPLES_REQUIRED = 2;
 // The turn stops early as soon as the centre ToF gives two
 // consecutive plausible readings.
 static const float GEO_SIDE_ACQUIRE_MAX_TURN_DEG = 45.0f;
-static const int WEIGHT_STOP_DISTANCE_MM = 130;
+static const int WEIGHT_STOP_DISTANCE_MM = 110;
 static const int WEIGHT_ENTRANCE_SAMPLES_REQUIRED = 2;
 static const float GEO_CLOSE_LOCK_APPROACH_MM = 15.0f;
 static const int WEIGHT_SLOW_DISTANCE_MM = 200;
@@ -308,31 +308,25 @@ FLASHMEM static bool checkGeoCentre(bool &newSample, int &evidenceCount)
 
     if (evidenceCount < GEO_CENTRE_SAMPLES_REQUIRED) return false;
 
-    float scanOffset = wrap180(
-        imu_get_heading() - pursuitScanOriginHeading);
-    debugNav.print("GEO_LOCK,");
-    debugNav.print(centreDistance);
-    debugNav.print(",");
-    debugNav.println(scanOffset);
-float turnedDeg =
-    wrap180(
-        imu_get_heading() -
-        pursuitEntryHeading
+    float turnedDeg =
+        wrap180(
+            imu_get_heading() -
+            pursuitEntryHeading
+        );
+
+    debugNav.print(
+        "GEO_LOCK,"
     );
 
-debugNav.print(
-    "GEO_LOCK,"
-);
+    debugNav.print(
+        centreDistance
+    );
 
-debugNav.print(
-    centreDistance
-);
+    debugNav.print(",");
 
-debugNav.print(",");
-
-debugNav.println(
-    turnedDeg
-);
+    debugNav.println(
+        turnedDeg
+    );
 
     motor_control_stop();
     weight_detection_reset();
@@ -950,7 +944,6 @@ void pursuit_reset()
 
     pursuitEntryHeading = 0.0f;
     pursuitScanOriginHeading = 0.0f;
-    geoPredictedHeading = 0.0f;
     geoRequestedTurnDeg = 0.0f;
     pursuitScanIndex = 0;
 

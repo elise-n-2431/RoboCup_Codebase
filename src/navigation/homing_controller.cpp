@@ -637,16 +637,56 @@ void homing_update()
                 break;
             }
 
-            int wallDistance = homeClearanceValue(homeRecoveryWallLeft? outerLeft: outerRight);
-            int band = wallDistance < HOME_RECOVERY_WALL_NEAR_MM ? -1
-                     : wallDistance > HOME_RECOVERY_WALL_FAR_MM ? 1 : 0;
-            if (band != homeRecoveryWallBand)
-            {
-                homeRecoveryWallBand = band;
-                debugNav.print("HOME_RECOVERY_WALL,");
-                debugNav.print(homeRecoveryWallLeft ? "LEFT," : "RIGHT,");
-                debugNav.println(wallDistance);
-            }
+int rawWallDistance =
+    homeRecoveryWallLeft
+    ? outerLeft
+    : outerRight;
+
+// Preserve the previous steering decision if this sample
+// is stale/invalid.
+int band =
+    homeRecoveryWallBand == 99
+    ? 0
+    : homeRecoveryWallBand;
+
+if (rawWallDistance >= 0)
+{
+    // 0 = live sensor with no return, so treat as far/clear.
+    int wallDistance =
+        homeClearanceValue(
+            rawWallDistance
+        );
+
+    band =
+        wallDistance <
+            HOME_RECOVERY_WALL_NEAR_MM
+        ? -1
+        : wallDistance >
+            HOME_RECOVERY_WALL_FAR_MM
+            ? 1
+            : 0;
+
+    if (band !=
+        homeRecoveryWallBand)
+    {
+        homeRecoveryWallBand =
+            band;
+
+        debugNav.print(
+            "HOME_RECOVERY_WALL,"
+        );
+
+        debugNav.print(
+            homeRecoveryWallLeft
+            ? "LEFT,"
+            : "RIGHT,"
+        );
+
+        debugNav.println(
+            wallDistance
+        );
+    }
+}
 
             if (front > 0 && front < HOME_RECOVERY_FRONT_BLOCK_MM)
             {
