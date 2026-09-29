@@ -22,5 +22,19 @@ int tof_get_weight_right_bottom();
 int tof_get_weight_middle();
 
 void tof_print_readings(Stream &port);
+void readClearances(
+    int &outerLeft,
+    int &innerLeft,
+    int &upperLeft,
+    int &innerRight,
+    int &outerRight,
+    int &upperRight,
+    int &front,
+    int &leftClearance,
+    int &rightClearance);
+
+void checkToFI2CHealth();
+bool allToFsInvalid();
+bool resetToFSensors();
 
 #endif

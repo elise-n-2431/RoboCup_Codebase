@@ -20,7 +20,6 @@ void print_target();
 bool cell_too_close_to_obstacle(int, int);
 void find_frontier();
 void calc_frontier_target();
-float get_front_clearance_mm();
 bool get_frontier_target(float &x_mm, float &y_mm);
 
 bool check_free(int x, int y);

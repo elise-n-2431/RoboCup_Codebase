@@ -157,23 +157,6 @@ float get_frontier_world_y_mm()
     return (target.centre.y * CELL_SIZE_MM + CELL_SIZE_MM / 2.0f) - MAP_ORIGIN_Y_MM;
 }
 
-float get_front_clearance_mm()
-{
-    // smallest of the two inner (most forward-facing) sensors
-    int temp_o_l  = dist_o_l;
-    int temp_i_l  = dist_i_l;
-    int temp_i_r  = dist_i_r;
-    int temp_o_r  = dist_o_r;
-
-
-    if (temp_o_l <= 0)  temp_o_l  = 1000;
-    if (temp_i_l <= 0)  temp_i_l  = 1000;
-    if (temp_i_r <= 0)  temp_i_r  = 1000;
-    if (temp_o_r <= 0)  temp_o_r  = 1000;
-
-    return (float)std::min({temp_o_l, temp_i_l, temp_i_r, temp_o_r});
-}
-
 void print_target() {
     Serial.print("TARGET: ");
     Serial.print(target.centre.x);
@@ -949,7 +932,7 @@ void map_correction()
     {
         try_wall_correction(
             dist_o_l,
-            40.0f + i
+            50.0f + i
         );
 
         try_wall_correction(
@@ -964,7 +947,7 @@ void map_correction()
 
         try_wall_correction(
             dist_o_r,
-            -40.0f + i
+            -50.0f + i
         );
     }
 
@@ -1002,7 +985,7 @@ void interpret_tof()
 
         update_obstacle_map(
             dist_o_l,
-            40.0f + i
+            50.0f + i
         );
 
         dist_i_l =
@@ -1032,7 +1015,7 @@ void interpret_tof()
 
         update_obstacle_map(
             dist_o_r,
-            -40.0f + i
+            -50.0f + i
         );
     }
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));

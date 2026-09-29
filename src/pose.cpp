@@ -9,6 +9,7 @@
 #include "inputs/xy_sensor.h"
 #include "arena_config.h"
 #include "debug_print.h"
+#include "driving_controller.h"
 
 // ============================================================
 // POSE

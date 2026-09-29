@@ -32,7 +32,7 @@ static MotorControlMode controlMode = CONTROL_IDLE;
 // GENERAL CONTROL TUNING
 // ============================================================
 
-static float TURN_KP = 10.0f;
+static float TURN_KP = 8.0f;
 
 static float POINT_KP = 4.0f;
 
@@ -55,10 +55,13 @@ static const int MAX_POINT_CORRECTION = 260;
 static int driveBasePower = 420;
 
 static const int MIN_TURN_POWER = 300;
+static const int FINE_TURN_POWER = 240;
 static const int MAX_MOTOR_POWER = 450;
 
 static const float ANGLE_TOLERANCE_DEG = 3.0f;
 static const unsigned long SETTLE_TIME_MS = 100;
+static const float DSTAR_TURN_TOLERANCE_DEG = 6.0f;
+static const float GEO_TURN_TOLERANCE_DEG = 1.5f;
 
 static const int TURN_SIGN = 1;
 static const int DRIVE_STEER_SIGN = 1;
@@ -74,12 +77,14 @@ static const unsigned long FINE_TURN_OFF_MS = 50;
 
 static unsigned long fineTurnPhaseStarted = 0;
 static bool fineTurnPowerOn = true;
+static bool coarseTurnActive = false;
+static float activeTurnToleranceDeg = ANGLE_TOLERANCE_DEG;
 
 
 static float ARRIVAL_TOLERANCE_MM = 40.0f;
 static float SLOWDOWN_RADIUS_MM = 150.0f;
 
-static const int MIN_DRIVE_TO_POINT_POWER = 260;
+static const int MIN_DRIVE_TO_POINT_POWER = 330;
 
 
 // Enter avoidance when something gets this close.
@@ -197,6 +202,7 @@ static int clearanceValue(int distance)
     return distance;
 }
 
+int clearance_diff = 10;
 
 static int getFrontClearance()
 {
@@ -204,29 +210,32 @@ static int getFrontClearance()
     int innerLeft = clearanceValue(tof_get_nav_inner_left());
     int innerRight = clearanceValue(tof_get_nav_inner_right());
     int outerRight = clearanceValue(tof_get_nav_outer_right());
+    int topLeft = clearanceValue(tof_get_weight_left_top()) + clearance_diff;
+    int topRight = clearanceValue(tof_get_weight_right_top()) + clearance_diff;
 
     return min(
-        min(outerLeft, innerLeft),
-        min(innerRight, outerRight)
+        min(min(outerLeft, innerLeft),
+        min(innerRight, outerRight)),
+        min(topLeft, topRight)
     );
 }
 
 
 static int getLeftClearance()
 {
-    return min(
+    return min(min(
         clearanceValue(tof_get_nav_outer_left()),
-        clearanceValue(tof_get_nav_inner_left())
-    );
+        clearanceValue(tof_get_nav_inner_left())),
+        clearanceValue(tof_get_weight_left_top()) + clearance_diff);
 }
 
 
 static int getRightClearance()
 {
-    return min(
+    return min(min(
         clearanceValue(tof_get_nav_inner_right()),
-        clearanceValue(tof_get_nav_outer_right())
-    );
+        clearanceValue(tof_get_nav_outer_right())),
+        clearanceValue(tof_get_weight_right_top()));
 }
 
 
@@ -245,6 +254,8 @@ static void clearPointTarget()
 void motor_control_init()
 {
     controlMode = CONTROL_IDLE;
+    coarseTurnActive = false;
+    activeTurnToleranceDeg = ANGLE_TOLERANCE_DEG;
 
     targetHeading = 0.0f;
     currentError = 0.0f;
@@ -263,6 +274,8 @@ void motor_control_init()
 
 void motor_control_turn_relative(float angle)
 {
+    coarseTurnActive = false;
+    activeTurnToleranceDeg = ANGLE_TOLERANCE_DEG;
     clearPointTarget();
 
     float currentHeading = imu_get_heading();
@@ -285,9 +298,32 @@ void motor_control_turn_relative(float angle)
     debugMotor.println(targetHeading);
 }
 
+void motor_control_turn_relative_coarse(float angle)
+{
+    motor_control_turn_relative(angle);
+    coarseTurnActive = true;
+    activeTurnToleranceDeg = DSTAR_TURN_TOLERANCE_DEG;
+}
+
+void motor_control_turn_relative_homing(float angle)
+{
+    motor_control_turn_relative(angle);
+    coarseTurnActive = true;
+    // Finish before the 240-power fine zone, which can stall near home.
+    activeTurnToleranceDeg = FINE_TURN_ZONE_DEG;
+}
+
+void motor_control_turn_relative_geo(float angle)
+{
+    motor_control_turn_relative(angle);
+    activeTurnToleranceDeg = GEO_TURN_TOLERANCE_DEG;
+}
+
 
 void motor_control_turn_to(float heading)
 {
+    coarseTurnActive = false;
+    activeTurnToleranceDeg = ANGLE_TOLERANCE_DEG;
     clearPointTarget();
 
     float currentHeading = imu_get_heading();
@@ -351,7 +387,7 @@ static void updateTurnControl(
     float absError = fabsf(currentError);
 
     // Target reached.
-    if (absError <= ANGLE_TOLERANCE_DEG)
+    if (absError <= activeTurnToleranceDeg)
     {
         setMotorPower(0, 0);
 
@@ -363,9 +399,11 @@ static void updateTurnControl(
             toleranceStart = currentTime;
         }
 
-        if (currentTime - toleranceStart >= SETTLE_TIME_MS)
+        if (coarseTurnActive ||
+            currentTime - toleranceStart >= SETTLE_TIME_MS)
         {
             controlMode = CONTROL_IDLE;
+            coarseTurnActive = false;
 
             debugMotor.print("Turn complete. Heading: ");
             debugMotor.println(currentHeading);
@@ -419,7 +457,7 @@ static void updateTurnControl(
         }
 
         int turnPower =
-            MIN_TURN_POWER *
+            FINE_TURN_POWER *
             direction *
             TURN_SIGN;
 
@@ -985,6 +1023,8 @@ void motor_control_drive_to_point(
 void motor_control_stop()
 {
     controlMode = CONTROL_IDLE;
+    coarseTurnActive = false;
+    activeTurnToleranceDeg = ANGLE_TOLERANCE_DEG;
 
     clearPointTarget();
 

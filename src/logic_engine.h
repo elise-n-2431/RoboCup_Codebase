@@ -6,11 +6,12 @@
 #ifndef LOGIC_ENGINE_H
 #define LOGIC_ENGINE_H
 
-const int NUM_WEIGHTS = 2;
+const int NUM_WEIGHTS = 3;
 const int MAX_ITERATIONS = 3;
 void choose_action();
 void increment_weights();
 void reset_weights();
+int get_weight_count();
 void reset_collection_iterations();
 void logic_exe();
 

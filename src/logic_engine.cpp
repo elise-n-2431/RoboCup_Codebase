@@ -47,11 +47,18 @@ void increment_weights()
     priority_targets_print(
         Serial2
     );
+
+    setStateFlag(&STATE_FLAGS.one_plus_onboard);
 }
 
 void reset_weights()
 {
     current_weights = 0;
+}
+
+int get_weight_count()
+{
+    return current_weights;
 }
 
 void reset_collection_iterations()

@@ -5,7 +5,7 @@
 #include <VL53L1X.h>
 #include "debug_print.h"
 #include "tof_expander.h"
-
+#include "driving_controller.h"
 
 static SX1509 tofExpander;
 
@@ -19,15 +19,13 @@ static VL53L0X tof0;
 static VL53L0X tof5;
 static VL53L0X tof6;
 static VL53L0X tof7;
-static VL53L0X tof8;
 
 // black sensors
 static VL53L1X tof1;
 static VL53L1X tof2;
 static VL53L1X tof3;
 static VL53L1X tof4;
-
-
+static VL53L0X tof8;
 
 //found from testing
 
@@ -85,6 +83,93 @@ static bool tofNoReturn[NUM_TOF_SENSORS];
 static unsigned long tofLastReadingAt[NUM_TOF_SENSORS];
 static uint32_t tofSampleNumber[NUM_TOF_SENSORS];
 
+// Number of consecutive bad checks before attempting recovery
+static constexpr uint8_t TOF_I2C_FAIL_LIMIT = 5;
+
+// Only check every 100 ms
+static constexpr uint32_t TOF_I2C_CHECK_INTERVAL_MS = 100;
+
+// Don't repeatedly call Wire.begin() if things stay dead
+static constexpr uint32_t TOF_I2C_RECOVERY_COOLDOWN_MS = 3000;
+
+static uint8_t tofI2CFailCount = 0;
+static uint32_t lastToFI2CCheck = 0;
+static uint32_t lastToFI2CRecovery = 0;
+
+
+static int countInvalidToFs()
+{
+    int failed = 0;
+
+    for (int i = 0; i < NUM_TOF_SENSORS; i++)
+    {
+        if (tof_get_distance(i) == -1)
+        {
+            failed++;
+        }
+    }
+
+    return failed;
+}
+
+bool allToFsInvalid()
+{   
+    return countInvalidToFs() >= 5;
+}
+
+void checkToFI2CHealth()
+{
+    uint32_t now = millis();
+
+    // Only evaluate every 100 ms
+    if ((now - lastToFI2CCheck) < TOF_I2C_CHECK_INTERVAL_MS)
+        return;
+
+    lastToFI2CCheck = now;
+
+    if (allToFsInvalid())
+    {
+        tofI2CFailCount++;
+
+        if (tofI2CFailCount == 1)
+        {
+            debugTof.println("TOF_I2C: possible bus failure");
+        }
+
+        if (tofI2CFailCount >= TOF_I2C_FAIL_LIMIT)
+        {
+            // Prevent repeated Wire.begin() calls
+            if (now - lastToFI2CRecovery >= TOF_I2C_RECOVERY_COOLDOWN_MS)
+{
+    debugTof.println("FAULT,TOF_RESET");
+
+    motor_control_stop();
+
+    bool recovered = resetToFSensors();
+
+    if (recovered)
+    {
+        debugTof.println("TOF_RESET: SUCCESS");
+    }
+    else
+    {
+        debugTof.println("TOF_RESET: FAILED");
+    }
+
+    lastToFI2CRecovery = millis();
+    lastToFI2CCheck = millis();
+    tofI2CFailCount = 0;
+}
+
+            tofI2CFailCount = 0;
+        }
+    }
+    else
+    {
+        // At least a couple sensors are responding again
+        tofI2CFailCount = 0;
+    }
+}
 
 static void shutdownAllToFs()
 {
@@ -144,7 +229,7 @@ static bool initialiseL1(VL53L1X &sensor, int xshutPin, int address, int number)
 
     sensor.setAddress(address);
     sensor.setDistanceMode(VL53L1X::Short);
-    sensor.setROISize(8, 8);
+    sensor.setROISize(16, 16);
     sensor.setMeasurementTimingBudget(50000);
     sensor.startContinuous(50);
     sensor.setTimeout(5);
@@ -349,7 +434,7 @@ void tof_update()
     updateL0(tof5, 5, NAV_TOF_MAX_MM);
     updateL0(tof6, 6, NAV_TOF_MAX_MM);
     updateL0(tof7, 7, NAV_TOF_MAX_MM);
-    updateL0(tof8, 8, NAV_TOF_MAX_MM);
+    updateL0(tof8, 8, WEIGHT_TOF_MAX_MM);
     static unsigned long lastTofDebugAt = 0;
 
     if (millis() - lastTofDebugAt >= 200)
@@ -471,7 +556,6 @@ int tof_get_weight_right_bottom()
 }
 
 
-
 void tof_print_readings(Stream &port)
 {
     port.print("WEIGHT: ");
@@ -490,4 +574,181 @@ void tof_print_readings(Stream &port)
 
     port.print("  MIDDLE=");
     port.println(tof_get_weight_middle());
+}
+
+
+
+
+static int clearanceValue(int distance)
+{
+    if (distance <= 0)
+    {
+        return 1200;
+    }
+
+    return distance;
+}
+
+
+void readClearances(
+    int &outerLeft,
+    int &innerLeft,
+    int &upperLeft,
+    int &innerRight,
+    int &outerRight,
+    int &upperRight,
+    int &front,
+    int &leftClearance,
+    int &rightClearance)
+{
+    outerLeft =
+        clearanceValue(
+            tof_get_nav_outer_left()
+        );
+
+    innerLeft =
+        clearanceValue(
+            tof_get_nav_inner_left()
+        );
+
+    upperLeft =
+        clearanceValue(
+            tof_get_weight_left_top()
+        );
+
+    innerRight =
+        clearanceValue(
+            tof_get_nav_inner_right()
+        );
+
+    outerRight =
+        clearanceValue(
+            tof_get_nav_outer_right()
+        );
+    
+    upperRight =
+        clearanceValue(
+            tof_get_weight_right_top()
+        );
+
+
+    front = min(min(
+        innerLeft,
+        innerRight), min(
+        outerLeft,
+        outerRight)
+    );
+
+    leftClearance = min(min(
+        outerLeft,
+        innerLeft
+    ),  upperLeft
+    );
+
+    rightClearance = min(min(
+        outerRight,
+        innerRight
+    ),  upperRight
+    );
+}
+
+static bool resetToFSensors()
+{
+    debugTof.println("TOF_RESET: BEGIN");
+
+    // -------------------------------------------------
+    // 1. Reset Pololu software objects
+    //    This restores their internal address to 0x29.
+    // -------------------------------------------------
+
+    tof0 = VL53L0X();
+
+    tof1 = VL53L1X();
+    tof2 = VL53L1X();
+    tof3 = VL53L1X();
+    tof4 = VL53L1X();
+
+    tof5 = VL53L0X();
+    tof6 = VL53L0X();
+    tof7 = VL53L0X();
+
+    tof8 = VL53L0X();
+
+
+    // -------------------------------------------------
+    // 2. Hardware reset ALL ToFs
+    // -------------------------------------------------
+
+    shutdownAllToFs();
+
+    delay(20);
+
+
+    // -------------------------------------------------
+    // 3. Clear software reading state
+    // -------------------------------------------------
+
+    for (int i = 0; i < NUM_TOF_SENSORS; i++)
+    {
+        tofOnline[i] = false;
+        tofReadingValid[i] = false;
+        tofNoReturn[i] = false;
+
+        tofRawDistances[i] = -1;
+        tofFilteredDistances[i] = -1;
+        tofRangeStatus[i] = -1;
+
+        tofFilterIndex[i] = 0;
+        tofFilterCount[i] = 0;
+
+        tofLastReadingAt[i] = 0;
+        tofSampleNumber[i] = 0;
+    }
+
+
+    // -------------------------------------------------
+    // 4. Bring them back ONE AT A TIME and re-address
+    // -------------------------------------------------
+
+    tofOnline[0] =
+        initialiseL0(tof0, TOF0_XSHUT, 0x30, 0);
+
+    tofOnline[1] =
+        initialiseL1(tof1, TOF1_XSHUT, 0x31, 1);
+
+    tofOnline[2] =
+        initialiseL1(tof2, TOF2_XSHUT, 0x32, 2);
+
+    tofOnline[3] =
+        initialiseL1(tof3, TOF3_XSHUT, 0x33, 3);
+
+    tofOnline[4] =
+        initialiseL1(tof4, TOF4_XSHUT, 0x34, 4);
+
+    tofOnline[5] =
+        initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
+
+    tofOnline[6] =
+        initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
+
+    tofOnline[7] =
+        initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
+
+    tofOnline[8] =
+        initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
+
+
+    int online = 0;
+
+    for (int i = 0; i < NUM_TOF_SENSORS; i++)
+    {
+        if (tofOnline[i])
+            online++;
+    }
+
+    debugTof.print("TOF_RESET: DONE ");
+    debugTof.print(online);
+    debugTof.println("/9");
+
+    return online >= 8;
 }

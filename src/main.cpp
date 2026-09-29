@@ -16,7 +16,7 @@
 #include "inputs/tof_expander.h"
 #include "inputs/proximity.h"
 #include "inputs/limit_switch.h"
-#include "inputs/xy_sensor.h"
+// #include "inputs/xy_sensor.h"
 #include "inputs/encoders.h"
 #include "inputs/colour_sensor.h"
 #include "inputs/imu.h"
@@ -31,7 +31,7 @@
 #include "priority_targets.h"
 #include "competition_setup.h"
 
-const byte GO_PIN = 26;
+const byte GO_PIN = 25;
 
 bool run = false;
 static bool previousGoHigh = false;
@@ -47,6 +47,8 @@ void setup()
     imu_init();
     tof_init();
     limit_switch_init();
+
+
     proximity_init();
 
     motor_control_init();
@@ -60,18 +62,18 @@ void setup()
 
     smartservo_torque_on();
     ultrasound_init();
-    xy_init();
+    // xy_init();
 
     pose_init();
+    imu_update();
+    pose_reset();
     map_init();
 
     priority_targets_load_starting_weights();
     // Serial.println("Loaded starting weight coordinates:");
-    priority_targets_print(Serial);
+    //priority_targets_print(Serial);
     //map_init();
 
-
-    // Serial.println("RUN,WAITING");
     Serial2.println("RUN,WAITING");
 }
 
@@ -93,12 +95,11 @@ static void checkGo()
 
     // Robot must be in its configured starting pose, on its selected base.
     // Re-sample the actual base colour; do not invent RGB thresholds.
-    imu_update();
 
     // Competition assumption:
     // robot physically starts inside its configured home base.
     
-    pose_reset();
+
     // arena_set_start_pose(300, 300, 0);
 
     if (!navigator_start(arena_get_config().pickupEnabled))
@@ -110,6 +111,7 @@ static void checkGo()
 
     arena_begin_run();
     run = true;
+    set_time_at_start(); // for state timer (homing at 1.45min, off at 2min)
 
     // Serial.println("RUN,STARTED");
     Serial2.println("RUN,STARTED");
@@ -123,8 +125,9 @@ int i = 0;
 
 void loop()
 {
+
     imu_update();
-    xy_exe();
+    // xy_exe();
     tof_update();
     ultrasound_exe();
     pose_update();
@@ -143,8 +146,12 @@ void loop()
 
     i ++;
 
-    print_proximity();
-
+    // print_proximity();
+    //tof_print_readings(Serial);
+    // print_state();
+    // print_navigator_state();
+    //print_DC_power();
+    // ultrasound_print();
 
     if (!run) {
         return;
@@ -152,7 +159,7 @@ void loop()
 
     limit_switch_exe();
     colour_sensor_update();
-
+    checkToFI2CHealth();
     logic_exe();
     updateStateMachine();
 
@@ -164,4 +171,6 @@ void loop()
     smartservo_update();
     navigator_exe();
     motor_control_update();
+    // smartservo_print_positions();
 }
+

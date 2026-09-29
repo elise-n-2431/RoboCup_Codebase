@@ -5,6 +5,9 @@ void motor_control_init();
 void motor_control_update();
 
 void motor_control_turn_relative(float angle);
+void motor_control_turn_relative_coarse(float angle);
+void motor_control_turn_relative_homing(float angle);
+void motor_control_turn_relative_geo(float angle);
 void motor_control_turn_to(float heading);
 
 void motor_control_drive_current_heading(int basePower);

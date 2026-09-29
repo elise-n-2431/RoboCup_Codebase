@@ -227,7 +227,7 @@ static bool checkTurnTimeout(NavState nav)
     // }
     else if (nav == HOMING)
     {
-        homing_start();
+        homing_on_turn_timeout();
     }
 
     return true;
@@ -283,9 +283,6 @@ void navigator_exe()
 
     switch (nav)
     {
-        case LEAVING:
-            leaving_update();
-            break;
         case ROAMING:
             roaming_update();
             break;
@@ -327,18 +324,4 @@ void print_navigator_state()
     Serial2.println(
         getNavStateName()
     );
-}
-
-
-
-// lip correction state
-
-int x_clearance = 30;
-
-void leaving_update() {
-    if (world_to_cell_x(pose_get_x_mm()) < x_clearance) {
-        setStateFlag(&STATE_FLAGS.calibrated_after_lip);
-    } else {
-        //DC_motors_setPower(450, 450);
-    }
 }

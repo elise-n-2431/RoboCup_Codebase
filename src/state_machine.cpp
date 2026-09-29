@@ -8,6 +8,10 @@
 #include "outputs/smart_servo.h"
 #include "debug_print.h"
 #include "navigation/rejected_weights.h"
+#include "navigation/weight_detection.h"
+#include "navigation/reversing_controller.h"
+#include "inputs/encoders.h"
+#include "inputs/tof_expander.h"
 
 // enums and structs moved to h file
 
@@ -25,6 +29,7 @@ CollectState current_collect_state = IDLE;
 CollectState prev_collect_state = IDLE;
 
 static NavState reverseReturnState = ROAMING;
+static bool pursuitReturnToHoming = false;
 
 static bool pickup_succeeded = false;
 
@@ -33,17 +38,23 @@ unsigned long timeInCollectState();
 
 static unsigned long navStateEnteredAt = 0;
 static unsigned long collectStateEnteredAt = 0;
+static unsigned long timeAtStart = 0;
+static bool homeTimeIssued = false;
 
 const unsigned long VERTICAL_LOWER_TIMEOUT_MS = 900;  
 const unsigned long HORIZONTAL_LOWER_TIMEOUT_MS = 500; 
 const unsigned long PICKUP_TIMEOUT_MS = 1400;           
 const unsigned long RETURN_TIMEOUT_MS = 500;
+const unsigned long HOMING_TIME_MS = 75000;
 
 const unsigned long OPENING_TIMEOUT_MS = 6000;
 static const unsigned long DROPOFF_DRIVE_AWAY_START_MS = 3000;
 static const unsigned long DROPOFF_GATE_CLOSE_MS = 5000;
 
-static const int DROPOFF_EXIT_POWER = 430;
+static const int DROPOFF_EXIT_POWER = 310;
+static const float DROPOFF_EXIT_MAX_DISTANCE_MM = 250.0f;
+static const int DROPOFF_EXIT_OBSTACLE_MM = 180;
+static const unsigned long DROPOFF_EXIT_PROGRESS_MS = 300;
 const unsigned long CLOSING_TIMEOUT_MS = 2000;
 
 static const int DROPOFF_SHAKE_POWER = 320;
@@ -56,6 +67,60 @@ static const unsigned long SHAKE_STOP_2_END_MS = 1100;
 static const unsigned long SHAKE_FORWARD_2_END_MS = 1280;
 
 static int dropoffShakeStage = -1;
+static bool dropoffExitStarted = false;
+static bool dropoffExitFinished = false;
+static long dropoffExitLeftCount = 0;
+static long dropoffExitRightCount = 0;
+static unsigned long lastDropoffExitProgressAt = 0;
+
+static float dropoffExitDistanceMm()
+{
+    float left = (encoders_get_left_count() - dropoffExitLeftCount) *
+                 encoders_get_left_mm_per_count();
+    float right = (encoders_get_right_count() - dropoffExitRightCount) *
+                  encoders_get_right_mm_per_count();
+    return max(0.0f, (left + right) * 0.5f);
+}
+
+static void updateDropoffExit()
+{
+    if (!dropoffExitStarted || dropoffExitFinished) return;
+
+    int innerLeft = tof_get_nav_inner_left();
+    int innerRight = tof_get_nav_inner_right();
+    int frontMin = -1;
+    if (innerLeft > 0) frontMin = innerLeft;
+    if (innerRight > 0 && (frontMin < 0 || innerRight < frontMin))
+    {
+        frontMin = innerRight;
+    }
+
+    float distance = dropoffExitDistanceMm();
+    if (millis() - lastDropoffExitProgressAt >= DROPOFF_EXIT_PROGRESS_MS)
+    {
+        lastDropoffExitProgressAt = millis();
+        debugState.print("DROPOFF_EXIT_PROGRESS,");
+        debugState.print(distance);
+        debugState.print(",");
+        debugState.println(frontMin);
+    }
+
+    if (frontMin > 0 && frontMin <= DROPOFF_EXIT_OBSTACLE_MM)
+    {
+        motor_control_stop();
+        dropoffExitFinished = true;
+        debugState.print("DROPOFF_EXIT_ABORT_OBSTACLE,");
+        debugState.println(frontMin);
+    }
+    else if (distance >= DROPOFF_EXIT_MAX_DISTANCE_MM ||
+             timeInNavState() >= DROPOFF_GATE_CLOSE_MS)
+    {
+        motor_control_stop();
+        dropoffExitFinished = true;
+        debugState.print("DROPOFF_EXIT_COMPLETE,");
+        debugState.println(distance);
+    }
+}
 
 static void updateDropoffShake()
 {
@@ -111,6 +176,7 @@ static void updateDropoffShake()
     if (newStage ==
         dropoffShakeStage)
     {
+        if (newStage == 7 || newStage == 8) updateDropoffExit();
         return;
     }
 
@@ -169,23 +235,20 @@ static void updateDropoffShake()
             // Robot has already turned 180 degrees
             // during homing, so forward should take
             // it out of its own base.
-            motor_control_drive_current_heading(
-                DROPOFF_EXIT_POWER
-            );
-
-            debugState.println(
-                "DROPOFF_EXIT,DRIVING"
-            );
+            dropoffExitLeftCount = encoders_get_left_count();
+            dropoffExitRightCount = encoders_get_right_count();
+            dropoffExitStarted = true;
+            dropoffExitFinished = false;
+            lastDropoffExitProgressAt = millis();
+            debugState.print("DROPOFF_EXIT_START,");
+            debugState.print(DROPOFF_EXIT_POWER);
+            debugState.print(",");
+            debugState.println(DROPOFF_EXIT_MAX_DISTANCE_MM);
+            motor_control_drive_current_heading(DROPOFF_EXIT_POWER);
             break;
 
         case 8:
-            // Keep moving while closing the gate.
             gateClose();
-
-            motor_control_drive_current_heading(
-                DROPOFF_EXIT_POWER
-            );
-
             debugState.println(
                 "DROPOFF_EXIT,GATE_CLOSING"
             );
@@ -195,6 +258,7 @@ static void updateDropoffShake()
             motor_control_stop();
             break;
     }
+    if (newStage == 7 || newStage == 8) updateDropoffExit();
 }
 
 unsigned long timeInNavState()
@@ -205,6 +269,17 @@ unsigned long timeInNavState()
 unsigned long timeInCollectState()
 {
     return millis() - collectStateEnteredAt;
+}
+
+unsigned long total_time()
+{
+    return millis() - timeAtStart;
+}
+
+void set_time_at_start() {
+    timeAtStart = millis();
+    homeTimeIssued = false;
+    resetStateFlag(&STATE_FLAGS.home_time);
 }
 
 //prinout for the gui 
@@ -222,6 +297,7 @@ static const char* stateFlagName(bool* flag)
     if (flag == &STATE_FLAGS.target_weight_onboard) return "target_weight_onboard";
     if (flag == &STATE_FLAGS.dummy_identified) return "dummy_identified";
     if (flag == &STATE_FLAGS.metal_identified) return "metal_identified";
+    if (flag == &STATE_FLAGS.home_time) return "home_time";
 
     if (flag == &STATE_FLAGS.weight_in_entrance) return "weight_in_entrance";
     if (flag == &STATE_FLAGS.magnet_hit) return "magnet_hit";
@@ -275,7 +351,6 @@ static const char* navStateName(NavState state)
     switch (state)
     {
         case STATIONARY: return "STATIONARY";
-        case LEAVING:     return "LEAVING";
         case ROAMING:     return "ROAMING";
         case PURSUIT:     return "PURSUIT";
         case SORTING:     return "SORTING";
@@ -318,11 +393,27 @@ const char* getCollectStateName()
 void checkChangeNavState(NavState navState, bool* flag)
 {
     if (!*flag) return;
+    if (navState == current_nav_state)
+    {
+        *flag = false;
+        return;
+    }
+
+    if (navState == PURSUIT)
+    {
+        pursuitReturnToHoming = current_nav_state == HOMING;
+    }
 
     motor_control_stop();
     prev_nav_state = current_nav_state;
     current_nav_state = navState;
     *flag = false;
+    if (navState == HOMING)
+    {
+        resetStateFlag(&STATE_FLAGS.target_weight_onboard);
+        resetStateFlag(&STATE_FLAGS.not_target_weight_onboard);
+        pursuitReturnToHoming = false;
+    }
     navStateEnteredAt = millis();
 
     bool dropoff = STATE_FLAGS.dropoff_complete;
@@ -337,6 +428,8 @@ void checkChangeNavState(NavState navState, bool* flag)
     if (navState == OPENING)
     {
         dropoffShakeStage = -1;
+        dropoffExitStarted = false;
+        dropoffExitFinished = false;
         gateOpen();
     }
 
@@ -367,6 +460,13 @@ void checkChangeCollectState(CollectState collectState, bool* flag) {
 
 void check_timers() { 
     // Handles time delays in between states, raises flags when time has elapsed
+
+    if (total_time() >= HOMING_TIME_MS && !homeTimeIssued &&
+        get_weight_count() >= 1 &&
+        current_nav_state != OPENING && current_nav_state != CLOSING) {
+        homeTimeIssued = true;
+        setStateFlag(&STATE_FLAGS.home_time);
+    }
     
     switch (current_collect_state) { 
         case LOWERING_VERT: 
@@ -420,8 +520,23 @@ void updateStateMachine() {
     check_timers();
     if (current_nav_state != REVERSING && STATE_FLAGS.reverse_triggered)
     {
-        reverseReturnState = current_nav_state;
+        if (current_nav_state == PURSUIT && STATE_FLAGS.target_lost)
+        {
+            reverseReturnState = pursuitReturnToHoming ? HOMING : ROAMING;
+            resetStateFlag(&STATE_FLAGS.target_lost);
+        }
+        else
+        {
+            reverseReturnState = current_nav_state;
+        }
         checkChangeNavState(REVERSING, &STATE_FLAGS.reverse_triggered);
+    }
+
+    if (current_nav_state != PURSUIT && current_nav_state != COLLECTING &&
+        current_nav_state != SORTING && current_nav_state != REVERSING &&
+        !STATE_FLAGS.target_identified) {
+        // Let a detected target finish pursuit and collection first.
+        checkChangeNavState(HOMING, &STATE_FLAGS.home_time);
     }
     
     switch (current_nav_state) {
@@ -430,43 +545,19 @@ void updateStateMachine() {
             // Enough weights onboard -> take them home.
             if (STATE_FLAGS.target_weight_onboard)
             {
-                checkChangeNavState(
-                    HOMING,
-                    &STATE_FLAGS.target_weight_onboard
-                );
+                checkChangeNavState(HOMING, &STATE_FLAGS.target_weight_onboard);
             }
 
-            // Explicitly leaving the home base after a drop-off.
-            else if (STATE_FLAGS.leaving_home)
+            else if (pursuitReturnToHoming)
             {
-                checkChangeNavState(
-                    LEAVING,
-                    &STATE_FLAGS.leaving_home
-                );
+                checkChangeNavState(HOMING, &pursuitReturnToHoming);
             }
 
             // Successful pickup but we still want more weights.
             // Resume normal roaming/D* navigation.
             else if (STATE_FLAGS.not_target_weight_onboard)
             {
-                checkChangeNavState(
-                    ROAMING,
-                    &STATE_FLAGS.not_target_weight_onboard
-                );
-            }
-
-            break;
-        }
-
-
-        case LEAVING:
-        {
-            if (STATE_FLAGS.calibrated_after_lip)
-            {
-                checkChangeNavState(
-                    ROAMING,
-                    &STATE_FLAGS.calibrated_after_lip
-                );
+                checkChangeNavState(ROAMING, &STATE_FLAGS.not_target_weight_onboard);
             }
 
             break;
@@ -474,33 +565,51 @@ void updateStateMachine() {
 
         case ROAMING:
             checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
+            if (STATE_FLAGS.one_plus_onboard) {
+                checkChangeNavState(HOMING, &STATE_FLAGS.home_reached);
+            }
             break;
 
         case PURSUIT:
             if (STATE_FLAGS.target_lost) {
-                checkChangeNavState(ROAMING, &STATE_FLAGS.target_lost);
+                if (pursuitReturnToHoming)
+                {
+                    // Give homing time to move away before reconsidering
+                    // the same side target that pursuit just lost.
+                    weight_detection_block_for(2000);
+                }
+                checkChangeNavState(pursuitReturnToHoming ? HOMING : ROAMING,
+                                    &STATE_FLAGS.target_lost);
             } else checkChangeNavState(SORTING, &STATE_FLAGS.weight_in_entrance);
             break;
 
         case SORTING:
-            if (STATE_FLAGS.dummy_identified)
+            if (STATE_FLAGS.dummy_identified || STATE_FLAGS.home_reached) // don't pickup weights at home
             {
                 rejected_weights_add_current();
 
                 smartservo_arms_open();
 
-                reverseReturnState =
-                    ROAMING;
+                reverseReturnState = pursuitReturnToHoming ? HOMING : ROAMING;
 
-                checkChangeNavState(
-                    REVERSING,
-                    &STATE_FLAGS.dummy_identified
-                );
+                if (STATE_FLAGS.dummy_identified)
+                {
+                    reversing_set_reason(REVERSE_DUMMY);
+                }
+
+                checkChangeNavState(REVERSING, &STATE_FLAGS.dummy_identified);
             } else checkChangeNavState(COLLECTING, &STATE_FLAGS.metal_identified);
             break;
 
         case HOMING:
-            checkChangeNavState(OPENING, &STATE_FLAGS.home_docked);
+            if (STATE_FLAGS.home_docked)
+            {
+                checkChangeNavState(OPENING, &STATE_FLAGS.home_docked);
+            }
+            else
+            {
+                checkChangeNavState(PURSUIT, &STATE_FLAGS.target_identified);
+            }
             break;
 
         case OPENING:
@@ -514,12 +623,12 @@ void updateStateMachine() {
             }
             break;
         }
+
         case CLOSING:
             if (STATE_FLAGS.closing_complete)
             {
                 checkChangeNavState(STATIONARY, &STATE_FLAGS.closing_complete);
                 setStateFlag(&STATE_FLAGS.dropoff_complete);
-                setStateFlag(&STATE_FLAGS.leaving_home);
             }
             break;
 
@@ -534,7 +643,7 @@ void updateStateMachine() {
             }
 
             if (STATE_FLAGS.collection_failed) {
-                reverseReturnState = ROAMING;
+                reverseReturnState = pursuitReturnToHoming ? HOMING : ROAMING;
                 checkChangeNavState(REVERSING, &STATE_FLAGS.collection_failed);
                 break;
             }

@@ -11,7 +11,7 @@
 
 
 static const int WEIGHT_DETECT_DISTANCE_MM = 650;
-static const int WEIGHT_DIFFERENCE_MM = 100;
+static const int WEIGHT_DIFFERENCE_MM = 100; // was 100
 
 static const int SIDE_DETECTION_COUNT_REQUIRED = 2;
 static const int MIDDLE_DETECTION_COUNT_REQUIRED = 2;
@@ -35,8 +35,14 @@ static const int CENTRE_WALL_OFFSET_MM = 150;
 static const int CENTRE_WALL_TOLERANCE_MM = 80;
 static const int CENTRE_WEIGHT_PROTRUSION_MM = 100;
 static const int CENTRE_ONLY_DETECT_MM = 500;
+static const int CENTRE_BROAD_WALL_AGREEMENT_MM = 60;
+static const int CENTRE_BROAD_WALL_MATCH_MM = 40;
 
 static const int SIDE_WALL_OFFSET_MM = 150;
+static const int SIDE_MATCH_MAX_MM = 500;
+static const int SIDE_MATCH_TOLERANCE_MM = 25;
+static const int SIDE_MATCH_RANGE_CHANGE_MM = 100;
+static const int SIDE_MATCH_EVIDENCE_REQUIRED = 3;
 
 
 // Detection state variables
@@ -45,6 +51,51 @@ static const int SIDE_WALL_OFFSET_MM = 150;
 static int leftDetectionCount = 0;
 static int rightDetectionCount = 0;
 static int middleDetectionCount = 0;
+static int lastLeftBottomRange = 0;
+static int lastRightBottomRange = 0;
+
+enum SidePairResult
+{
+    SIDE_PAIR_NONE,
+    SIDE_PAIR_DIFFERENTIAL,
+    SIDE_PAIR_MATCHED,
+    SIDE_PAIR_TOO_FAR,
+    SIDE_PAIR_WALL,
+    SIDE_PAIR_NO_HEIGHT_DIFFERENCE,
+    SIDE_PAIR_INCONSISTENT
+};
+
+static SidePairResult lastLeftReason = SIDE_PAIR_NONE;
+static SidePairResult lastRightReason = SIDE_PAIR_NONE;
+
+static const char *sidePairReasonName(SidePairResult result)
+{
+    switch (result)
+    {
+        case SIDE_PAIR_TOO_FAR: return "SIDE_PAIR_TOO_FAR";
+        case SIDE_PAIR_WALL: return "SIDE_PAIR_WALL";
+        case SIDE_PAIR_NO_HEIGHT_DIFFERENCE: return "SIDE_PAIR_NO_HEIGHT_DIFFERENCE";
+        case SIDE_PAIR_INCONSISTENT: return "SIDE_PAIR_INCONSISTENT";
+        default: return "NONE";
+    }
+}
+
+static void logSidePairReason(const char *side, SidePairResult result,
+                              SidePairResult &previous, int top, int bottom)
+{
+    if (result == previous) return;
+    previous = result;
+    if (bottom <= 0 || result == SIDE_PAIR_NONE ||
+        result == SIDE_PAIR_DIFFERENTIAL || result == SIDE_PAIR_MATCHED) return;
+    debugNav.print("SIDE_PAIR_REJECT,");
+    debugNav.print(side);
+    debugNav.print(",");
+    debugNav.print(sidePairReasonName(result));
+    debugNav.print(",");
+    debugNav.print(top);
+    debugNav.print(",");
+    debugNav.println(bottom);
+}
 
 static unsigned long leftEvidenceAt = 0;
 static unsigned long rightEvidenceAt = 0;
@@ -69,6 +120,8 @@ enum CentreObjectType
 
 
 };
+
+static CentreObjectType lastCentreClassification = CENTRE_UNKNOWN;
 
 //Checking the wall measruements once a weight detection has been triggered to detremine if it is likely a wall
 static bool navSensorSupportsWall(
@@ -117,27 +170,50 @@ static bool navSensorSupportsWall(
 }
 
 //Function checks if there is a difference between sensors and starts a trigger for a weight being found
-static bool weightPairDetected(int top, int bottom, int outerLeft, int innerLeft, int innerRight, int outerRight)
+static SidePairResult weightPairDetected(int top, int bottom, bool left,
+    int outerLeft, int innerLeft, int innerRight, int outerRight)
 {   
     //if readings are likely invalid dont count a weight
-    if (top < 0 || bottom <= 0 || bottom > WEIGHT_DETECT_DISTANCE_MM)
+    if (top < 0 || bottom <= 0)
     {
-        return false;
+        return SIDE_PAIR_NONE;
     }
+    if (bottom > WEIGHT_DETECT_DISTANCE_MM) return SIDE_PAIR_TOO_FAR;
 
     if (top == 0)
     {
         //if top reading is ages away and bottom reading isnt that close then not a weight
-        if (bottom > 400) return false;
+        if (bottom > 400) return SIDE_PAIR_TOO_FAR;
         //if a wall is close there probably isnt a weight
         if (navSensorSupportsWall(bottom, outerLeft, innerLeft, innerRight, outerRight))
         {
-            return false;
+            return SIDE_PAIR_WALL;
         }
-        return true;
+        return SIDE_PAIR_DIFFERENTIAL;
     }
     //if there is a big enough difference then there is a weight
-    return (top - bottom) >= WEIGHT_DIFFERENCE_MM;
+    if (top - bottom >= WEIGHT_DIFFERENCE_MM)
+        return SIDE_PAIR_DIFFERENTIAL;
+
+    // A short cylinder can appear at the same range on both heights.
+    // Only accept a close matched pair when its own side's nav sensors
+    // do not corroborate a wall; an opposite-side return is not proof.
+    if (bottom > SIDE_MATCH_MAX_MM) return SIDE_PAIR_TOO_FAR;
+    if (abs(top - bottom) > SIDE_MATCH_TOLERANCE_MM)
+        return top < bottom ? SIDE_PAIR_INCONSISTENT
+                            : SIDE_PAIR_NO_HEIGHT_DIFFERENCE;
+    int sideOuter = left ? outerLeft : outerRight;
+    int sideInner = left ? innerLeft : innerRight;
+    if (sideOuter < 0 && sideInner < 0) return SIDE_PAIR_INCONSISTENT;
+    if (navSensorSupportsWall(bottom,
+            left ? sideOuter : 0,
+            left ? sideInner : 0,
+            left ? 0 : sideInner,
+            left ? 0 : sideOuter))
+    {
+        return SIDE_PAIR_WALL;
+    }
+    return SIDE_PAIR_MATCHED;
 }
 
 //Function used for checking triggering weight detection with the centre ToF
@@ -167,6 +243,14 @@ static CentreObjectType classifyCentreObject(int middle, int innerLeft, int inne
 
     int innerAverage = (innerLeft + innerRight) / 2;
     int innerDifference = abs(innerLeft - innerRight);
+
+    // A broad surface can give almost the same range on all three
+    // sensors despite the approximate mounting offset below.
+    if (innerDifference <= CENTRE_BROAD_WALL_AGREEMENT_MM &&
+        abs(innerAverage - middle) <= CENTRE_BROAD_WALL_MATCH_MM)
+    {
+        return CENTRE_WALL;
+    }
 
     //ToF sensor further back then nav sensor so have offset
     int expectedMiddleForWall = innerAverage + CENTRE_WALL_OFFSET_MM;
@@ -203,15 +287,22 @@ static void updateLeftEvidence(unsigned long now, int leftTop, int leftBottom, i
     // Invalid reading: retain previous evidence.
     if (leftTop < 0 || leftBottom < 0) return;
 
-    if (weightPairDetected(leftTop, leftBottom, outerLeft, innerLeft, innerRight, outerRight))
+    SidePairResult result = weightPairDetected(leftTop, leftBottom, true,
+        outerLeft, innerLeft, innerRight, outerRight);
+    logSidePairReason("LEFT", result, lastLeftReason, leftTop, leftBottom);
+    if (result == SIDE_PAIR_DIFFERENTIAL || result == SIDE_PAIR_MATCHED)
     {
-        leftDetectionCount++;
+        leftDetectionCount = result == SIDE_PAIR_MATCHED &&
+            lastLeftBottomRange > 0 &&
+            abs(leftBottom - lastLeftBottomRange) > SIDE_MATCH_RANGE_CHANGE_MM
+            ? 1 : leftDetectionCount + 1;
         leftEvidenceAt = now;
     }
     else
     {
         leftDetectionCount = 0;
     }
+    lastLeftBottomRange = leftBottom;
 }
 
 static void updateRightEvidence(unsigned long now, int rightTop, int rightBottom, int outerLeft, int innerLeft, int innerRight, int outerRight)
@@ -230,15 +321,22 @@ static void updateRightEvidence(unsigned long now, int rightTop, int rightBottom
 
     if (rightTop < 0 || rightBottom < 0) return;
 
-    if (weightPairDetected(rightTop, rightBottom, outerLeft, innerLeft, innerRight, outerRight))
+    SidePairResult result = weightPairDetected(rightTop, rightBottom, false,
+        outerLeft, innerLeft, innerRight, outerRight);
+    logSidePairReason("RIGHT", result, lastRightReason, rightTop, rightBottom);
+    if (result == SIDE_PAIR_DIFFERENTIAL || result == SIDE_PAIR_MATCHED)
     {
-        rightDetectionCount++;
+        rightDetectionCount = result == SIDE_PAIR_MATCHED &&
+            lastRightBottomRange > 0 &&
+            abs(rightBottom - lastRightBottomRange) > SIDE_MATCH_RANGE_CHANGE_MM
+            ? 1 : rightDetectionCount + 1;
         rightEvidenceAt = now;
     }
     else
     {
         rightDetectionCount = 0;
     }
+    lastRightBottomRange = rightBottom;
 }
 
 static void updateCentreEvidence(unsigned long now, int middle, int innerLeft, int innerRight)
@@ -250,6 +348,20 @@ static void updateCentreEvidence(unsigned long now, int middle, int innerLeft, i
     lastMiddleSample = sample;
 
     CentreObjectType type = classifyCentreObject(middle, innerLeft, innerRight);
+
+    if (type != lastCentreClassification && type != CENTRE_UNKNOWN)
+    {
+        debugNav.print("CENTRE_CLASS,");
+        debugNav.print(innerLeft);
+        debugNav.print(",");
+        debugNav.print(innerRight);
+        debugNav.print(",");
+        debugNav.print(middle);
+        debugNav.print(",");
+        debugNav.print(type == CENTRE_WALL ? "WALL," : "WEIGHT,");
+        debugNav.println((innerLeft + innerRight) / 2 - middle);
+    }
+    lastCentreClassification = type;
 
     // weight in the centre
     if (type == CENTRE_WEIGHT)
@@ -291,6 +403,11 @@ void weight_detection_reset()
     leftDetectionCount = 0;
     rightDetectionCount = 0;
     middleDetectionCount = 0;
+    lastLeftBottomRange = 0;
+    lastRightBottomRange = 0;
+    lastLeftReason = SIDE_PAIR_NONE;
+    lastRightReason = SIDE_PAIR_NONE;
+    lastCentreClassification = CENTRE_UNKNOWN;
 }
 
 
@@ -298,6 +415,10 @@ void weight_detection_reset_side_evidence()
 {
     leftDetectionCount = 0;
     rightDetectionCount = 0;
+    lastLeftBottomRange = 0;
+    lastRightBottomRange = 0;
+    lastLeftReason = SIDE_PAIR_NONE;
+    lastRightReason = SIDE_PAIR_NONE;
 }
 
 
@@ -328,7 +449,7 @@ static void expireOldEvidence(unsigned long now)
     }
 }
 
-WeightTargetSide weight_detection_update()
+FLASHMEM WeightTargetSide weight_detection_update()
 {
     unsigned long now = millis();
 
@@ -362,14 +483,16 @@ WeightTargetSide weight_detection_update()
         return TARGET_CENTRE;
     }
 
-    if (leftDetectionCount >= SIDE_DETECTION_COUNT_REQUIRED)
+    if (leftDetectionCount >= (lastLeftReason == SIDE_PAIR_MATCHED
+            ? SIDE_MATCH_EVIDENCE_REQUIRED : SIDE_DETECTION_COUNT_REQUIRED))
     {
         debugNav.println("WEIGHT CANDIDATE LEFT");
         weight_detection_reset();
         return TARGET_LEFT;
     }
 
-    if (rightDetectionCount >= SIDE_DETECTION_COUNT_REQUIRED)
+    if (rightDetectionCount >= (lastRightReason == SIDE_PAIR_MATCHED
+            ? SIDE_MATCH_EVIDENCE_REQUIRED : SIDE_DETECTION_COUNT_REQUIRED))
     {
         debugNav.println("WEIGHT CANDIDATE RIGHT");
         weight_detection_reset();

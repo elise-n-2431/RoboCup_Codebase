@@ -7,7 +7,6 @@
 
 enum NavState {
     STATIONARY,
-    LEAVING,
     ROAMING,
     PURSUIT,
     SORTING,
@@ -44,8 +43,8 @@ struct StateFlags {
     bool target_weight_onboard = false;
     bool dummy_identified = false;
     bool metal_identified = false;
-    bool calibrated_after_lip = false;
-    bool leaving_home = false;
+    bool home_time = false;
+    bool one_plus_onboard = false;
 
     // collection focused
     bool weight_in_entrance = false;
@@ -78,6 +77,7 @@ const char* getNavStateName();
 const char* getCollectStateName();
 
 void print_state();
+void set_time_at_start();
 
 extern StateFlags STATE_FLAGS;
 
