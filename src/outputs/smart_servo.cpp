@@ -31,7 +31,7 @@ static const uint16_t RIGHT_ARM_CLOSED_POSITION = 740;
 static const uint16_t RIGHT_ARM_CLOSED_POSITION_2 = 680; 
 
 
-static const uint8_t ARM_PLAYTIME = 80;
+static const uint8_t ARM_PLAYTIME = 100;
 
 
 

@@ -9,12 +9,17 @@
 #include "state_machine.h"
 #include "debug_print.h"
 #include "navigation/weight_detection.h"
+#include "inputs/encoders.h"
 
 
 // Reverse tuning constants
 
 static const int REVERSE_POWER = 250;
 static const unsigned long REVERSE_TIME_MS = 2000;
+// Clear the roughly 200 mm funnel reach and the rejected-weight zone.
+static const float DUMMY_REJECT_DISTANCE_MM = 350.0f;
+static const unsigned long DUMMY_REJECT_MAX_TIME_MS = 4000;
+static const unsigned long DUMMY_REJECT_PROGRESS_MS = 250;
 
 static const int CRITICAL_REVERSE_POWER = 250;
 static const unsigned long CRITICAL_REVERSE_TIME_MS = 300;
@@ -48,6 +53,18 @@ static ReverseReason activeReason = REVERSE_NORMAL;
 
 static bool reasonPending = false;
 static unsigned long reverseStartedAt = 0;
+static long dummyStartLeftCount = 0;
+static long dummyStartRightCount = 0;
+static unsigned long lastDummyProgressAt = 0;
+
+static float dummyReverseDistanceMm()
+{
+    float left = (encoders_get_left_count() - dummyStartLeftCount) *
+                 encoders_get_left_mm_per_count();
+    float right = (encoders_get_right_count() - dummyStartRightCount) *
+                  encoders_get_right_mm_per_count();
+    return max(0.0f, -(left + right) * 0.5f);
+}
 
 static float flatPitchReference = 0.0f;
 static unsigned long pitchExceededAt = 0;
@@ -188,6 +205,10 @@ void reversing_update()
             {
                 debugNav.println("Reverse: critical obstacle escape - backing away");
             }
+            else if (activeReason == REVERSE_DUMMY)
+            {
+                debugNav.println("DUMMY_REJECT_REVERSE_START");
+            }
             else
             {
                 debugNav.println("Reverse: backing away");
@@ -201,6 +222,12 @@ void reversing_update()
             motor_control_reverse(reversePower);
 
             reverseStartedAt = millis();
+            if (activeReason == REVERSE_DUMMY)
+            {
+                dummyStartLeftCount = encoders_get_left_count();
+                dummyStartRightCount = encoders_get_right_count();
+                lastDummyProgressAt = reverseStartedAt;
+            }
             reversingState = REVERSE_BACKING;
 
             break;
@@ -237,6 +264,24 @@ void reversing_update()
                 {
                     return;
                 }
+            }
+
+            else if (activeReason == REVERSE_DUMMY)
+            {
+                float distance = dummyReverseDistanceMm();
+                if (millis() - lastDummyProgressAt >= DUMMY_REJECT_PROGRESS_MS)
+                {
+                    lastDummyProgressAt = millis();
+                    debugNav.print("DUMMY_REJECT_REVERSE_PROGRESS,");
+                    debugNav.println(distance);
+                }
+                if (distance < DUMMY_REJECT_DISTANCE_MM &&
+                    elapsed < DUMMY_REJECT_MAX_TIME_MS)
+                {
+                    return;
+                }
+                debugNav.print("DUMMY_REJECT_REVERSE_COMPLETE,");
+                debugNav.println(distance);
             }
 
             // Dummy / failed collection.

@@ -8,6 +8,7 @@
 #include "driving_controller.h"
 #include "state_machine.h"
 #include "map.h"
+#include "arena_config.h"
 #include "pose.h"
 #include "debug_print.h"
 #include "priority_targets.h"
@@ -35,7 +36,8 @@ enum RoamGoalType
 {
     ROAM_GOAL_NONE,
     ROAM_GOAL_PRIORITY,
-    ROAM_GOAL_FRONTIER
+    ROAM_GOAL_FRONTIER,
+    ROAM_GOAL_OPEN_SPACE
 };
 
 static RoamingState roamingState =
@@ -44,8 +46,8 @@ static RoamingState roamingState =
 static RoamGoalType roamGoal =
     ROAM_GOAL_NONE;
 
-static const int ROAM_POWER = 430;
-static const int ROAM_SLOW_POWER = 340;
+static const int ROAM_POWER = 450;
+static const int ROAM_SLOW_POWER = 400;
 
 static const float ROAM_SLOW_DISTANCE_MM = 700.0f;
 static const int ROAM_SLOW_MM = 250;
@@ -53,11 +55,16 @@ static const int ROAM_CRITICAL_MM = 90;
 
 static const float FRONTIER_TARGET_ARRIVAL_MM = 120.0f;
 
-static const float ROAM_DSTAR_SLOW_DISTANCE_MM = 500.0f;
+static const float ROAM_DSTAR_SLOW_DISTANCE_MM = 300.0f;
 
 // If a D* waypoint requires a very large change of heading,
 // do not immediately perform the whole point turn.
-static const float DSTAR_LARGE_TURN_DEG = 50.0f;
+static const float DSTAR_LARGE_TURN_DEG = 45.0f;
+static const int OPEN_SPACE_SEARCH_CELLS = 20;
+static const float OPEN_SPACE_MIN_DISTANCE_MM = 350.0f;
+static const float OPEN_SPACE_MAX_DISTANCE_MM = 1000.0f;
+static const float OPEN_SPACE_PREVIOUS_EXCLUSION_MM = 300.0f;
+static const unsigned long OPEN_SPACE_RETRY_MS = 1000;
 
 // Rotate only this much, allow the map to update,
 // then ask D* for a fresh route.
@@ -73,8 +80,10 @@ static const unsigned long PRIORITY_TARGET_CONFIRM_MS = 1200;
 // Explore a frontier for a while and try again later.
 static const unsigned long PRIORITY_RETRY_DELAY_MS = 5000;
 
-static unsigned long priorityFailedAt = 0;
-static bool priorityRetryBlocked = false;
+static unsigned long priorityFailedAt[MAX_PRIORITY_TARGETS] = {};
+static int priorityTargetIndex = -1;
+static float priorityRawX = -1.0f;
+static float priorityRawY = -1.0f;
 
 static const unsigned long NAV_TELEMETRY_PERIOD_MS = 200;
 
@@ -102,6 +111,9 @@ static float roamGoalX = -1.0f;
 static float roamGoalY = -1.0f;
 
 static bool frontierReachedLogged = false;
+static float lastOpenGoalX = -10000.0f;
+static float lastOpenGoalY = -10000.0f;
+static unsigned long lastOpenSearchAt = 0;
 
 
 static float wrap180(float angle)
@@ -110,6 +122,83 @@ static float wrap180(float angle)
     while (angle < -180.0f) angle += 360.0f;
 
     return angle;
+}
+
+FLASHMEM static bool confirmedOpenCell(int x, int y)
+{
+    for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+            if (!check_free(x + dx, y + dy)) return false;
+    return !cell_too_close_to_obstacle(x, y);
+}
+
+FLASHMEM static bool confirmedOpenCorridor(float goalX, float goalY)
+{
+    float startX = pose_get_x_mm();
+    float startY = pose_get_y_mm();
+    float dx = goalX - startX;
+    float dy = goalY - startY;
+    float distance = sqrtf(dx * dx + dy * dy);
+    // Leave the robot's occupied cell out of the free-map requirement.
+    for (float travelled = 150.0f; travelled <= distance;
+         travelled += 50.0f)
+    {
+        float fraction = travelled / distance;
+        if (!confirmedOpenCell(
+                world_to_cell_x(startX + dx * fraction),
+                world_to_cell_y(startY + dy * fraction))) return false;
+    }
+    return confirmedOpenCell(world_to_cell_x(goalX),
+                             world_to_cell_y(goalY));
+}
+
+FLASHMEM static bool chooseNearbyOpenSpace(float &goalX, float &goalY)
+{
+    int currentX = world_to_cell_x(pose_get_x_mm());
+    int currentY = world_to_cell_y(pose_get_y_mm());
+    float bestScore = -1e9f;
+    bool found = false;
+    for (int x = currentX - OPEN_SPACE_SEARCH_CELLS;
+         x <= currentX + OPEN_SPACE_SEARCH_CELLS; x += 2)
+    {
+        for (int y = currentY - OPEN_SPACE_SEARCH_CELLS;
+             y <= currentY + OPEN_SPACE_SEARCH_CELLS; y += 2)
+        {
+            float xMm = cell_to_world_x(x);
+            float yMm = cell_to_world_y(y);
+            if (xMm < 150.0f || xMm > ARENA_X_MM - 150.0f ||
+                yMm < 150.0f || yMm > ARENA_Y_MM - 150.0f) continue;
+            float dx = xMm - pose_get_x_mm();
+            float dy = yMm - pose_get_y_mm();
+            float distance = sqrtf(dx * dx + dy * dy);
+            if (distance < OPEN_SPACE_MIN_DISTANCE_MM ||
+                distance > OPEN_SPACE_MAX_DISTANCE_MM ||
+                hypotf(xMm - lastOpenGoalX, yMm - lastOpenGoalY) <
+                    OPEN_SPACE_PREVIOUS_EXCLUSION_MM ||
+                !confirmedOpenCell(x, y)) continue;
+
+            float headingError = wrap180(atan2f(dy, dx) * 180.0f / PI -
+                                         pose_get_heading_deg());
+            if (fabsf(headingError) > 60.0f ||
+                !confirmedOpenCorridor(xMm, yMm)) continue;
+
+            int openCells = 0;
+            for (int ox = -3; ox <= 3; ox++)
+                for (int oy = -3; oy <= 3; oy++)
+                    if (check_free(x + ox, y + oy)) openCells++;
+            float score = openCells * 15.0f -
+                          fabsf(distance - 750.0f) * 0.2f -
+                          fabsf(headingError) * 3.0f;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                goalX = xMm;
+                goalY = yMm;
+                found = true;
+            }
+        }
+    }
+    return found;
 }
 
 
@@ -156,6 +245,8 @@ static const char* roamGoalName()
 
         case ROAM_GOAL_FRONTIER:
             return "FRONTIER";
+        case ROAM_GOAL_OPEN_SPACE:
+            return "OPEN_SPACE";
 
         default:
             return "NONE";
@@ -174,7 +265,7 @@ static const char* weightTargetName(WeightTargetSide target)
 }
 
 
-static bool setRoamGoal(
+FLASHMEM static bool setRoamGoal(
     RoamGoalType newGoal,
     float x,
     float y)
@@ -205,12 +296,13 @@ static bool setRoamGoal(
     return true;
 }
 
-static bool startRoamDstar(
+FLASHMEM static bool startRoamDstar(
     RoamGoalType goalType,
     float goalX,
-    float goalY)
+    float goalY,
+    bool keepDriving = false)
 {
-    motor_control_stop();
+    if (!keepDriving) motor_control_stop();
 
     path_reset();
 
@@ -227,12 +319,22 @@ static bool startRoamDstar(
 
     if (!path_init(goalX, goalY))
     {
+        motor_control_stop();
+        if (goalType == ROAM_GOAL_OPEN_SPACE)
+        {
+            lastOpenGoalX = goalX;
+            lastOpenGoalY = goalY;
+            debugNav.print("OPEN_SPACE_UNREACHABLE,");
+            debugNav.print(goalX);
+            debugNav.print(",");
+            debugNav.println(goalY);
+        }
         // Don't immediately retry an unreachable priority
         // hundreds of times per second.
         if (goalType == ROAM_GOAL_PRIORITY)
         {
-            priorityFailedAt = millis();
-            priorityRetryBlocked = true;
+            if (priorityTargetIndex >= 0)
+                priorityFailedAt[priorityTargetIndex] = millis();
 
             debugNav.print("NAV_EVENT,");
             debugNav.print(millis());
@@ -278,10 +380,6 @@ static bool startRoamDstar(
     roamingState =
         ROAM_DSTAR;
         //no longer blocked
-        if (goalType == ROAM_GOAL_PRIORITY)
-        {
-            priorityRetryBlocked = false;
-        }
 
 
     debugNav.print(
@@ -335,11 +433,11 @@ static float roamGoalDistance()
 static float roamGoalHeadingError()
 {
     float dx =
-        roamGoalX -
+        (roamGoal == ROAM_GOAL_PRIORITY ? priorityRawX : roamGoalX) -
         pose_get_x_mm();
 
     float dy =
-        roamGoalY -
+        (roamGoal == ROAM_GOAL_PRIORITY ? priorityRawY : roamGoalY) -
         pose_get_y_mm();
 
     float desiredHeading =
@@ -352,7 +450,8 @@ static float roamGoalHeadingError()
     );
 }
 
-static bool getPriorityTargetInfo(
+FLASHMEM static bool getPriorityTargetInfo(
+    int &targetIndex,
     float &targetX,
     float &targetY,
     float &distance,
@@ -368,10 +467,37 @@ static bool getPriorityTargetInfo(
         return false;
     }
 
-    if (!priority_targets_get(0, targetX, targetY))
+    targetIndex = -1;
+    distance = INFINITY;
+    for (uint8_t i = 0; i < priority_targets_count(); i++)
     {
-        return false;
+        float x, y;
+        if (!priority_targets_get(i, x, y)) continue;
+        float candidateDistance = hypotf(x - pose_get_x_mm(),
+                                         y - pose_get_y_mm());
+        // Keep the current target stable while its route or scan is active.
+        if (roamGoal == ROAM_GOAL_PRIORITY &&
+            i == priorityTargetIndex &&
+            fabsf(x - priorityRawX) < 1.0f &&
+            fabsf(y - priorityRawY) < 1.0f)
+        {
+            targetIndex = i;
+            targetX = x;
+            targetY = y;
+            break;
+        }
+        if (priorityFailedAt[i] != 0 &&
+            millis() - priorityFailedAt[i] < PRIORITY_RETRY_DELAY_MS)
+            continue;
+        if (candidateDistance < distance)
+        {
+            distance = candidateDistance;
+            targetIndex = i;
+            targetX = x;
+            targetY = y;
+        }
     }
+    if (targetIndex < 0) return false;
 
     float dx = targetX - pose_get_x_mm();
     float dy = targetY - pose_get_y_mm();
@@ -500,7 +626,7 @@ static void printRoamingTelemetry(
 }
 
 
-static bool checkForWeight()
+bool roaming_check_for_weight()
 {
     if (!roamingPickupEnabled)
     {
@@ -527,12 +653,18 @@ static bool checkForWeight()
         return false;
     }
     float rejectedDistance = -1.0f;
+    unsigned long rejectedAge = 0;
 
     if (rejected_weights_is_near(
             pose_get_x_mm(),
             pose_get_y_mm(),
-            rejectedDistance))
+            rejectedDistance,
+            rejectedAge))
         {
+        debugNav.print("WEIGHT_REJECTED_KNOWN_DUMMY,");
+        debugNav.print(rejectedDistance);
+        debugNav.print(",");
+        debugNav.println(rejectedAge);
         debugNav.print("NAV_EVENT,");
         debugNav.print(millis());
         debugNav.print(",DUMMY_IGNORED,");
@@ -571,10 +703,7 @@ static bool checkForWeight()
     return true;
 }
 
-static bool handlePriorityWaiting(
-    bool hasPriorityTarget,
-    float priorityX,
-    float priorityY)
+FLASHMEM static bool handlePriorityWaiting()
 {
     if (roamingState !=
         ROAM_TARGET_WAITING)
@@ -582,7 +711,11 @@ static bool handlePriorityWaiting(
         return false;
     }
 
-    if (!hasPriorityTarget)
+    float priorityX, priorityY;
+    if (priorityTargetIndex < 0 ||
+        !priority_targets_get(priorityTargetIndex, priorityX, priorityY) ||
+        fabsf(priorityX - priorityRawX) > 1.0f ||
+        fabsf(priorityY - priorityRawY) > 1.0f)
     {
         priorityTargetWaitStartedAt = 0;
         prioritySearchStage = 0;
@@ -721,7 +854,11 @@ static bool handlePriorityWaiting(
     debugNav.print(",");
     debugNav.println(priorityY);
 
-    priority_targets_remove(0);
+    priority_targets_remove(priorityTargetIndex);
+    for (int i = priorityTargetIndex; i + 1 < MAX_PRIORITY_TARGETS; i++)
+        priorityFailedAt[i] = priorityFailedAt[i + 1];
+    priorityFailedAt[MAX_PRIORITY_TARGETS - 1] = 0;
+    priorityTargetIndex = -1;
 
     priorityTargetWaitStartedAt = 0;
     prioritySearchStage = 0;
@@ -735,20 +872,56 @@ static bool handlePriorityWaiting(
 }
 
 
-static void updatePriorityTarget(
+FLASHMEM static void updatePriorityTarget(
+    int targetIndex,
     float priorityX,
-    float priorityY)
+    float priorityY,
+    float priorityDistance)
 {
-    startRoamDstar(
-        ROAM_GOAL_PRIORITY,
-        priorityX,
-        priorityY
-    );
+    priorityTargetIndex = targetIndex;
+    priorityRawX = priorityX;
+    priorityRawY = priorityY;
+    debugNav.print("PRIORITY_CHOICE,");
+    debugNav.print(targetIndex);
+    debugNav.print(",");
+    debugNav.print(priorityX);
+    debugNav.print(",");
+    debugNav.print(priorityY);
+    debugNav.print(",");
+    debugNav.println(priorityDistance);
+
+    // Map cells are 50 mm, with padding outside the arena and a two-cell
+    // obstacle clearance. An edge weight can be valid while its robot-centre
+    // goal is not. Try a few inboard cells and retain the raw target above.
+    for (float margin = 250.0f; margin <= 400.0f; margin += 50.0f)
+    {
+        float approachX = priorityX;
+        float approachY = priorityY;
+        if (priorityX < margin) approachX = margin;
+        else if (priorityX > ARENA_X_MM - margin)
+            approachX = ARENA_X_MM - margin;
+        if (priorityY < margin) approachY = margin;
+        else if (priorityY > ARENA_Y_MM - margin)
+            approachY = ARENA_Y_MM - margin;
+        int cellX = world_to_cell_x(approachX);
+        int cellY = world_to_cell_y(approachY);
+        if (check_obstacle(cellX, cellY) ||
+            cell_too_close_to_obstacle(cellX, cellY)) continue;
+        if (startRoamDstar(ROAM_GOAL_PRIORITY, approachX, approachY))
+            return;
+    }
+    priorityFailedAt[targetIndex] = millis();
+    debugNav.print("NAV_EVENT,");
+    debugNav.print(millis());
+    debugNav.println(",PRIORITY_RETRY_BLOCKED");
+    setRoamGoal(ROAM_GOAL_NONE, -1.0f, -1.0f);
+    roamingState = ROAM_START;
 }
 
 static void updateFrontierTarget(
     float frontierX,
-    float frontierY)
+    float frontierY,
+    bool keepDriving = false)
 {
     frontierReachedLogged =
         false;
@@ -756,7 +929,8 @@ static void updateFrontierTarget(
     startRoamDstar(
         ROAM_GOAL_FRONTIER,
         frontierX,
-        frontierY
+        frontierY,
+        keepDriving
     );
 }
 
@@ -805,8 +979,6 @@ void roaming_reset()
     lastWeightCheckAt =
         millis();
 
-    priorityFailedAt = 0;
-    priorityRetryBlocked = false;
     priorityTargetWaitStartedAt = 0;
 
     prioritySearchStage = 0;
@@ -833,6 +1005,9 @@ void roaming_start(bool pickupEnabled)
     roamingPickupEnabled = pickupEnabled;
 
     roaming_reset();
+    for (int i = 0; i < MAX_PRIORITY_TARGETS; i++)
+        priorityFailedAt[i] = 0;
+    priorityTargetIndex = -1;
 
     debugNav.print("NAV_EVENT,");
     debugNav.print(millis());
@@ -860,7 +1035,7 @@ void roaming_update()
     // map-based navigation.
     // ========================================================
 
-    if (checkForWeight())
+    if (roaming_check_for_weight())
     {
         path_reset();
         return;
@@ -876,30 +1051,17 @@ void roaming_update()
     float priorityDistance = 0.0f;
     float priorityHeadingError = 0.0f;
 
+    int candidatePriorityIndex = -1;
     bool hasPriorityTarget =
         getPriorityTargetInfo(
+            candidatePriorityIndex,
             priorityX,
             priorityY,
             priorityDistance,
             priorityHeadingError
         );
 
-        // Release the cooldown once enough time has elapsed.
-        if (priorityRetryBlocked &&
-            millis() - priorityFailedAt >=
-                PRIORITY_RETRY_DELAY_MS)
-        {
-            priorityRetryBlocked = false;
-
-            debugNav.print("NAV_EVENT,");
-            debugNav.print(millis());
-            debugNav.println(",PRIORITY_RETRY_READY");
-        }
-
-
-        bool canUsePriority =
-            hasPriorityTarget &&
-            !priorityRetryBlocked;
+        bool canUsePriority = hasPriorityTarget;
 
 
     // ========================================================
@@ -990,11 +1152,7 @@ void roaming_update()
     if (roamingState ==
         ROAM_TARGET_WAITING)
     {
-        handlePriorityWaiting(
-            hasPriorityTarget,
-            priorityX,
-            priorityY
-        );
+        handlePriorityWaiting();
 
         return;
     }
@@ -1053,9 +1211,6 @@ void roaming_update()
 
         case ROAM_START:
         {
-            motor_control_stop();
-
-
             // -----------------------------------------------
             // Priority targets always beat frontiers.
             // -----------------------------------------------
@@ -1063,8 +1218,10 @@ void roaming_update()
             if (canUsePriority)
             {
                 updatePriorityTarget(
+                    candidatePriorityIndex,
                     priorityX,
-                    priorityY
+                    priorityY,
+                    priorityDistance
                 );
 
                 break;
@@ -1090,9 +1247,24 @@ void roaming_update()
             // -----------------------------------------------
             // No target and no frontier currently available.
             //
-            // There is intentionally NO blind fallback roam.
-            // Stay stopped until mapping produces a frontier.
+            // Reposition through confirmed free space when the
+            // frontier map is temporarily exhausted.
             // -----------------------------------------------
+
+            if (millis() - lastOpenSearchAt >= OPEN_SPACE_RETRY_MS)
+            {
+                lastOpenSearchAt = millis();
+                float openX, openY;
+                if (chooseNearbyOpenSpace(openX, openY))
+                {
+                    debugNav.print("OPEN_SPACE_GOAL,");
+                    debugNav.print(openX);
+                    debugNav.print(",");
+                    debugNav.println(openY);
+                    if (startRoamDstar(ROAM_GOAL_OPEN_SPACE, openX, openY))
+                        break;
+                }
+            }
 
             setRoamGoal(
                 ROAM_GOAL_NONE,
@@ -1100,7 +1272,9 @@ void roaming_update()
                 -1.0f
             );
 
-            motor_control_stop();
+            if (motor_control_is_driving() ||
+                motor_control_is_driving_to_point() ||
+                motor_control_is_turning()) motor_control_stop();
 
             break;
         }
@@ -1123,8 +1297,8 @@ void roaming_update()
             // changing frontiers are completely ignored.
             // -----------------------------------------------
 
-            if (roamGoal ==
-                    ROAM_GOAL_FRONTIER &&
+            if (roamGoal !=
+                    ROAM_GOAL_PRIORITY &&
                 canUsePriority)
             {
                 path_reset();
@@ -1133,10 +1307,18 @@ void roaming_update()
 
 
                 updatePriorityTarget(
+                    candidatePriorityIndex,
                     priorityX,
-                    priorityY
+                    priorityY,
+                    priorityDistance
                 );
 
+                break;
+            }
+
+            if (roamGoal == ROAM_GOAL_OPEN_SPACE && hasFrontierTarget)
+            {
+                updateFrontierTarget(frontierX, frontierY);
                 break;
             }
 
@@ -1266,17 +1448,21 @@ void roaming_update()
             // FRONTIER REACHED
             // ===============================================
 
-            if (roamGoal ==
-                    ROAM_GOAL_FRONTIER &&
+            if ((roamGoal == ROAM_GOAL_FRONTIER ||
+                 roamGoal == ROAM_GOAL_OPEN_SPACE) &&
                 goalDistance <=
                     FRONTIER_TARGET_ARRIVAL_MM)
             {
-                path_reset();
-
-                motor_control_stop();
-
-
-                if (!frontierReachedLogged)
+                if (roamGoal == ROAM_GOAL_OPEN_SPACE)
+                {
+                    lastOpenGoalX = roamGoalX;
+                    lastOpenGoalY = roamGoalY;
+                    debugNav.print("OPEN_SPACE_REACHED,");
+                    debugNav.print(roamGoalX);
+                    debugNav.print(",");
+                    debugNav.println(roamGoalY);
+                }
+                else if (!frontierReachedLogged)
                 {
                     frontierReachedLogged =
                         true;
@@ -1304,6 +1490,27 @@ void roaming_update()
                         roamGoalY
                     );
                 }
+
+                float nextDx = frontierX - pose_get_x_mm();
+                float nextDy = frontierY - pose_get_y_mm();
+                bool canChainFrontier = roamGoal == ROAM_GOAL_FRONTIER &&
+                    hasFrontierTarget &&
+                    hypotf(frontierX - roamGoalX, frontierY - roamGoalY) > 250.0f &&
+                    hypotf(nextDx, nextDy) > FRONTIER_TARGET_ARRIVAL_MM + 150.0f &&
+                    front > 500 &&
+                    fabsf(wrap180(atan2f(nextDy, nextDx) * 180.0f / PI -
+                                  pose_get_heading_deg())) <= 30.0f &&
+                    !STATE_FLAGS.reverse_triggered &&
+                    !STATE_FLAGS.target_identified;
+                if (canChainFrontier)
+                {
+                    debugNav.println("FRONTIER_CHAIN");
+                    updateFrontierTarget(frontierX, frontierY, true);
+                    break;
+                }
+
+                path_reset();
+                motor_control_stop();
 
 
                 // Release this frontier.
@@ -1335,13 +1542,22 @@ void roaming_update()
                     waypointX,
                     waypointY))
             {
+                if (roamGoal == ROAM_GOAL_OPEN_SPACE)
+                {
+                    lastOpenGoalX = roamGoalX;
+                    lastOpenGoalY = roamGoalY;
+                    debugNav.print("OPEN_SPACE_UNREACHABLE,");
+                    debugNav.print(roamGoalX);
+                    debugNav.print(",");
+                    debugNav.println(roamGoalY);
+                }
                 // A priority route which USED to work has now
                 // become unavailable. Apply the same cooldown
                 // before trying that target again.
                 if (roamGoal == ROAM_GOAL_PRIORITY)
                 {
-                    priorityFailedAt = millis();
-                    priorityRetryBlocked = true;
+                    if (priorityTargetIndex >= 0)
+                        priorityFailedAt[priorityTargetIndex] = millis();
 
                     debugNav.print("NAV_EVENT,");
                     debugNav.print(millis());
@@ -1473,7 +1689,7 @@ void roaming_update()
                 // opposite directions in the current robot setup.
                 //
                 // Therefore negate the pose-frame turn.
-                motor_control_turn_relative(
+                motor_control_turn_relative_coarse(
                     -turnStep
                 );
 

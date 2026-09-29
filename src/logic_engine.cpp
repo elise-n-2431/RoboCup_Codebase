@@ -56,6 +56,11 @@ void reset_weights()
     current_weights = 0;
 }
 
+int get_weight_count()
+{
+    return current_weights;
+}
+
 void reset_collection_iterations()
 {
     current_iterations = 0;

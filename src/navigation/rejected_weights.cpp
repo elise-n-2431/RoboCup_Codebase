@@ -11,12 +11,15 @@ struct RejectedWeight
 {
     float x;
     float y;
+    unsigned long storedAt;
 };
 
 
 static const int MAX_REJECTED_WEIGHTS = 8;
 
 static const float REJECT_RADIUS_MM = 100.0f;
+static const float RECENT_REJECT_RADIUS_MM = 400.0f;
+static const unsigned long RECENT_REJECT_MS = 20000;
 static const float DUPLICATE_RADIUS_MM = 250.0f;
 
 static RejectedWeight rejectedWeights[
@@ -86,6 +89,7 @@ void rejected_weights_add_current()
     rejectedWeights[
         rejectedWeightCount
     ].y = y;
+    rejectedWeights[rejectedWeightCount].storedAt = millis();
 
     debugNav.print("NAV_EVENT,");
     debugNav.print(millis());
@@ -105,9 +109,11 @@ void rejected_weights_add_current()
 bool rejected_weights_is_near(
     float x_mm,
     float y_mm,
-    float &distance_mm)
+    float &distance_mm,
+    unsigned long &age_ms)
 {
     distance_mm = -1.0f;
+    age_ms = 0;
 
     for (int i = 0;
          i < rejectedWeightCount;
@@ -121,10 +127,14 @@ bool rejected_weights_is_near(
                 rejectedWeights[i].y
             );
 
-        if (distance <=
-            REJECT_RADIUS_MM)
+        unsigned long age = millis() - rejectedWeights[i].storedAt;
+        float radius = age < RECENT_REJECT_MS
+            ? RECENT_REJECT_RADIUS_MM : REJECT_RADIUS_MM;
+
+        if (distance <= radius)
         {
             distance_mm = distance;
+            age_ms = age;
             return true;
         }
     }

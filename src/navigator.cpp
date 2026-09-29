@@ -227,7 +227,7 @@ static bool checkTurnTimeout(NavState nav)
     // }
     else if (nav == HOMING)
     {
-        homing_start();
+        homing_on_turn_timeout();
     }
 
     return true;
