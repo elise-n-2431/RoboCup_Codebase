@@ -22,7 +22,7 @@ static const unsigned long DUMMY_REJECT_MAX_TIME_MS = 4000;
 static const unsigned long DUMMY_REJECT_PROGRESS_MS = 250;
 
 static const int CRITICAL_REVERSE_POWER = 250;
-static const unsigned long CRITICAL_REVERSE_TIME_MS = 300;
+static const unsigned long CRITICAL_REVERSE_TIME_MS = 400; // 300ms
 
 static const float REVERSE_ESCAPE_TURN_DEG = 60.0f;
 static const float CRITICAL_ESCAPE_TURN_DEG = 70.0f;
@@ -38,6 +38,12 @@ static const unsigned long RAMP_CONFIRM_MS = 200;
 static const unsigned long RAMP_MIN_REVERSE_MS = 600;
 static const unsigned long RAMP_MAX_REVERSE_MS = 2500;
 static const unsigned long RAMP_RETRIGGER_BLOCK_MS = 1500;
+
+static const unsigned long CORNER_DETECTION_WINDOW_MS = 3000;
+
+static int PrevDirection = 0;
+static unsigned long PrevDirectionAt = 0;
+
 
 enum ReversingState
 {
@@ -337,6 +343,19 @@ void reversing_update()
                 debugNav.println("Reverse: clearance unknown - fallback turn");
             }
 
+            bool doDramaticTurn = false;
+
+            if (PrevDirection != 0 &&
+                millis() - PrevDirectionAt <= CORNER_DETECTION_WINDOW_MS &&
+                turnDirection == -PrevDirection)
+            {
+                doDramaticTurn = true;
+            }
+
+            PrevDirection = turnDirection;
+            PrevDirectionAt = millis();
+
+
             debugNav.print("Reverse: left clearance=");
             debugNav.print(leftClearance);
             debugNav.print(" right clearance=");
@@ -347,6 +366,10 @@ void reversing_update()
                 activeReason == REVERSE_CRITICAL_OBSTACLE
                 ? CRITICAL_ESCAPE_TURN_DEG
                 : REVERSE_ESCAPE_TURN_DEG;
+
+            if (doDramaticTurn) {
+                escapeTurnAngle = 180;
+            }
 
             debugNav.print("Reverse: escape turn angle=");
             debugNav.println(turnDirection * escapeTurnAngle);

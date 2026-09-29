@@ -168,7 +168,7 @@ void loop()
     proximity_exe();
 
     pickup_servo_update();
-    smartservo_update();=
+    smartservo_update();
     navigator_exe();
     motor_control_update();
 }
