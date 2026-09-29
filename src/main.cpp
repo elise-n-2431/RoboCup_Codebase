@@ -152,6 +152,7 @@ void loop()
     // print_navigator_state();
     //print_DC_power();
     // ultrasound_print();
+    //print_limit();
 
     if (!run) {
         return;

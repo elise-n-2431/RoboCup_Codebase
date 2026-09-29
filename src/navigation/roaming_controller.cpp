@@ -588,7 +588,7 @@ bool roaming_check_for_weight(bool centreOnly)
         return false;
     }
 
-    if (millis() - roamingStartedAt < 1000)
+    if (millis() - roamingStartedAt < 200)
     {
         return false;
     }

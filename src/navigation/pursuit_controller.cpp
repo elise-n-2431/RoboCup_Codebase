@@ -23,23 +23,20 @@ static const int CRITICAL_OBSTACLE_MM = 90;
 
 static const float PURSUIT_SCAN_STEP_DEG = 15.0f;
 static const float PURSUIT_SCAN_MAX_DEG = 30.0f;
-static const float GEO_SCAN_STEP_DEG = 5.0f;
-static const float GEO_SCAN_MAX_DEG = 10.0f;
+
+
 static const int GEO_CENTRE_MAX_MM = 600;
 static const int GEO_CENTRE_SAMPLES_REQUIRED = 2;
 
-// Robot frame: +x forward, +y left, origin at the ICR.
-// The angled beams cross the centreline about 300 mm ahead of the centre ToF.
-static const float GEO_CENTRE_SENSOR_X_MM = 120.0f;
-static const float GEO_SIDE_FORWARD_OFFSET_MM = 110.0f;
-static const float GEO_SIDE_SENSOR_X_MM =
-    GEO_CENTRE_SENSOR_X_MM + GEO_SIDE_FORWARD_OFFSET_MM;
-static const float GEO_SIDE_SENSOR_Y_MM = 90.0f;
-static const float GEO_INWARD_ANGLE_DEG = 5.0f;
-static const float GEO_LEFT_BEARING_BIAS_DEG = 0.0f;
-static const float GEO_RIGHT_BEARING_BIAS_DEG = 0.0f;
-static const float GEO_DIRECT_SCAN_THRESHOLD_DEG = 10.0f;
-
+// A side-detected weight is acquired by turning toward that
+// side until the centre ToF sees it.
+//
+// RIGHT detection -> +45 deg maximum
+// LEFT detection  -> -45 deg maximum
+//
+// The turn stops early as soon as the centre ToF gives two
+// consecutive plausible readings.
+static const float GEO_SIDE_ACQUIRE_MAX_TURN_DEG = 45.0f;
 static const int WEIGHT_STOP_DISTANCE_MM = 130;
 static const int WEIGHT_ENTRANCE_SAMPLES_REQUIRED = 2;
 static const float GEO_CLOSE_LOCK_APPROACH_MM = 15.0f;
@@ -86,7 +83,6 @@ static bool weightApproachSlowed = false;
 
 static float pursuitEntryHeading = 0.0f;
 static float pursuitScanOriginHeading = 0.0f;
-static float geoPredictedHeading = 0.0f;
 static float geoRequestedTurnDeg = 0.0f;
 
 static int pursuitScanIndex = 0;
@@ -140,13 +136,10 @@ static void resetPursuitScan()
 
 static bool commandNextPursuitScan()
 {
-    bool geometricScan = weightTargetSide != TARGET_CENTRE;
-    float scanStep = geometricScan ? GEO_SCAN_STEP_DEG : PURSUIT_SCAN_STEP_DEG;
-    float scanMax = geometricScan ? GEO_SCAN_MAX_DEG : PURSUIT_SCAN_MAX_DEG;
     int stepsPerSide =
         (int)(
-            scanMax /
-            scanStep
+            PURSUIT_SCAN_MAX_DEG /
+            PURSUIT_SCAN_STEP_DEG
         );
 
     if (pursuitScanIndex >=
@@ -166,21 +159,9 @@ static bool commandNextPursuitScan()
     float offset =
         direction *
         level *
-        scanStep;
+        PURSUIT_SCAN_STEP_DEG;
 
     pursuitScanIndex++;
-
-    if (geometricScan)
-    {
-        float relativeTurn = wrap180(
-            pursuitScanOriginHeading + offset - imu_get_heading());
-        debugNav.print("GEO_SCAN,");
-        debugNav.print(offset);
-        debugNav.print(",");
-        debugNav.println(relativeTurn);
-        motor_control_turn_relative(relativeTurn);
-        return true;
-    }
 
     debugNav.print(
         "Pursuit: scanning offset "
@@ -195,13 +176,11 @@ static bool commandNextPursuitScan()
             imu_get_heading()
         );
 
-    // A reacquisition scan does not need 3-degree precision.
-    // Use the existing coarse ~6-degree completion tolerance.
     motor_control_turn_relative_coarse(
         relativeTurn
     );
 
-    return true;   
+    return true;
 }
 
 void pursuit_start(WeightTargetSide target)
@@ -335,8 +314,25 @@ FLASHMEM static bool checkGeoCentre(bool &newSample, int &evidenceCount)
     debugNav.print(centreDistance);
     debugNav.print(",");
     debugNav.println(scanOffset);
-    debugNav.print("GEO_LOCK_ERROR,");
-    debugNav.println(wrap180(imu_get_heading() - geoPredictedHeading));
+float turnedDeg =
+    wrap180(
+        imu_get_heading() -
+        pursuitEntryHeading
+    );
+
+debugNav.print(
+    "GEO_LOCK,"
+);
+
+debugNav.print(
+    centreDistance
+);
+
+debugNav.print(",");
+
+debugNav.println(
+    turnedDeg
+);
 
     motor_control_stop();
     weight_detection_reset();
@@ -419,84 +415,157 @@ void pursuit_update()
                 pursuitState = PURSUIT_ACQUIRING;
                 break;
             }
+            // ========================================================
+// SIDE-DETECTED WEIGHT ACQUISITION
+//
+// Do not calculate an exact turn angle from assumed sensor
+// geometry.
+//
+// We already know which SIDE the weight is on. Turn toward
+// that side by up to 45 degrees while continuously watching
+// the middle ToF.
+//
+// checkGeoCentre() runs during the turn and stops us early
+// once MID sees the weight twice.
+// ========================================================
 
-            if (geoRangeMm <= 0 || geoRangeMm > WEIGHT_DETECT_DISTANCE_MM)
-            {
-                abortGeometry("INVALID_RANGE");
-                return;
-            }
+if (geoRangeMm <= 0 ||
+    geoRangeMm >
+        WEIGHT_DETECT_DISTANCE_MM)
+{
+    abortGeometry(
+        "INVALID_SIDE_RANGE"
+    );
+    return;
+}
 
-            float sensorY = weightTargetSide == TARGET_LEFT
-                ? GEO_SIDE_SENSOR_Y_MM : -GEO_SIDE_SENSOR_Y_MM;
-            float sensorAngleDeg = weightTargetSide == TARGET_LEFT
-                ? -GEO_INWARD_ANGLE_DEG : GEO_INWARD_ANGLE_DEG;
-            float sensorAngleRad = sensorAngleDeg * PI / 180.0f;
-            float hitX = GEO_SIDE_SENSOR_X_MM +
-                         geoRangeMm * cosf(sensorAngleRad);
-            float hitY = sensorY + geoRangeMm * sinf(sensorAngleRad);
-            float bearingDeg = atan2f(hitY, hitX) * 180.0f / PI;
-            bearingDeg += weightTargetSide == TARGET_LEFT
-                ? GEO_LEFT_BEARING_BIAS_DEG
-                : GEO_RIGHT_BEARING_BIAS_DEG;
-            float relativeTurn = -bearingDeg;
-            geoRequestedTurnDeg = relativeTurn;
-            geoPredictedHeading = pursuitEntryHeading + relativeTurn;
+// Motor-controller sign convention from the existing code:
+//
+// RIGHT side detection -> positive relative turn
+// LEFT side detection  -> negative relative turn
+geoRequestedTurnDeg =
+    weightTargetSide == TARGET_RIGHT
+    ? GEO_SIDE_ACQUIRE_MAX_TURN_DEG
+    : -GEO_SIDE_ACQUIRE_MAX_TURN_DEG;
 
-            debugNav.print("GEO_ACQUIRE,");
-            debugNav.print(weightTargetSide == TARGET_LEFT ? "LEFT," : "RIGHT,");
-            debugNav.print(geoRangeMm);
-            debugNav.print(",");
-            debugNav.print(hitX);
-            debugNav.print(",");
-            debugNav.print(hitY);
-            debugNav.print(",");
-            debugNav.println(bearingDeg);
-            if (fabsf(bearingDeg) <= GEO_DIRECT_SCAN_THRESHOLD_DEG)
-            {
-                debugNav.print("GEO_TURN_SKIPPED_SMALL,");
-                debugNav.println(bearingDeg);
-                resetPursuitScan();
-                pursuitState = PURSUIT_ACQUIRING;
-                debugNav.println("PURSUIT_PHASE,GEO_SCAN");
-                break;
-            }
-            debugNav.print("GEO_TURN_START,");
-            debugNav.print(bearingDeg);
-            debugNav.print(",");
-            debugNav.println(relativeTurn);
-            debugNav.print("GEO_TURN_REQUEST,");
-            debugNav.println(bearingDeg);
-            debugNav.println("PURSUIT_PHASE,GEO_TURN");
+debugNav.print(
+    "GEO_GUIDED_START,"
+);
 
-            geoCentreEvidenceCount = 0;
-            lastMiddleSample = tof_get_sample_number(WEIGHT_MIDDLE_SENSOR);
+debugNav.print(
+    weightTargetSide == TARGET_LEFT
+    ? "LEFT,"
+    : "RIGHT,"
+    );
 
-            // Pose/robot-left angles and IMU/motor turns have opposite signs.
-            motor_control_turn_relative_geo(relativeTurn);
-            pursuitState = PURSUIT_GEO_TURNING;
-            break;
+    debugNav.print(
+        geoRangeMm
+    );
+
+    debugNav.print(",");
+
+    debugNav.println(
+        geoRequestedTurnDeg
+    );
+
+    // Start middle-ToF confirmation from fresh samples.
+    geoCentreEvidenceCount = 0;
+
+    lastMiddleSample =
+        tof_get_sample_number(
+            WEIGHT_MIDDLE_SENSOR
+        );
+
+    // Command the MAXIMUM allowed turn.
+    //
+    // pursuit_update() continues running while this turn is
+    // active, so checkGeoCentre() can stop it early.
+    motor_control_turn_relative_geo(
+        geoRequestedTurnDeg
+    );
+
+    pursuitState =
+        PURSUIT_GEO_TURNING;
+
+    debugNav.println(
+        "PURSUIT_PHASE,GEO_GUIDED_TURN"
+    );
+
+    break;
         }
 
         case PURSUIT_GEO_TURNING:
-        {
-            bool newSample = false;
-            int evidenceCount = 0;
-            if (checkGeoCentre(newSample, evidenceCount)) return;
+{
+    // ====================================================
+    // CONTINUOUS CENTRE ACQUISITION
+    //
+    // This executes on every main-loop iteration while the
+    // robot is physically turning toward the side where the
+    // weight was detected.
+    //
+    // Two fresh middle-ToF readings <= 600 mm immediately
+    // stop the turn and begin normal centre approach.
+    // ====================================================
 
-            if (motor_control_is_turning()) return;
+    bool newSample = false;
+    int evidenceCount = 0;
 
-            motor_control_stop();
-            debugNav.print("GEO_TURN_COMPLETE,");
-            debugNav.print(geoRequestedTurnDeg);
-            debugNav.print(",");
-            debugNav.println(wrap180(imu_get_heading() - pursuitEntryHeading));
-            pursuitPreferredDirection = 1;
-            resetPursuitScan();
-            pursuitScanOriginHeading = geoPredictedHeading;
-            pursuitState = PURSUIT_ACQUIRING;
-            debugNav.println("PURSUIT_PHASE,GEO_SCAN");
-            break;
-        }
+    if (checkGeoCentre(
+            newSample,
+            evidenceCount))
+    {
+        // checkGeoCentre() has already:
+        //   - stopped the motors
+        //   - converted target to TARGET_CENTRE
+        //   - started centre approach
+        return;
+    }
+
+    // The commanded ±45 degree acquisition turn is still
+    // happening. Keep waiting and checking MID.
+    if (motor_control_is_turning())
+    {
+        return;
+    }
+
+    // ====================================================
+    // FULL 45 DEGREES USED WITHOUT CENTRE LOCK
+    //
+    // Do not perform the old +5/-5/+10/-10 jitter.
+    //
+    // If we rotated this far toward the detected side and
+    // the middle sensor still never confirmed the target,
+    // abandon it and continue navigation.
+    // ====================================================
+
+    motor_control_stop();
+
+    float actualTurn =
+        wrap180(
+            imu_get_heading() -
+            pursuitEntryHeading
+        );
+
+    debugNav.print(
+        "GEO_GUIDED_EXHAUSTED,"
+    );
+
+    debugNav.print(
+        geoRequestedTurnDeg
+    );
+
+    debugNav.print(",");
+
+    debugNav.println(
+        actualTurn
+    );
+
+    abortGeometry(
+        "CENTRE_NOT_ACQUIRED"
+    );
+
+    return;
+}
 
         case PURSUIT_TURNING:
         {
@@ -544,22 +613,20 @@ void pursuit_update()
 
         case PURSUIT_ACQUIRING:
         {
-            if (weightTargetSide != TARGET_CENTRE)
-            {
-                bool newSample = false;
-                int evidenceCount = 0;
-                if (checkGeoCentre(newSample, evidenceCount)) return;
-                if (!newSample || evidenceCount > 0) return;
+    // A side target must be handled entirely by
+    // PURSUIT_GEO_TURNING.
+    //
+    // Reaching this state while still LEFT/RIGHT indicates an
+    // invalid state transition. Do not restart the old GEO scan.
+    if (weightTargetSide !=
+        TARGET_CENTRE)
+    {
+        abortGeometry(
+            "SIDE_ACQUIRE_STATE_ERROR"
+        );
 
-                if (!commandNextPursuitScan())
-                {
-                    abortGeometry("SCAN_EXHAUSTED");
-                    return;
-                }
-
-                pursuitState = PURSUIT_TURNING;
-                break;
-            }
+        return;
+    }
 
             int centreDistance;
 
@@ -700,6 +767,15 @@ void pursuit_update()
             // Only react to genuinely new middle-ToF samples.
             if (!readFreshMiddleDistance(centreDistance))
             {
+                return;
+            }
+
+            if (centreDistance < 0)
+            {
+                debugNav.println(
+                    "Pursuit: middle ToF invalid - holding approach"
+                );
+
                 return;
             }
             // Lost target.

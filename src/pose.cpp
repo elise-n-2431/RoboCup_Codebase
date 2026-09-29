@@ -91,13 +91,53 @@ void pose_update()
 
     // Only accept encoder movement if the IMU detects
     // actual translational movement.
-    float forwardDistance = 0.0f;
+    float forwardDistance =
+    encoderForward;
 
-    if (imu_is_translationally_moving())
+    // Encoder mismatch during an intentional point turn is
+    // rotation, not useful translational motion.
+    if (motor_control_is_turning())
     {
-        forwardDistance = encoderForward;
+        forwardDistance = 0.0f;
     }
 
+    // Suppress impossible forward odometry while physically
+    // pushing something directly in front of the robot.
+    if (forwardDistance > 0.0f &&
+        (getNavState() == ROAMING ||
+        getNavState() == HOMING) &&
+        (motor_control_is_driving() ||
+        motor_control_is_driving_to_point()))
+    {
+        int frontContact = 1200;
+
+        int distances[4] =
+        {
+            tof_get_nav_outer_left(),
+            tof_get_nav_inner_left(),
+            tof_get_nav_inner_right(),
+            tof_get_nav_outer_right()
+        };
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (distances[i] > 0 &&
+                distances[i] < frontContact)
+            {
+                frontContact =
+                    distances[i];
+            }
+        }
+
+        if (frontContact < 30)
+        {
+            forwardDistance = 0.0f;
+
+            debugPose.println(
+                "POSE_FORWARD_SUPPRESSED_CONTACT"
+            );
+        }
+    }
     float headingDeg = pose_get_heading_deg();
     float headingRad = headingDeg * PI / 180.0f;
 

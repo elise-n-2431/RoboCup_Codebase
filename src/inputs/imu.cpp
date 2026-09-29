@@ -288,14 +288,6 @@ void imu_update()
         + linearAccel.z() * linearAccel.z()
     );
 
-    imuTranslationalMovement =
-        accelMagnitude > IMU_MOVEMENT_THRESHOLD;
-    
-    debugImu.print(" translation=");
-    debugImu.println(accelMagnitude);
-
-    debugImu.print(" translation bool=");
-    debugImu.println(imuTranslationalMovement);
 }
 
 

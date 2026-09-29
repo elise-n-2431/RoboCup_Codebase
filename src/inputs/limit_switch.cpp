@@ -5,10 +5,9 @@
 #include <Wire.h>
 #include <SparkFunSX1509.h> // SparkFun SX1509 I/O Expander library, v2.0.1
 
-const byte SX1509_LIMIT_ADDRESS = 0x3E;
-const byte AIO5_PIN = 5;
-SX1509 io;
 
+
+int limit_pin = 26;
 const int CONSECUTIVE_HITS = 5;
 int count_switch_on = 0;
 int count_switch_off = 0;
@@ -16,17 +15,9 @@ int count_switch_off = 0;
 
 void limit_switch_init()
 {
-    if (!io.begin(SX1509_LIMIT_ADDRESS))
-    {
-        Serial.println(
-            "ERROR: limit switch SX1509 not found"
-        );
 
-        return;
-    }
-
-    io.pinMode(
-        AIO5_PIN,
+    pinMode(
+        limit_pin,
         INPUT_PULLUP
     );
 
@@ -52,7 +43,7 @@ void limit_switch_exe()
     }
 
 
-    if (io.digitalRead(AIO5_PIN) == LOW)
+    if (digitalRead(limit_pin) == LOW)
     {
         count_switch_on++;
         count_switch_off = 0;
@@ -88,10 +79,10 @@ void limit_switch_exe()
 }
 
 bool getLimitSwitch() {
-    return io.digitalRead(AIO5_PIN) == LOW;
+    return digitalRead(limit_pin) == LOW;
 }
 
 void print_limit() {
-    Serial2.print("Limit ");
-    Serial2.println(getLimitSwitch());
+    Serial.print("Limit ");
+    Serial.println(getLimitSwitch());
 }
