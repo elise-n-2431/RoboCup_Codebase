@@ -12,6 +12,7 @@
 #include "debug_print.h"
 #include "priority_targets.h"
 #include "path_finding.h"
+#include "inputs/tof_expander.h"
 
 #include "navigation/weight_detection.h"
 #include "navigation/pursuit_controller.h"
@@ -49,7 +50,7 @@ static const int ROAM_SLOW_POWER = 340;
 
 static const float ROAM_SLOW_DISTANCE_MM = 700.0f;
 static const int ROAM_SLOW_MM = 250;
-static const int ROAM_CRITICAL_MM = 90;
+static const int CRITICAL_OBSTACLE_MM = 90;
 
 static const float FRONTIER_TARGET_ARRIVAL_MM = 120.0f;
 
@@ -110,17 +111,6 @@ static float wrap180(float angle)
     while (angle < -180.0f) angle += 360.0f;
 
     return angle;
-}
-
-
-static int clearanceValue(int distance)
-{
-    if (distance <= 0)
-    {
-        return 1200;
-    }
-
-    return distance;
 }
 
 static const char* roamingStateName()
@@ -389,52 +379,6 @@ static bool getPriorityTargetInfo(
         );
 
     return true;
-}
-
-
-static void readClearances(
-    int &outerLeft,
-    int &innerLeft,
-    int &innerRight,
-    int &outerRight,
-    int &front,
-    int &leftClearance,
-    int &rightClearance)
-{
-    outerLeft =
-        clearanceValue(
-            tof_get_nav_outer_left()
-        );
-
-    innerLeft =
-        clearanceValue(
-            tof_get_nav_inner_left()
-        );
-
-    innerRight =
-        clearanceValue(
-            tof_get_nav_inner_right()
-        );
-
-    outerRight =
-        clearanceValue(
-            tof_get_nav_outer_right()
-        );
-
-    front = min(
-        innerLeft,
-        innerRight
-    );
-
-    leftClearance = min(
-        outerLeft,
-        innerLeft
-    );
-
-    rightClearance = min(
-        outerRight,
-        innerRight
-    );
 }
 
 
@@ -763,7 +707,12 @@ static void updateFrontierTarget(
 
 static bool checkCriticalObstacle(int front)
 {
-    if (front > ROAM_CRITICAL_MM)
+    if (front <= 0)
+    {
+        return false;
+    }
+
+    if (front > CRITICAL_OBSTACLE_MM)
     {
         return false;
     }
@@ -927,8 +876,10 @@ void roaming_update()
 
     int outerLeft;
     int innerLeft;
+    int upperLeft;
     int innerRight;
     int outerRight;
+    int upperRight;
 
     int front;
     int leftClearance;
@@ -937,12 +888,24 @@ void roaming_update()
     readClearances(
         outerLeft,
         innerLeft,
+        upperLeft,
         innerRight,
         outerRight,
+        upperRight,
         front,
         leftClearance,
         rightClearance
     );
+
+    Serial.print("OL: "); Serial.print(outerLeft);
+    Serial.print(" IL: "); Serial.print(innerLeft);
+    Serial.print(" UL: "); Serial.print(upperLeft);
+    Serial.print(" IR: "); Serial.print(innerRight);
+    Serial.print(" OR: "); Serial.print(outerRight);
+    Serial.print(" UR: "); Serial.print(upperRight);
+    Serial.print(" F: "); Serial.print(front);
+    Serial.print(" LC: "); Serial.print(leftClearance);
+    Serial.print(" RC: "); Serial.println(rightClearance);
 
 
     printRoamingTelemetry(

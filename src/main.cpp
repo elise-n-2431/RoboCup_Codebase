@@ -146,8 +146,12 @@ void loop()
 
     i ++;
 
-    print_proximity();
-
+    // print_proximity();
+    // tof_print_readings(Serial);
+    // print_state();
+    // print_navigator_state();
+    print_DC_power();
+    // ultrasound_print();
 
     if (!run) {
         return;
@@ -164,7 +168,7 @@ void loop()
     proximity_exe();
 
     pickup_servo_update();
-    smartservo_update();
+    smartservo_update();=
     navigator_exe();
     motor_control_update();
 }

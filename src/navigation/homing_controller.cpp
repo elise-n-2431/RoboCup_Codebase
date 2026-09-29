@@ -27,6 +27,8 @@ static const unsigned long HOME_HEADING_UPDATE_MS = 250;
 static const int HOME_DOCK_POWER = 280;
 static const unsigned long HOME_DOCK_TIME_MS = 1000;
 
+static const int CRITICAL_OBSTACLE_MM = 90;
+
 enum HomingState
 {
     HOMING_START,
@@ -140,6 +142,17 @@ static float homeExitHeadingError()
     );
 }
 
+bool checkCriticalObstacle(int front)
+{
+    if (front <= 0)
+    {
+        return false;
+    }
+
+    return front <= CRITICAL_OBSTACLE_MM;
+}
+
+
 
 bool homing_is_docking()
 {
@@ -147,8 +160,32 @@ bool homing_is_docking()
            homingState == HOMING_DOCK_TURNING;
 }
 
+
 void homing_update()
 {
+    int outerLeft;
+    int innerLeft;
+    int upperLeft;
+    int innerRight;
+    int outerRight;
+    int upperRight;
+
+    int front;
+    int leftClearance;
+    int rightClearance;
+
+    readClearances(
+        outerLeft,
+        innerLeft,
+        upperLeft,
+        innerRight,
+        outerRight,
+        upperRight,
+        front,
+        leftClearance,
+        rightClearance
+    );
+
     // Colour sensor has final authority over reaching home.
     if (STATE_FLAGS.home_reached && !homing_is_docking())
     {
@@ -158,21 +195,46 @@ void homing_update()
         homeDockStart = millis();
         homeDockHeading = imu_get_heading();
         homingState = HOMING_DOCKING;
-        motor_control_drive_heading(homeDockHeading, HOME_DOCK_POWER);
+
+        motor_control_drive_heading(
+            homeDockHeading,
+            HOME_DOCK_POWER
+        );
+
         debugNav.println("Home detected - docking");
+
         return;
     }
 
+    // ========================================================
+    // CRITICAL OBSTACLE SAFETY OVERRIDE
+    //
+    // Do not run this while docking because the front object
+    // may intentionally be the home/docking target.
+    // ========================================================
 
-    int outerLeft = homeClearanceValue(tof_get_nav_outer_left());
-    int innerLeft = homeClearanceValue(tof_get_nav_inner_left());
-    int innerRight = homeClearanceValue(tof_get_nav_inner_right());
-    int outerRight = homeClearanceValue(tof_get_nav_outer_right());
+    if (!homing_is_docking() &&
+        checkCriticalObstacle(front))
+    {
+        path_reset();
 
-    int front = min(innerLeft, innerRight);
-    int leftClearance = min(outerLeft, innerLeft);
-    int rightClearance = min(outerRight, innerRight);
+        debugNav.println(
+            "Homing: CRITICAL OBSTACLE"
+        );
 
+        float turnDirection =
+            leftClearance > rightClearance
+            ? -HOME_AVOID_TURN_DEG
+            : HOME_AVOID_TURN_DEG;
+
+        motor_control_turn_relative(
+            turnDirection
+        );
+
+        homingState = HOMING_AVOIDING;
+
+        return;
+    }
 
     switch (homingState)
     {
@@ -292,7 +354,10 @@ void homing_update()
 
         case HOMING_DRIVING:
         {
-            // Basic obstacle avoidance until path planning is integrated.
+            // ====================================================
+            // NORMAL FRONT OBSTACLE AVOIDANCE
+            // ====================================================
+
             if (front < HOME_FRONT_BLOCK_MM)
             {
                 motor_control_stop();
@@ -302,9 +367,13 @@ void homing_update()
                     ? -HOME_AVOID_TURN_DEG
                     : HOME_AVOID_TURN_DEG;
 
-                debugNav.println("Homing: obstacle avoidance");
+                debugNav.println(
+                    "Homing: obstacle avoidance"
+                );
 
-                motor_control_turn_relative(turnDirection);
+                motor_control_turn_relative(
+                    turnDirection
+                );
 
                 homingState = HOMING_AVOIDING;
 
@@ -312,27 +381,37 @@ void homing_update()
             }
 
 
-            // Periodically update the heading toward home.
+            // ====================================================
+            // DRIVE TOWARD HOME
+            // ====================================================
+
             if (millis() - lastHomeHeadingUpdate >= HOME_HEADING_UPDATE_MS)
             {
                 lastHomeHeadingUpdate = millis();
 
-                float relativeError = homeHeadingError();
+                float relativeError =
+                    homeHeadingError();
 
                 // homeHeadingError() is in pose coordinates.
-                // Convert that relative correction to an absolute IMU heading.
-                float targetHeading = imu_get_heading() - relativeError;
+                // Convert that relative correction to an
+                // absolute IMU heading.
+                float targetHeading =
+                    imu_get_heading() - relativeError;
 
                 int power =
                     homeDistance() < HOME_SLOW_DISTANCE_MM
                     ? HOME_SLOW_POWER
                     : HOME_POWER;
 
-                motor_control_drive_heading(targetHeading, power);
+                motor_control_drive_heading(
+                    targetHeading,
+                    power
+                );
             }
 
             break;
         }
+
 
 
         case HOMING_AVOIDING:
@@ -342,11 +421,15 @@ void homing_update()
                 return;
             }
 
-            // Recalculate the route toward home after the avoidance turn.
+            motor_control_stop();
+
+            // Re-enter the homing logic. This recalculates
+            // the direction toward home after avoidance.
             homingState = HOMING_START;
 
             break;
         }
+
 
 
         case HOMING_DOCKING:

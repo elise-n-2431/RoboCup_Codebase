@@ -19,15 +19,13 @@ static VL53L0X tof0;
 static VL53L0X tof5;
 static VL53L0X tof6;
 static VL53L0X tof7;
-static VL53L0X tof8;
 
 // black sensors
 static VL53L1X tof1;
 static VL53L1X tof2;
 static VL53L1X tof3;
 static VL53L1X tof4;
-
-
+static VL53L1X tof8;
 
 //found from testing
 
@@ -186,7 +184,7 @@ void tof_init()
     tofOnline[5] = initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
     tofOnline[6] = initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
     tofOnline[7] = initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
-    tofOnline[8] = initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
+    tofOnline[8] = initialiseL1(tof8, TOF8_XSHUT, 0x38, 8);
 
     Serial.println("ToF setup complete");
 }
@@ -349,7 +347,7 @@ void tof_update()
     updateL0(tof5, 5, NAV_TOF_MAX_MM);
     updateL0(tof6, 6, NAV_TOF_MAX_MM);
     updateL0(tof7, 7, NAV_TOF_MAX_MM);
-    updateL0(tof8, 8, NAV_TOF_MAX_MM);
+    updateL1(tof8, 8, NAV_TOF_MAX_MM);
     static unsigned long lastTofDebugAt = 0;
 
     if (millis() - lastTofDebugAt >= 200)
@@ -471,7 +469,6 @@ int tof_get_weight_right_bottom()
 }
 
 
-
 void tof_print_readings(Stream &port)
 {
     port.print("WEIGHT: ");
@@ -490,4 +487,80 @@ void tof_print_readings(Stream &port)
 
     port.print("  MIDDLE=");
     port.println(tof_get_weight_middle());
+}
+
+
+
+
+static int clearanceValue(int distance)
+{
+    if (distance <= 0)
+    {
+        return 1200;
+    }
+
+    return distance;
+}
+
+
+void readClearances(
+    int &outerLeft,
+    int &innerLeft,
+    int &upperLeft,
+    int &innerRight,
+    int &outerRight,
+    int &upperRight,
+    int &front,
+    int &leftClearance,
+    int &rightClearance)
+{
+    outerLeft =
+        clearanceValue(
+            tof_get_nav_outer_left()
+        );
+
+    innerLeft =
+        clearanceValue(
+            tof_get_nav_inner_left()
+        );
+
+    upperLeft =
+        clearanceValue(
+            tof_get_weight_left_top()
+        );
+
+    innerRight =
+        clearanceValue(
+            tof_get_nav_inner_right()
+        );
+
+    outerRight =
+        clearanceValue(
+            tof_get_nav_outer_right()
+        );
+    
+    upperRight =
+        clearanceValue(
+            tof_get_weight_right_top()
+        );
+
+
+    front = min(min(
+        innerLeft,
+        innerRight), min(
+        outerLeft,
+        outerRight)
+    );
+
+    leftClearance = min(min(
+        outerLeft,
+        innerLeft
+    ),  upperLeft
+    );
+
+    rightClearance = min(min(
+        outerRight,
+        innerRight
+    ),  upperRight
+    );
 }
