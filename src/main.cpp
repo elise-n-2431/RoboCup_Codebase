@@ -147,7 +147,7 @@ void loop()
     i ++;
 
     // print_proximity();
-    // tof_print_readings(Serial);
+    tof_print_readings(Serial);
     // print_state();
     // print_navigator_state();
     //print_DC_power();

@@ -229,7 +229,7 @@ static bool initialiseL1(VL53L1X &sensor, int xshutPin, int address, int number)
 
     sensor.setAddress(address);
     sensor.setDistanceMode(VL53L1X::Short);
-    sensor.setROISize(8, 8);
+    sensor.setROISize(16, 16);
     sensor.setMeasurementTimingBudget(50000);
     sensor.startContinuous(50);
     sensor.setTimeout(5);
