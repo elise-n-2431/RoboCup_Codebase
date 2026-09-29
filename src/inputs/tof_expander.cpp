@@ -347,7 +347,7 @@ void tof_update()
     updateL0(tof5, 5, NAV_TOF_MAX_MM);
     updateL0(tof6, 6, NAV_TOF_MAX_MM);
     updateL0(tof7, 7, NAV_TOF_MAX_MM);
-    updateL1(tof8, 8, NAV_TOF_MAX_MM);
+    updateL1(tof8, 8, WEIGHT_TOF_MAX_MM);
     static unsigned long lastTofDebugAt = 0;
 
     if (millis() - lastTofDebugAt >= 200)

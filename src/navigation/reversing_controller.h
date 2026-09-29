@@ -6,6 +6,7 @@
 enum ReverseReason
 {
     REVERSE_NORMAL,
+    REVERSE_DUMMY,
     REVERSE_RAMP,
     REVERSE_CRITICAL_OBSTACLE
 };

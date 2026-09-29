@@ -9,6 +9,7 @@
 #include "inputs/xy_sensor.h"
 #include "arena_config.h"
 #include "debug_print.h"
+#include "driving_controller.h"
 
 // ============================================================
 // POSE
@@ -97,6 +98,12 @@ void pose_update()
 
     float lateralDistance = XY_FUSION_WEIGHT * xyLateral;
 
+    // Encoder mismatch during an intentional point turn is not travel.
+    // Counts have already been consumed so it cannot leak into the next drive.
+    if (motor_control_is_turning())
+    {
+        forwardDistance = 0.0f;
+    }
 
     float headingDeg = pose_get_heading_deg();
 

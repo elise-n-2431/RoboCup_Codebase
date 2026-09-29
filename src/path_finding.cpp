@@ -22,11 +22,11 @@ const int MAP_HEIGHT = 49 + 4;
 
 // 50 mm cells:
 // 8 cells = 400 mm maximum lookahead.
-static const int LOOKAHEAD_MAX_CELLS = 10;
+static const int LOOKAHEAD_MAX_CELLS = 15;
 
 // Radius around the centre-line that must be obstacle-free.
-// 3 cells = 150 mm.
-static const int LOOKAHEAD_CLEARANCE_CELLS = 2;
+static const int LOOKAHEAD_EXPLORE_CLEARANCE_CELLS = 2;
+static const int LOOKAHEAD_SAFE_CLEARANCE_CELLS = 3;
 
 // Once closer than this to the held waypoint,
 // allow a new waypoint to be selected.
@@ -675,16 +675,21 @@ static bool lookaheadCellSafe(
 
     // Make sure the robot body will not clip
     // any confirmed obstacle around this cell.
+    const int clearanceCells =
+        pathMode == PATH_SAFE
+        ? LOOKAHEAD_SAFE_CLEARANCE_CELLS
+        : LOOKAHEAD_EXPLORE_CLEARANCE_CELLS;
+
     for (int dx =
-            -LOOKAHEAD_CLEARANCE_CELLS;
+            -clearanceCells;
          dx <=
-            LOOKAHEAD_CLEARANCE_CELLS;
+            clearanceCells;
          dx++)
     {
         for (int dy =
-                -LOOKAHEAD_CLEARANCE_CELLS;
+                -clearanceCells;
              dy <=
-                LOOKAHEAD_CLEARANCE_CELLS;
+                clearanceCells;
              dy++)
         {
             int x =
@@ -705,8 +710,8 @@ static bool lookaheadCellSafe(
 
             if (dx * dx +
                     dy * dy >
-                LOOKAHEAD_CLEARANCE_CELLS *
-                    LOOKAHEAD_CLEARANCE_CELLS)
+                clearanceCells *
+                    clearanceCells)
             {
                 continue;
             }
