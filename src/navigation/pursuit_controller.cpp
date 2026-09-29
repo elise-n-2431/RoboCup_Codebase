@@ -35,7 +35,7 @@ static const float GEO_SIDE_FORWARD_OFFSET_MM = 110.0f;
 static const float GEO_SIDE_SENSOR_X_MM =
     GEO_CENTRE_SENSOR_X_MM + GEO_SIDE_FORWARD_OFFSET_MM;
 static const float GEO_SIDE_SENSOR_Y_MM = 90.0f;
-static const float GEO_INWARD_ANGLE_DEG = 25.35f;
+static const float GEO_INWARD_ANGLE_DEG = 5.0f;
 static const float GEO_LEFT_BEARING_BIAS_DEG = 0.0f;
 static const float GEO_RIGHT_BEARING_BIAS_DEG = 0.0f;
 static const float GEO_DIRECT_SCAN_THRESHOLD_DEG = 6.0f;

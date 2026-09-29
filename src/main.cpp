@@ -31,7 +31,7 @@
 #include "priority_targets.h"
 #include "competition_setup.h"
 
-const byte GO_PIN = 26;
+const byte GO_PIN = 32;
 
 bool run = false;
 static bool previousGoHigh = false;
@@ -62,7 +62,7 @@ void setup()
 
     smartservo_torque_on();
     ultrasound_init();
-    xy_init();
+    // xy_init();
 
     pose_init();
     map_init();
@@ -127,7 +127,7 @@ int i = 0;
 void loop()
 {
     imu_update();
-    xy_exe();
+    // xy_exe();
     tof_update();
     ultrasound_exe();
     pose_update();
@@ -147,10 +147,10 @@ void loop()
     i ++;
 
     // print_proximity();
-    // tof_print_readings(Serial);
+    tof_print_readings(Serial);
     // print_state();
     // print_navigator_state();
-    print_DC_power();
+    // print_DC_power();
     // ultrasound_print();
 
     if (!run) {
