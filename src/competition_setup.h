@@ -9,7 +9,7 @@ enum StartingBase
 
 
 constexpr StartingBase STARTING_BASE =
-    UPPER_BASE;
+    LOWER_BASE;
 
 
 
