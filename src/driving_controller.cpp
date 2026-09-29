@@ -36,8 +36,7 @@ static float TURN_KP = 8.0f;
 
 static float POINT_KP = 4.0f;
 
-static const int
-    MAX_POINT_SPEED_DIFFERENCE = 200;
+static const int MAX_POINT_SPEED_DIFFERENCE = 200;
 static float DRIVE_KP = 8.0f;
 
 static const float

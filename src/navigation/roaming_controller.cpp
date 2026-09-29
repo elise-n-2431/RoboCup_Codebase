@@ -89,7 +89,7 @@ static const unsigned long NAV_TELEMETRY_PERIOD_MS = 200;
 
 static unsigned long lastNavTelemetryAt = 0;
 
-static const float PRIORITY_SEARCH_ANGLE_DEG = 12.0f;
+static const float PRIORITY_SEARCH_ANGLE_DEG = 45.0f;
 static const unsigned long PRIORITY_SEARCH_SETTLE_MS = 200;
 
 
@@ -581,7 +581,7 @@ static void printRoamingTelemetry(
 }
 
 
-bool roaming_check_for_weight()
+bool roaming_check_for_weight(bool centreOnly)
 {
     if (!roamingPickupEnabled)
     {
@@ -605,6 +605,28 @@ bool roaming_check_for_weight()
 
     if (detectedTarget == TARGET_NONE)
     {
+        return false;
+    }
+
+    // While homing, side detections are too easily produced
+// by arena walls / diagonals.
+//
+// Only allow a CENTRE-confirmed object to interrupt HOMING.
+    if (centreOnly &&
+        detectedTarget != TARGET_CENTRE)
+    {
+        weight_detection_reset_side_evidence();
+
+        debugNav.print(
+            "HOMING_WEIGHT_IGNORED_SIDE,"
+        );
+
+        debugNav.println(
+            weightTargetName(
+                detectedTarget
+            )
+        );
+
         return false;
     }
     float rejectedDistance = -1.0f;
@@ -657,18 +679,23 @@ bool roaming_check_for_weight()
 
     return true;
 }
-
 FLASHMEM static bool handlePriorityWaiting()
 {
-    if (roamingState !=
-        ROAM_TARGET_WAITING)
+    if (roamingState != ROAM_TARGET_WAITING)
     {
         return false;
     }
 
-    float priorityX, priorityY;
+    float priorityX;
+    float priorityY;
+
+    // Make sure the target we arrived at still exists.
     if (priorityTargetIndex < 0 ||
-        !priority_targets_get(priorityTargetIndex, priorityX, priorityY) ||
+        !priority_targets_get(
+            priorityTargetIndex,
+            priorityX,
+            priorityY
+        ) ||
         fabsf(priorityX - priorityRawX) > 1.0f ||
         fabsf(priorityY - priorityRawY) > 1.0f)
     {
@@ -679,31 +706,48 @@ FLASHMEM static bool handlePriorityWaiting()
         return true;
     }
 
-    // Stage 0:
-    // Give the sensors a moment while stationary.
+    // ========================================================
+    // STAGE 0
+    //
+    // Brief stationary look in the expected direction.
+    //
+    // roaming_check_for_weight() is called at the top of
+    // roaming_update(), so weight detection is still active.
+    // ========================================================
+
     if (prioritySearchStage == 0)
     {
-        if (millis() -
-                prioritySearchStageAt <
+        if (millis() - prioritySearchStageAt <
             PRIORITY_SEARCH_SETTLE_MS)
         {
             return true;
         }
 
-        motor_control_turn_relative(
-            -PRIORITY_SEARCH_ANGLE_DEG
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,PLUS_45"
+        );
+
+        // Use coarse turn control so we do not waste several
+        // seconds oscillating around a 3-degree tolerance.
+        motor_control_turn_relative_coarse(
+            PRIORITY_SEARCH_ANGLE_DEG
         );
 
         prioritySearchStage = 1;
 
-        debugNav.println(
-            "NAV_EVENT,PRIORITY_SEARCH,LEFT"
-        );
-
         return true;
     }
 
-    // Wait for first small turn.
+    // ========================================================
+    // STAGE 1
+    //
+    // Sweep toward +45 degrees.
+    //
+    // Weight detection continues while this turn is happening.
+    // If roaming_check_for_weight() sees anything valid, it
+    // stops the motors and starts pursuit before we reach here.
+    // ========================================================
+
     if (prioritySearchStage == 1)
     {
         if (motor_control_is_turning())
@@ -713,37 +757,50 @@ FLASHMEM static bool handlePriorityWaiting()
 
         motor_control_stop();
 
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,PLUS_45_REACHED"
+        );
+
         prioritySearchStage = 2;
         prioritySearchStageAt = millis();
 
         return true;
     }
 
-    // Small pause at left extreme.
+    // ========================================================
+    // STAGE 2
+    //
+    // Pause at +45, then sweep 90 degrees to -45.
+    // ========================================================
+
     if (prioritySearchStage == 2)
     {
-        if (millis() -
-                prioritySearchStageAt <
+        if (millis() - prioritySearchStageAt <
             PRIORITY_SEARCH_SETTLE_MS)
         {
             return true;
         }
 
-        motor_control_turn_relative(
-            2.0f *
-            PRIORITY_SEARCH_ANGLE_DEG
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,MINUS_90_SWEEP"
+        );
+
+        motor_control_turn_relative_coarse(
+            -2.0f * PRIORITY_SEARCH_ANGLE_DEG
         );
 
         prioritySearchStage = 3;
 
-        debugNav.println(
-            "NAV_EVENT,PRIORITY_SEARCH,RIGHT"
-        );
-
         return true;
     }
 
-    // Wait for right turn.
+    // ========================================================
+    // STAGE 3
+    //
+    // Sweep from +45 all the way through centre to -45.
+    // Weight detection remains active throughout.
+    // ========================================================
+
     if (prioritySearchStage == 3)
     {
         if (motor_control_is_turning())
@@ -753,50 +810,27 @@ FLASHMEM static bool handlePriorityWaiting()
 
         motor_control_stop();
 
+        debugNav.println(
+            "NAV_EVENT,PRIORITY_SEARCH,MINUS_45_REACHED"
+        );
+
         prioritySearchStage = 4;
         prioritySearchStageAt = millis();
 
         return true;
     }
 
-    // Pause at right extreme.
-    if (prioritySearchStage == 4)
-    {
-        if (millis() -
-                prioritySearchStageAt <
-            PRIORITY_SEARCH_SETTLE_MS)
-        {
-            return true;
-        }
+    // ========================================================
+    // STAGE 4
+    //
+    // Final stationary look at -45.
+    //
+    // If nothing has been detected after this, assume the
+    // priority weight has moved / been collected by another
+    // robot and permanently remove this priority target.
+    // ========================================================
 
-        // Return to original heading.
-        motor_control_turn_relative(
-            -PRIORITY_SEARCH_ANGLE_DEG
-        );
-
-        prioritySearchStage = 5;
-
-        return true;
-    }
-
-    if (prioritySearchStage == 5)
-    {
-        if (motor_control_is_turning())
-        {
-            return true;
-        }
-
-        motor_control_stop();
-
-        prioritySearchStage = 6;
-        prioritySearchStageAt = millis();
-
-        return true;
-    }
-
-    // Final stationary look.
-    if (millis() -
-            prioritySearchStageAt <
+    if (millis() - prioritySearchStageAt <
         PRIORITY_SEARCH_SETTLE_MS)
     {
         return true;
@@ -809,10 +843,22 @@ FLASHMEM static bool handlePriorityWaiting()
     debugNav.print(",");
     debugNav.println(priorityY);
 
-    priority_targets_remove(priorityTargetIndex);
-    for (int i = priorityTargetIndex; i + 1 < MAX_PRIORITY_TARGETS; i++)
-        priorityFailedAt[i] = priorityFailedAt[i + 1];
-    priorityFailedAt[MAX_PRIORITY_TARGETS - 1] = 0;
+    priority_targets_remove(
+        priorityTargetIndex
+    );
+
+    for (int i = priorityTargetIndex;
+         i + 1 < MAX_PRIORITY_TARGETS;
+         i++)
+    {
+        priorityFailedAt[i] =
+            priorityFailedAt[i + 1];
+    }
+
+    priorityFailedAt[
+        MAX_PRIORITY_TARGETS - 1
+    ] = 0;
+
     priorityTargetIndex = -1;
 
     priorityTargetWaitStartedAt = 0;
@@ -821,6 +867,9 @@ FLASHMEM static bool handlePriorityWaiting()
     roamCommandedPower = 0;
     roamCommandedHeading = NAN;
 
+    // Do NOT return to centre first.
+    // ROAM_START will choose the closest remaining target and
+    // D* will determine the required new heading anyway.
     roamingState = ROAM_START;
 
     return true;
@@ -1368,7 +1417,7 @@ void roaming_update()
                     );
 
 
-                    motor_control_turn_relative(
+                    motor_control_turn_relative_coarse(
                         -headingError
                     );
 

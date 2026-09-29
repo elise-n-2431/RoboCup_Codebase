@@ -26,6 +26,8 @@ static const unsigned long CRITICAL_REVERSE_TIME_MS = 400; // 300ms
 
 static const float REVERSE_ESCAPE_TURN_DEG = 60.0f;
 static const float CRITICAL_ESCAPE_TURN_DEG = 70.0f;
+static const float
+    CORNER_ESCAPE_TURN_DEG = 120.0f;
 
 static const unsigned long WEIGHT_RETRIGGER_BLOCK_MS = 1500;
 
@@ -39,7 +41,7 @@ static const unsigned long RAMP_MIN_REVERSE_MS = 600;
 static const unsigned long RAMP_MAX_REVERSE_MS = 2500;
 static const unsigned long RAMP_RETRIGGER_BLOCK_MS = 1500;
 
-static const unsigned long CORNER_DETECTION_WINDOW_MS = 3000;
+static const unsigned long CORNER_DETECTION_WINDOW_MS = 8000;
 
 static int PrevDirection = 0;
 static unsigned long PrevDirectionAt = 0;
@@ -367,8 +369,14 @@ void reversing_update()
                 ? CRITICAL_ESCAPE_TURN_DEG
                 : REVERSE_ESCAPE_TURN_DEG;
 
-            if (doDramaticTurn) {
-                escapeTurnAngle = 180;
+            if (doDramaticTurn)
+            {
+                escapeTurnAngle =
+                    CORNER_ESCAPE_TURN_DEG;
+
+                debugNav.println(
+                    "Reverse: repeated corner trap - dramatic escape"
+                );
             }
 
             debugNav.print("Reverse: escape turn angle=");

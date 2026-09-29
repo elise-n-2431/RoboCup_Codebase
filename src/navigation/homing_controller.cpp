@@ -164,6 +164,34 @@ static bool recordHomeFailure(const char *reason)
     return nearHomeFailures >= 2 && beginHomeRecovery(reason);
 }
 
+static void noteHomeObstacleFailure(
+    const char *reason
+)
+{
+    if (homeDistance() >
+        HOME_RECOVERY_REGION_MM)
+    {
+        return;
+    }
+
+    nearHomeFailures++;
+
+    debugNav.print(
+        "HOME_OBSTACLE_FAILURE,"
+    );
+
+    debugNav.print(
+        nearHomeFailures
+    );
+
+    debugNav.print(",");
+
+    debugNav.println(
+        reason
+    );
+}
+
+
 void homing_start()
 {
     homingState = HOMING_START;
@@ -174,6 +202,17 @@ void homing_start()
     debugNav.println(
         "Navigator: HOMING started"
     );
+
+    // If repeated obstacle escapes have already failed,
+    // don't simply initialise the same D* behaviour again.
+    if (nearHomeFailures >= 2)
+    {
+        if (beginHomeRecovery(
+                "REPEATED_OBSTACLE"))
+        {
+            return;
+        }
+    }
 
     if (path_init())
     {
@@ -296,7 +335,7 @@ void homing_update()
     // after two onboard. Final approach and docking retain priority.
     if (!homing_is_docking() &&
         homeDistance() >= 350.0f &&
-        roaming_check_for_weight())
+        roaming_check_for_weight(true))
     {
         path_reset();
 
@@ -319,7 +358,9 @@ void homing_update()
         debugNav.println(
             "Homing: CRITICAL OBSTACLE - reversing"
         );
-
+        noteHomeObstacleFailure(
+            "CRITICAL_OBSTACLE"
+        );
         path_reset();
         motor_control_stop();
         reversing_set_reason(REVERSE_CRITICAL_OBSTACLE);
@@ -512,6 +553,9 @@ void homing_update()
                 reversing_set_reason(
                     REVERSE_CRITICAL_OBSTACLE
                 );
+                noteHomeObstacleFailure(
+                    "FRONT_BLOCKED"
+                );
 
                 setStateFlag(
                     &STATE_FLAGS.reverse_triggered
@@ -593,7 +637,7 @@ void homing_update()
                 break;
             }
 
-            int wallDistance = homeRecoveryWallLeft ? outerLeft : outerRight;
+            int wallDistance = homeClearanceValue(homeRecoveryWallLeft? outerLeft: outerRight);
             int band = wallDistance < HOME_RECOVERY_WALL_NEAR_MM ? -1
                      : wallDistance > HOME_RECOVERY_WALL_FAR_MM ? 1 : 0;
             if (band != homeRecoveryWallBand)
@@ -604,7 +648,7 @@ void homing_update()
                 debugNav.println(wallDistance);
             }
 
-            if (front < HOME_RECOVERY_FRONT_BLOCK_MM)
+            if (front > 0 && front < HOME_RECOVERY_FRONT_BLOCK_MM)
             {
                 motor_control_stop();
                 debugNav.println("HOME_RECOVERY_ABORT,FRONT_BLOCKED");

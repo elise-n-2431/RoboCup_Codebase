@@ -22,7 +22,7 @@ static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
 static const int CRITICAL_OBSTACLE_MM = 90;
 
 static const float PURSUIT_SCAN_STEP_DEG = 15.0f;
-static const float PURSUIT_SCAN_MAX_DEG = 60.0f;
+static const float PURSUIT_SCAN_MAX_DEG = 30.0f;
 static const float GEO_SCAN_STEP_DEG = 5.0f;
 static const float GEO_SCAN_MAX_DEG = 10.0f;
 static const int GEO_CENTRE_MAX_MM = 600;
@@ -188,12 +188,20 @@ static bool commandNextPursuitScan()
     debugNav.print(offset);
     debugNav.println(" deg");
 
-    motor_control_turn_to(
-        pursuitScanOriginHeading +
-        offset
+    float relativeTurn =
+        wrap180(
+            pursuitScanOriginHeading +
+            offset -
+            imu_get_heading()
+        );
+
+    // A reacquisition scan does not need 3-degree precision.
+    // Use the existing coarse ~6-degree completion tolerance.
+    motor_control_turn_relative_coarse(
+        relativeTurn
     );
 
-    return true;
+    return true;   
 }
 
 void pursuit_start(WeightTargetSide target)
@@ -560,6 +568,16 @@ void pursuit_update()
             {
                 return;
             }
+            // -1 means stale / invalid sensor data.
+            // It is not evidence that the weight disappeared.
+            if (centreDistance < 0)
+            {
+                debugNav.println(
+                    "Pursuit: middle ToF invalid - waiting"
+                );
+
+                return;
+            }
 
             // Centre has found the weight.
             if (centreDistance > 0 &&
@@ -625,25 +643,51 @@ void pursuit_update()
             //     return;
             // }
 
-            int middleNow = tof_get_weight_middle();
+        int middleNow =
+            tof_get_weight_middle();
 
-            bool atEntrance = middleNow > 0 && middleNow <= WEIGHT_STOP_DISTANCE_MM;
-            bool broadObstacle =
-                innerLeft > 0 && innerRight > 0 &&
-                innerLeft <= PURSUIT_BROAD_OBSTACLE_MM &&
-                innerRight <= PURSUIT_BROAD_OBSTACLE_MM &&
-                abs(innerLeft - innerRight) <= PURSUIT_NAV_AGREEMENT_MM &&
-                (middleNow <= 0 || middleNow >=
-                    (innerLeft + innerRight) / 2 + PURSUIT_WALL_BEHIND_NAV_MM);
+        bool middleUsable =
+            middleNow >= 0;
 
-            int closestNav = min(pursuitClearanceValue(innerLeft),
-                                 pursuitClearanceValue(innerRight));
-            // A single close nav return can be the centred weight's edge.
-            // Keep the hard stop when centre range is not closing or a wall
-            // is substantially closer than the centre target.
-            bool narrowObstacle = closestNav <= PURSUIT_WALL_ABORT_MM &&
-                (centreClosingCount < 2 || middleNow <= 0 ||
-                 middleNow >= closestNav + PURSUIT_NARROW_WALL_OFFSET_MM);
+        bool atEntrance =
+            middleNow > 0 &&
+            middleNow <=
+                WEIGHT_STOP_DISTANCE_MM;
+
+        bool broadObstacle =
+            middleUsable &&
+            innerLeft > 0 &&
+            innerRight > 0 &&
+            innerLeft <=
+                PURSUIT_BROAD_OBSTACLE_MM &&
+            innerRight <=
+                PURSUIT_BROAD_OBSTACLE_MM &&
+            abs(innerLeft - innerRight) <=
+                PURSUIT_NAV_AGREEMENT_MM &&
+            (
+                middleNow == 0 ||
+                middleNow >=
+                    (innerLeft + innerRight) / 2 +
+                    PURSUIT_WALL_BEHIND_NAV_MM
+            );
+
+        int closestNav =
+            min(
+                pursuitClearanceValue(innerLeft),
+                pursuitClearanceValue(innerRight)
+            );
+
+        bool narrowObstacle =
+            middleUsable &&
+            closestNav <=
+                PURSUIT_WALL_ABORT_MM &&
+            (
+                centreClosingCount < 2 ||
+                middleNow == 0 ||
+                middleNow >=
+                    closestNav +
+                    PURSUIT_NARROW_WALL_OFFSET_MM
+            );
 
             if (!atEntrance && (broadObstacle || narrowObstacle))
             {
