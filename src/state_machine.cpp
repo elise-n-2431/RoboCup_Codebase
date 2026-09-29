@@ -298,6 +298,7 @@ static const char* stateFlagName(bool* flag)
     if (flag == &STATE_FLAGS.dummy_identified) return "dummy_identified";
     if (flag == &STATE_FLAGS.metal_identified) return "metal_identified";
     if (flag == &STATE_FLAGS.home_time) return "home_time";
+    if (flag == &STATE_FLAGS.can_stop) return "can_stop";
 
     if (flag == &STATE_FLAGS.weight_in_entrance) return "weight_in_entrance";
     if (flag == &STATE_FLAGS.magnet_hit) return "magnet_hit";
@@ -466,6 +467,7 @@ void check_timers() {
         current_nav_state != OPENING && current_nav_state != CLOSING) {
         homeTimeIssued = true;
         setStateFlag(&STATE_FLAGS.home_time);
+        setStateFlag(&STATE_FLAGS.can_stop);
     }
     
     switch (current_collect_state) { 

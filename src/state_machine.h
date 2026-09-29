@@ -44,6 +44,7 @@ struct StateFlags {
     bool dummy_identified = false;
     bool metal_identified = false;
     bool home_time = false;
+    bool can_stop = false;
     bool one_plus_onboard = false;
 
     // collection focused

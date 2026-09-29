@@ -78,11 +78,7 @@ void setup()
     Serial2.println("RUN,WAITING");
 }
 
-const byte GO_PIN = 25;
 
-bool run = false;
-bool stop = false;
-static bool previousGoHigh = false;
 
 void checkGoStop()
 {
@@ -95,7 +91,7 @@ void checkGoStop()
     }
 
     // Once home_time is reached, the button becomes STOP.
-    if (STATE_FLAGS.home_time) {
+    if (STATE_FLAGS.can_stop) {
         stop = true;
         run = false;
 
