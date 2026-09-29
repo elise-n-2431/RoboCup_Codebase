@@ -31,9 +31,9 @@
 #include "priority_targets.h"
 #include "competition_setup.h"
 
-const byte GO_PIN = 26;
+const byte GO_PIN = 32;
 
-bool run = false;
+bool run = true;
 static bool previousGoHigh = false;
 //static int mapPrintCounter = 0;
 
@@ -72,8 +72,6 @@ void setup()
     priority_targets_print(Serial);
     //map_init();
 
-
-    // Serial.println("RUN,WAITING");
     Serial2.println("RUN,WAITING");
 }
 
@@ -126,6 +124,7 @@ int i = 0;
 
 void loop()
 {
+
     imu_update();
     xy_exe();
     tof_update();
@@ -159,7 +158,7 @@ void loop()
 
     limit_switch_exe();
     colour_sensor_update();
-
+    checkToFI2CHealth();
     logic_exe();
     updateStateMachine();
 
@@ -168,7 +167,8 @@ void loop()
     proximity_exe();
 
     pickup_servo_update();
-    smartservo_update();=
+    smartservo_update();
     navigator_exe();
     motor_control_update();
 }
+

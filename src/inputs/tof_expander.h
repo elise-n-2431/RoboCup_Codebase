@@ -33,4 +33,7 @@ void readClearances(
     int &leftClearance,
     int &rightClearance);
 
+void checkToFI2CHealth();
+bool allToFsInvalid();
+
 #endif

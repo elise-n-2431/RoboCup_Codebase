@@ -39,7 +39,7 @@ static const float GEO_LEFT_BEARING_BIAS_DEG = 0.0f;
 static const float GEO_RIGHT_BEARING_BIAS_DEG = 0.0f;
 static const float GEO_DIRECT_SCAN_THRESHOLD_DEG = 6.0f;
 
-static const int WEIGHT_STOP_DISTANCE_MM = 65;
+static const int WEIGHT_STOP_DISTANCE_MM = 80;
 static const int WEIGHT_ENTRANCE_SAMPLES_REQUIRED = 2;
 static const float GEO_CLOSE_LOCK_APPROACH_MM = 15.0f;
 static const int WEIGHT_SLOW_DISTANCE_MM = 200;
