@@ -54,8 +54,8 @@ void pose_reset()
     previousLeftCount = encoders_get_left_count();
     previousRightCount = encoders_get_right_count();
 
-    float unusedForward, unusedLateral;
-    get_xy_delta_mm(unusedForward, unusedLateral);
+    // float unusedForward, unusedLateral;
+    // get_xy_delta_mm(unusedForward, unusedLateral);
 }
 
 
@@ -79,95 +79,32 @@ void pose_update()
     previousLeftCount = leftCount;
     previousRightCount = rightCount;
 
-    float leftDistance = deltaLeftCount * encoders_get_left_mm_per_count();
-    float rightDistance = deltaRightCount * encoders_get_right_mm_per_count();
+    float leftDistance =
+        deltaLeftCount * encoders_get_left_mm_per_count();
 
-    float encoderForward = (leftDistance + rightDistance) / 2.0f;
+    float rightDistance =
+        deltaRightCount * encoders_get_right_mm_per_count();
 
+    float encoderForward =
+        (leftDistance + rightDistance) / 2.0f;
 
-    // Body-frame delta since the last pose_update() -- drains the
-    // xy_sensor accumulator.
-    float xyForward, xyLateral;
-    get_xy_delta_mm(xyForward, xyLateral);
+    // Only accept encoder movement if the IMU detects
+    // actual translational movement.
+    float forwardDistance = 0.0f;
 
-
-    float forwardDistance =
-        (1.0f - XY_FUSION_WEIGHT) * encoderForward
-        + XY_FUSION_WEIGHT * xyForward;
-
-    float lateralDistance = XY_FUSION_WEIGHT * xyLateral;
-
-
-    float headingDeg = pose_get_heading_deg();
-
-    float headingRad = headingDeg * PI / 180.0f;
-
-    // Serial.print("forward: ");
-    // Serial.println(forwardDistance);
-    // Serial.print(", lateral: ");
-    // Serial.println(lateralDistance);
-    // pose_print(Serial);
-
-    poseXmm += forwardDistance * cos(headingRad) - lateralDistance * sin(headingRad);
-    poseYmm += forwardDistance * sin(headingRad) + lateralDistance * cos(headingRad);
-
-    static float debugEncoderForward = 0.0f;
-static float debugXYForward = 0.0f;
-static float debugXYLateral = 0.0f;
-static float debugFusedForward = 0.0f;
-static float debugFusedLateral = 0.0f;
-
-static unsigned long lastPoseDebug = 0;
-
-
-debugEncoderForward += encoderForward;
-debugXYForward += xyForward;
-debugXYLateral += xyLateral;
-
-debugFusedForward += forwardDistance;
-debugFusedLateral += lateralDistance;
-
-
-    if (millis() - lastPoseDebug >= 250)
+    if (imu_is_translationally_moving())
     {
-        lastPoseDebug = millis();
-
-
-        debugPose.print("POSE MOTION: ENC_F=");
-        debugPose.print(debugEncoderForward);
-
-        debugPose.print(" XY_F=");
-        debugPose.print(debugXYForward);
-
-        debugPose.print(" XY_L=");
-        debugPose.print(debugXYLateral);
-
-        debugPose.print(" FUSED_F=");
-        debugPose.print(debugFusedForward);
-
-        debugPose.print(" FUSED_L=");
-        debugPose.print(debugFusedLateral);
-
-        debugPose.print(" W=");
-        debugPose.print(XY_FUSION_WEIGHT);
-
-        debugPose.print(" POS=(");
-        debugPose.print(poseXmm);
-        debugPose.print(",");
-        debugPose.print(poseYmm);
-
-        debugPose.print(") H=");
-        debugPose.println(pose_get_heading_deg());
-
-
-        // Reset comparison window.
-        debugEncoderForward = 0.0f;
-        debugXYForward = 0.0f;
-        debugXYLateral = 0.0f;
-        debugFusedForward = 0.0f;
-        debugFusedLateral = 0.0f;
+        forwardDistance = encoderForward;
     }
 
+    float headingDeg = pose_get_heading_deg();
+    float headingRad = headingDeg * PI / 180.0f;
+
+    poseXmm +=
+        forwardDistance * cos(headingRad);
+
+    poseYmm +=
+        forwardDistance * sin(headingRad);
 }
 
 void pose_apply_correction(float dx_mm, float dy_mm)

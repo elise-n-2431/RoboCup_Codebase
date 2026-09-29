@@ -37,7 +37,7 @@ void imu_print_readings();
 // Remove saved calibration from EEPROM.
 // Restart the robot afterwards and recalibrate.
 void imu_clear_calibration();
-
+bool imu_is_translationally_moving();
 
 
 #endif
