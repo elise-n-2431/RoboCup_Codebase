@@ -11,7 +11,7 @@
 
 
 static const int WEIGHT_DETECT_DISTANCE_MM = 650;
-static const int WEIGHT_DIFFERENCE_MM = 100;
+static const int WEIGHT_DIFFERENCE_MM = 75; // was 100
 
 static const int SIDE_DETECTION_COUNT_REQUIRED = 2;
 static const int MIDDLE_DETECTION_COUNT_REQUIRED = 2;

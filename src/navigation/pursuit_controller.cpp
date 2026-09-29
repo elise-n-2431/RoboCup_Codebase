@@ -19,6 +19,7 @@ static const int WEIGHT_DETECT_DISTANCE_MM = 650;
 static const int WEIGHT_MIDDLE_SENSOR = 8;
 
 static const int MIDDLE_LOST_COUNT_REQUIRED = 3;
+static const int CRITICAL_OBSTACLE_MM = 90;
 
 static const float PURSUIT_SCAN_STEP_DEG = 15.0f;
 static const float PURSUIT_SCAN_MAX_DEG = 60.0f;
@@ -578,9 +579,47 @@ void pursuit_update()
 
         case PURSUIT_APPROACHING:
         {
-            int innerLeft = tof_get_nav_inner_left();
-            int innerRight = tof_get_nav_inner_right();
+            int outerLeft;
+            int innerLeft;
+            int upperLeft;
+            int innerRight;
+            int outerRight;
+            int upperRight;
+
+            int front;
+            int leftClearance;
+            int rightClearance;
+
+            readClearances(
+                outerLeft,
+                innerLeft,
+                upperLeft,
+                innerRight,
+                outerRight,
+                upperRight,
+                front,
+                leftClearance,
+                rightClearance
+            );
+
+            if (front > 0 &&
+                front <= CRITICAL_OBSTACLE_MM)
+            {
+                motor_control_stop();
+                smartservo_arms_close();
+
+                debugNav.print("Pursuit: front clearance low - closing arms: ");
+                debugNav.print(front);
+                debugNav.println(" mm");
+
+                pursuitSecureStartedAt = millis();
+                pursuitState = PURSUIT_SECURING;
+                pursuitProgressAt = 0;
+                return;
+            }
+
             int middleNow = tof_get_weight_middle();
+
             bool atEntrance = middleNow > 0 && middleNow <= WEIGHT_STOP_DISTANCE_MM;
             bool broadObstacle =
                 innerLeft > 0 && innerRight > 0 &&

@@ -932,7 +932,7 @@ void map_correction()
     {
         try_wall_correction(
             dist_o_l,
-            40.0f + i
+            50.0f + i
         );
 
         try_wall_correction(
@@ -947,7 +947,7 @@ void map_correction()
 
         try_wall_correction(
             dist_o_r,
-            -40.0f + i
+            -50.0f + i
         );
     }
 
@@ -985,7 +985,7 @@ void interpret_tof()
 
         update_obstacle_map(
             dist_o_l,
-            40.0f + i
+            50.0f + i
         );
 
         dist_i_l =
@@ -1015,7 +1015,7 @@ void interpret_tof()
 
         update_obstacle_map(
             dist_o_r,
-            -40.0f + i
+            -50.0f + i
         );
     }
     // update_weight_map(tof_get_distance(WEIGHT_LEFT_BOTTOM), -15.0,  tof_get_distance(WEIGHT_LEFT_TOP));

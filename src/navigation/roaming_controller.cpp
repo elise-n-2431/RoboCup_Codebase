@@ -13,7 +13,6 @@
 #include "debug_print.h"
 #include "priority_targets.h"
 #include "path_finding.h"
-#include "inputs/tof_expander.h"
 
 #include "navigation/weight_detection.h"
 #include "navigation/pursuit_controller.h"
