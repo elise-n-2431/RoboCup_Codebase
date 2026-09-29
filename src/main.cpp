@@ -34,6 +34,7 @@
 const byte GO_PIN = 25;
 
 bool run = false;
+bool stop = false;
 static bool previousGoHigh = false;
 //static int mapPrintCounter = 0;
 
@@ -77,46 +78,58 @@ void setup()
     Serial2.println("RUN,WAITING");
 }
 
-static void checkGo()
+const byte GO_PIN = 25;
+
+bool run = false;
+bool stop = false;
+static bool previousGoHigh = false;
+
+void checkGoStop()
 {
     const bool high = digitalRead(GO_PIN) == HIGH;
     const bool pressed = high && !previousGoHigh;
     previousGoHigh = high;
 
-    if (!pressed || arena_run_started()) return;
+    if (!pressed) {
+        return;
+    }
+
+    // Once home_time is reached, the button becomes STOP.
+    if (STATE_FLAGS.home_time) {
+        stop = true;
+        run = false;
+
+        // Stop the robot safely.
+        motor_control_stop();  // Use your actual motor-stop function here.
+
+        Serial2.println("RUN,STOPPED");
+        return;
+    }
+
+    // Before home_time, the button acts as GO.
+    if (arena_run_started()) {
+        return;
+    }
 
     if (!imu_is_online() ||
         !isfinite(imu_get_heading()) ||
         !colour_sensor_capture_home()) {
-        // Serial.println("ERR,GO,sensors_not_ready");
         Serial2.println("ERR,GO,sensors_not_ready");
         return;
     }
 
-    // Robot must be in its configured starting pose, on its selected base.
-    // Re-sample the actual base colour; do not invent RGB thresholds.
-
-    // Competition assumption:
-    // robot physically starts inside its configured home base.
-    
-
-    // arena_set_start_pose(300, 300, 0);
-
     if (!navigator_start(arena_get_config().pickupEnabled))
     {
-        // Serial.println("ERR,GO,navigator_start");
         Serial2.println("ERR,GO,navigator_start");
         return;
     }
 
     arena_begin_run();
     run = true;
-    set_time_at_start(); // for state timer (homing at 1.45min, off at 2min)
 
-    // Serial.println("RUN,STARTED");
+    set_time_at_start();
+
     Serial2.println("RUN,STARTED");
-
-    // Serial.println("CONFIG,LOCKED");
     Serial2.println("CONFIG,LOCKED");
 }
 
@@ -125,6 +138,11 @@ int i = 0;
 
 void loop()
 {
+    if (stop) {
+        return;
+    }
+        
+    checkGoStop();
 
     imu_update();
     // xy_exe();
@@ -134,7 +152,6 @@ void loop()
     // pose_telemetry_exe();
 
     // Lock before processing queued commands when GO is pressed.
-    checkGo();
     serial_exe();
 
     map_update();
@@ -157,6 +174,7 @@ void loop()
     if (!run) {
         return;
     }
+
 
     limit_switch_exe();
     colour_sensor_update();
