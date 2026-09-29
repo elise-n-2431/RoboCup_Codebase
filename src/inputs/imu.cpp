@@ -20,6 +20,8 @@ static Adafruit_BNO055 bno =
 
 // IMU STATE
 
+static bool imuTranslationalMovement = false;
+static const float IMU_MOVEMENT_THRESHOLD = 0.5f; //calibrate this threshold
 
 static bool imuOnline = false;
 
@@ -276,6 +278,24 @@ void imu_update()
         debugImu.print(" roll=");
         debugImu.println(roll);
     }
+
+    imu::Vector<3> linearAccel =
+    bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
+
+    float accelMagnitude = sqrt(
+        linearAccel.x() * linearAccel.x()
+        + linearAccel.y() * linearAccel.y()
+        + linearAccel.z() * linearAccel.z()
+    );
+
+    imuTranslationalMovement =
+        accelMagnitude > IMU_MOVEMENT_THRESHOLD;
+    
+    debugImu.print(" translation=");
+    debugImu.println(accelMagnitude);
+
+    debugImu.print(" translation bool=");
+    debugImu.println(imuTranslationalMovement);
 }
 
 
@@ -297,6 +317,11 @@ float imu_get_pitch()
 float imu_get_roll()
 {
     return roll;
+}
+
+bool imu_is_translationally_moving()
+{
+    return imuTranslationalMovement;
 }
 
 
