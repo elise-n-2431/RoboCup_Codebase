@@ -302,22 +302,14 @@ void homing_update()
     if (!homing_is_docking() &&
         checkCriticalObstacle(front))
     {
-        path_reset();
-
         debugNav.println(
-            "Homing: CRITICAL OBSTACLE"
+            "Homing: CRITICAL OBSTACLE - reversing"
         );
 
-        float turnDirection =
-            leftClearance > rightClearance
-            ? -HOME_AVOID_TURN_DEG
-            : HOME_AVOID_TURN_DEG;
-
-        motor_control_turn_relative(
-            turnDirection
-        );
-
-        homingState = HOMING_AVOIDING;
+        path_reset();
+        motor_control_stop();
+        reversing_set_reason(REVERSE_CRITICAL_OBSTACLE);
+        setStateFlag(&STATE_FLAGS.reverse_triggered);
 
         return;
     }

@@ -38,7 +38,7 @@ static const float GEO_SIDE_SENSOR_Y_MM = 90.0f;
 static const float GEO_INWARD_ANGLE_DEG = 5.0f;
 static const float GEO_LEFT_BEARING_BIAS_DEG = 0.0f;
 static const float GEO_RIGHT_BEARING_BIAS_DEG = 0.0f;
-static const float GEO_DIRECT_SCAN_THRESHOLD_DEG = 6.0f;
+static const float GEO_DIRECT_SCAN_THRESHOLD_DEG = 10.0f;
 
 static const int WEIGHT_STOP_DISTANCE_MM = 80;
 static const int WEIGHT_ENTRANCE_SAMPLES_REQUIRED = 2;
@@ -460,6 +460,9 @@ void pursuit_update()
             debugNav.println(bearingDeg);
             debugNav.println("PURSUIT_PHASE,GEO_TURN");
 
+            geoCentreEvidenceCount = 0;
+            lastMiddleSample = tof_get_sample_number(WEIGHT_MIDDLE_SENSOR);
+
             // Pose/robot-left angles and IMU/motor turns have opposite signs.
             motor_control_turn_relative_geo(relativeTurn);
             pursuitState = PURSUIT_GEO_TURNING;
@@ -468,6 +471,10 @@ void pursuit_update()
 
         case PURSUIT_GEO_TURNING:
         {
+            bool newSample = false;
+            int evidenceCount = 0;
+            if (checkGeoCentre(newSample, evidenceCount)) return;
+
             if (motor_control_is_turning()) return;
 
             motor_control_stop();

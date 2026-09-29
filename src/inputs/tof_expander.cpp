@@ -25,7 +25,7 @@ static VL53L1X tof1;
 static VL53L1X tof2;
 static VL53L1X tof3;
 static VL53L1X tof4;
-static VL53L1X tof8;
+static VL53L0X tof8;
 
 //found from testing
 
@@ -114,7 +114,7 @@ static int countInvalidToFs()
 
 bool allToFsInvalid()
 {   
-    return countInvalidToFs() >= 8;
+    return countInvalidToFs() >= 5;
 }
 
 void checkToFI2CHealth()
@@ -271,7 +271,7 @@ void tof_init()
     tofOnline[5] = initialiseL0(tof5, TOF5_XSHUT, 0x35, 5);
     tofOnline[6] = initialiseL0(tof6, TOF6_XSHUT, 0x36, 6);
     tofOnline[7] = initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
-    tofOnline[8] = initialiseL1(tof8, TOF8_XSHUT, 0x38, 8);
+    tofOnline[8] = initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
 
     Serial.println("ToF setup complete");
 }
@@ -434,7 +434,7 @@ void tof_update()
     updateL0(tof5, 5, NAV_TOF_MAX_MM);
     updateL0(tof6, 6, NAV_TOF_MAX_MM);
     updateL0(tof7, 7, NAV_TOF_MAX_MM);
-    updateL1(tof8, 8, WEIGHT_TOF_MAX_MM);
+    updateL0(tof8, 8, WEIGHT_TOF_MAX_MM);
     static unsigned long lastTofDebugAt = 0;
 
     if (millis() - lastTofDebugAt >= 200)
@@ -672,7 +672,7 @@ static bool resetToFSensors()
     tof6 = VL53L0X();
     tof7 = VL53L0X();
 
-    tof8 = VL53L1X();
+    tof8 = VL53L0X();
 
 
     // -------------------------------------------------
@@ -735,7 +735,7 @@ static bool resetToFSensors()
         initialiseL0(tof7, TOF7_XSHUT, 0x37, 7);
 
     tofOnline[8] =
-        initialiseL1(tof8, TOF8_XSHUT, 0x38, 8);
+        initialiseL0(tof8, TOF8_XSHUT, 0x38, 8);
 
 
     int online = 0;

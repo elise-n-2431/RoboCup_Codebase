@@ -71,7 +71,7 @@ void setup()
 
     priority_targets_load_starting_weights();
     // Serial.println("Loaded starting weight coordinates:");
-    priority_targets_print(Serial);
+    //priority_targets_print(Serial);
     //map_init();
 
     Serial2.println("RUN,WAITING");
@@ -147,7 +147,7 @@ void loop()
     i ++;
 
     // print_proximity();
-    tof_print_readings(Serial);
+    //tof_print_readings(Serial);
     // print_state();
     // print_navigator_state();
     //print_DC_power();
