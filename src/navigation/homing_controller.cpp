@@ -480,24 +480,22 @@ void homing_update()
             // NORMAL FRONT OBSTACLE AVOIDANCE
             // ====================================================
 
-            if (front < HOME_FRONT_BLOCK_MM)
+            if (front > 0 && front < HOME_FRONT_BLOCK_MM)
             {
+                debugNav.println(
+                    "Homing: obstacle ahead - reversing"
+                );
+
+                path_reset();
                 motor_control_stop();
 
-                float turnDirection =
-                    leftClearance > rightClearance
-                    ? -HOME_AVOID_TURN_DEG
-                    : HOME_AVOID_TURN_DEG;
-
-                debugNav.println(
-                    "Homing: obstacle avoidance"
+                reversing_set_reason(
+                    REVERSE_CRITICAL_OBSTACLE
                 );
 
-                motor_control_turn_relative(
-                    turnDirection
+                setStateFlag(
+                    &STATE_FLAGS.reverse_triggered
                 );
-
-                homingState = HOMING_AVOIDING;
 
                 return;
             }
