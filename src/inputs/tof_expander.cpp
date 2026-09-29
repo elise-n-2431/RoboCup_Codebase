@@ -83,6 +83,91 @@ static bool tofNoReturn[NUM_TOF_SENSORS];
 static unsigned long tofLastReadingAt[NUM_TOF_SENSORS];
 static uint32_t tofSampleNumber[NUM_TOF_SENSORS];
 
+// Number of consecutive bad checks before attempting recovery
+static constexpr uint8_t TOF_I2C_FAIL_LIMIT = 5;
+
+// Only check every 100 ms
+static constexpr uint32_t TOF_I2C_CHECK_INTERVAL_MS = 100;
+
+// Don't repeatedly call Wire.begin() if things stay dead
+static constexpr uint32_t TOF_I2C_RECOVERY_COOLDOWN_MS = 3000;
+
+static uint8_t tofI2CFailCount = 0;
+static uint32_t lastToFI2CCheck = 0;
+static uint32_t lastToFI2CRecovery = 0;
+
+
+
+static int countInvalidToFs()
+{
+    int failed = 0;
+
+    if (NAV_OUTER_LEFT  == -1) failed++;
+    if (NAV_INNER_LEFT  == -1) failed++;
+    if (NAV_INNER_RIGHT == -1) failed++;
+    if (NAV_OUTER_RIGHT == -1) failed++;
+
+    if (WEIGHT_LEFT_TOP     == -1) failed++;
+    if (WEIGHT_LEFT_BOTTOM  == -1) failed++;
+    if (WEIGHT_RIGHT_TOP    == -1) failed++;
+    if (WEIGHT_RIGHT_BOTTOM == -1) failed++;
+
+    if (WEIGHT_MIDDLE       == -1) failed++;
+
+    return failed;
+}
+
+bool allToFsInvalid()
+{   
+    return countInvalidToFs() >= 8;
+}
+
+void checkToFI2CHealth()
+{
+    uint32_t now = millis();
+
+    // Only evaluate every 100 ms
+    if (now - lastToFI2CCheck < TOF_I2C_CHECK_INTERVAL_MS)
+        return;
+
+    lastToFI2CCheck = now;
+
+    if (allToFsInvalid())
+    {
+        tofI2CFailCount++;
+
+        if (tofI2CFailCount == 1)
+        {
+            debugTof.println("TOF_I2C: possible bus failure");
+        }
+
+        if (tofI2CFailCount >= TOF_I2C_FAIL_LIMIT)
+        {
+            // Prevent repeated Wire.begin() calls
+            if (now - lastToFI2CRecovery >= TOF_I2C_RECOVERY_COOLDOWN_MS)
+            {
+                debugTof.println("FAULT,TOF_I2C_RESTART");
+
+                /*
+                 * Soft restart of the shared I2C peripheral.
+                 *
+                 * We are deliberately NOT reinitialising the ToFs
+                 * individually here because the IMU is also on this bus.
+                 */
+                Wire.begin();
+
+                lastToFI2CRecovery = now;
+            }
+
+            tofI2CFailCount = 0;
+        }
+    }
+    else
+    {
+        // At least a couple sensors are responding again
+        tofI2CFailCount = 0;
+    }
+}
 
 static void shutdownAllToFs()
 {
