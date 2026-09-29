@@ -91,10 +91,6 @@ static unsigned long lastNavTelemetryAt = 0;
 
 static const float PRIORITY_SEARCH_ANGLE_DEG = 12.0f;
 static const unsigned long PRIORITY_SEARCH_SETTLE_MS = 200;
-static const unsigned long FANNING_PERIOD_MS = 10000;
-static unsigned long PREV_FAN_TIME_MS = 0;
-static const float FAN_ANGLE_DEG = 90;
-static const unsigned long FAN_DURATION_MS = 1500;
 
 
 static int prioritySearchStage = 0;
@@ -924,24 +920,6 @@ static bool checkCriticalObstacle(int front)
     return true;
 }
 
-void perform_fan_operation() {
-    motor_control_turn_relative(
-    FAN_ANGLE_DEG
-    );
-    
-    int start_time = millis();
-    while (millis() < (start_time + FAN_DURATION_MS)) {
-    }
-
-    motor_control_turn_relative(
-    -FAN_ANGLE_DEG
-    );
-        
-    start_time = millis();
-    while (millis() < (start_time + FAN_DURATION_MS)) {
-    }
-}
-
 
 void roaming_reset()
 {
@@ -984,7 +962,6 @@ void roaming_reset()
 void roaming_start(bool pickupEnabled)
 {
     roamingPickupEnabled = pickupEnabled;
-    PREV_FAN_TIME_MS = millis();
 
     roaming_reset();
     for (int i = 0; i < MAX_PRIORITY_TARGETS; i++)
@@ -1023,11 +1000,6 @@ void roaming_update()
         return;
     }
 
-    if((millis() - PREV_FAN_TIME_MS) > FANNING_PERIOD_MS) {
-        perform_fan_operation();
-        PREV_FAN_TIME_MS = millis();
-        return;
-    }
 
 
     // ========================================================

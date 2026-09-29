@@ -23,12 +23,11 @@ static HerkulexServo* rightArmServo = nullptr;
 static uint8_t smartServoId = 0;
 
 
-static const uint16_t LEFT_ARM_OPEN_POSITION   = 250;
-static const uint16_t LEFT_ARM_CLOSED_POSITION = 360; 
+static const uint16_t LEFT_ARM_OPEN_POSITION   = 220;
+static const uint16_t LEFT_ARM_CLOSED_POSITION = 403; 
 
-static const uint16_t RIGHT_ARM_OPEN_POSITION   = 940;
-static const uint16_t RIGHT_ARM_CLOSED_POSITION = 740; 
-static const uint16_t RIGHT_ARM_CLOSED_POSITION_2 = 680; 
+static const uint16_t RIGHT_ARM_OPEN_POSITION   = 1022;
+static const uint16_t RIGHT_ARM_CLOSED_POSITION = 837; 
 
 
 static const uint8_t ARM_PLAYTIME = 100;
@@ -62,7 +61,7 @@ bool smartservo_init()
     Serial.println(RIGHT_ARM_ID);
 
     smartservo_arms_open();
-    // smartservo_arms_close();
+    //smartservo_arms_close();
     // delay(1000);
 
     // rightArmServo->setPosition(
@@ -393,13 +392,13 @@ void smartservo_print_positions()
 {
     if (leftArmServo != nullptr)
     {
-        Serial2.print("Left position: ");
-        Serial2.println(leftArmServo->getPosition());
+        Serial.print("Left position: ");
+        Serial.println(leftArmServo->getPosition());
     }
 
     if (rightArmServo != nullptr)
     {
-        Serial2.print("Right position: ");
-        Serial2.println(rightArmServo->getPosition());
+        Serial.print("Right position: ");
+        Serial.println(rightArmServo->getPosition());
     }
 }

@@ -171,5 +171,6 @@ void loop()
     smartservo_update();
     navigator_exe();
     motor_control_update();
+    // smartservo_print_positions();
 }
 

@@ -292,6 +292,20 @@ void homing_update()
         return;
     }
 
+    // Keep collecting confirmed weights along the route home, including
+    // after two onboard. Final approach and docking retain priority.
+    if (!homing_is_docking() &&
+        homeDistance() >= 350.0f &&
+        roaming_check_for_weight())
+    {
+        path_reset();
+
+        debugNav.print("HOMING_WEIGHT_DETECTED,");
+        debugNav.println(get_weight_count());
+
+        return;
+    }
+
     // ========================================================
     // CRITICAL OBSTACLE SAFETY OVERRIDE
     //
@@ -480,11 +494,17 @@ void homing_update()
             // NORMAL FRONT OBSTACLE AVOIDANCE
             // ====================================================
 
-            if (front > 0 && front < HOME_FRONT_BLOCK_MM)
+            int obstacleThreshold =
+        homeDistance() < 350.0f
+        ? 120
+        : HOME_FRONT_BLOCK_MM;
+
+            if (front > 0 && front < obstacleThreshold)
             {
-                debugNav.println(
-                    "Homing: obstacle ahead - reversing"
+                debugNav.print(
+                    "Homing: obstacle ahead - reversing, threshold="
                 );
+                debugNav.println(obstacleThreshold);
 
                 path_reset();
                 motor_control_stop();
